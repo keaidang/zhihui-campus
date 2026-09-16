@@ -29,38 +29,28 @@ html, body {
 
 #app { min-height: 100vh; }
 
-/* ---------- 临时背景（占位设计，待确认后可整体替换为图片） ---------- */
+/* ---------- 背景（校园实景图 + 浅白纱罩，图片位于 public/） ---------- */
 .sunny-backdrop {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
-  background: linear-gradient(180deg, #dff1ff 0%, #eef7ff 38%, #f8fbff 62%, #f0f7ff 100%);
+  background: url('/web-pc.png') center / cover no-repeat fixed;
 }
-.sunny-backdrop .sun {
-  position: absolute;
-  top: -140px;
-  right: -100px;
-  width: 460px;
-  height: 460px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(253, 224, 71, 0.55) 0%, rgba(253, 224, 71, 0.18) 45%, transparent 70%);
+/* 移动端切换竖版照片 */
+@media (max-width: 768px) {
+  .sunny-backdrop { background-image: url('/web-phont.png'); }
 }
-.sunny-backdrop .glow {
+.sunny-backdrop .overlay {
   position: absolute;
-  top: -220px;
-  left: -160px;
-  width: 620px;
-  height: 620px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, transparent 65%);
-}
-.sunny-backdrop svg.hills {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  display: block;
+  inset: 0;
+  /* 顶部略透出照片、中部抬亮保文字、底部压实承托卡片 */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(248, 251, 255, 0.82) 42%,
+    rgba(240, 247, 255, 0.92) 100%
+  );
 }
 
 /* ---------- 布局 ---------- */
