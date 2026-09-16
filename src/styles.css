@@ -29,17 +29,25 @@ html, body {
 
 #app { min-height: 100vh; }
 
-/* ---------- 背景（校园实景图 + 浅白纱罩，图片位于 public/） ---------- */
+/* ---------- 背景（校园实景图 + 轻虚化 + 浅白纱罩，图片位于 public/） ---------- */
 .sunny-backdrop {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
-  background: url('/web-pc.png') center / cover no-repeat fixed;
+  background: #eef5fc;
+}
+/* 虚化层：放大 14px 遮住模糊边缘，虚化强度调 blur() 数值即可 */
+.sunny-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  background: url('/web-pc.png') center / cover no-repeat;
+  filter: blur(6px);
 }
 /* 移动端切换竖版照片 */
 @media (max-width: 768px) {
-  .sunny-backdrop { background-image: url('/web-phont.png'); }
+  .sunny-backdrop::before { background-image: url('/web-phont.png'); }
 }
 .sunny-backdrop .overlay {
   position: absolute;

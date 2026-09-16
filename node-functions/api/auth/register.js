@@ -1,7 +1,7 @@
 // POST /api/auth/register — 学生自助注册（默认 student 角色）
 import bcrypt from 'bcryptjs';
-import { query } from '../lib/db.js';
-import { ok, fail, jsonError, readBody, clientIp } from '../lib/http.js';
+import { query } from '../../lib/db.js';
+import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
 
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/; // 字母开头, 4~32 位
 const PASSWORD_MIN = 8;

@@ -1,8 +1,8 @@
 // POST /api/auth/login — 统一登录（JWT 双令牌 + 失败锁定 + 审计）
 import bcrypt from 'bcryptjs';
-import { query } from '../lib/db.js';
-import { ok, fail, jsonError, readBody, clientIp } from '../lib/http.js';
-import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../lib/auth.js';
+import { query } from '../../lib/db.js';
+import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
+import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
 
 export async function onRequestPost(context) {
   try {
