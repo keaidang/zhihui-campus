@@ -1,0 +1,18 @@
+# 机密与本地配置
+.env
+.env.local
+*.pem.bak
+
+# scripts 目录只保留自检脚本，其余全部为本地临时产物
+scripts/*
+!scripts/db-test.py
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+.unpackage/
+
+# 系统文件
+.DS_Store
+Thumbs.db
