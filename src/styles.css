@@ -1,0 +1,233 @@
+/* ============================================================
+   智汇校园 · 全局主题
+   风格：简洁大气 · 阳光向上（浅色 / 天空蓝 + 活力橙点缀）
+   ============================================================ */
+:root {
+  --zc-primary: #2563eb;
+  --zc-primary-light: #3b82f6;
+  --zc-sky: #0ea5e9;
+  --zc-accent: #f59e0b;
+  --zc-text: #1e293b;
+  --zc-text-sub: #64748b;
+  --zc-bg: #f0f7ff;
+  --zc-card: #ffffff;
+  --zc-border: #e2e8f0;
+  --zc-radius: 16px;
+  --zc-shadow: 0 8px 30px rgba(37, 99, 235, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  color: var(--zc-text);
+  background: var(--zc-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { min-height: 100vh; }
+
+/* ---------- 临时背景（占位设计，待确认后可整体替换为图片） ---------- */
+.sunny-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: linear-gradient(180deg, #dff1ff 0%, #eef7ff 38%, #f8fbff 62%, #f0f7ff 100%);
+}
+.sunny-backdrop .sun {
+  position: absolute;
+  top: -140px;
+  right: -100px;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(253, 224, 71, 0.55) 0%, rgba(253, 224, 71, 0.18) 45%, transparent 70%);
+}
+.sunny-backdrop .glow {
+  position: absolute;
+  top: -220px;
+  left: -160px;
+  width: 620px;
+  height: 620px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, transparent 65%);
+}
+.sunny-backdrop svg.hills {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: block;
+}
+
+/* ---------- 布局 ---------- */
+.zc-container {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------- 顶栏 ---------- */
+.zc-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+.zc-navbar .inner {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.zc-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--zc-primary);
+  cursor: pointer;
+}
+.zc-logo .sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--zc-text-sub);
+  letter-spacing: 2px;
+}
+
+/* ---------- Hero ---------- */
+.zc-hero {
+  text-align: center;
+  padding: 84px 0 56px;
+}
+.zc-hero h1 {
+  margin: 0 0 18px;
+  font-size: 46px;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: 2px;
+  background: linear-gradient(120deg, #1d4ed8 10%, #0ea5e9 55%, #f59e0b 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.zc-hero p {
+  margin: 0 auto;
+  max-width: 620px;
+  font-size: 18px;
+  color: var(--zc-text-sub);
+  line-height: 1.8;
+}
+.zc-hero .actions { margin-top: 34px; display: flex; gap: 16px; justify-content: center; }
+
+/* ---------- 模块卡片 ---------- */
+.zc-section-title {
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 26px 0 8px;
+  letter-spacing: 1px;
+}
+.zc-section-sub {
+  text-align: center;
+  color: var(--zc-text-sub);
+  margin: 0 0 34px;
+}
+.zc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  padding-bottom: 80px;
+}
+@media (max-width: 1024px) { .zc-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.zc-card {
+  background: var(--zc-card);
+  border: 1px solid var(--zc-border);
+  border-radius: var(--zc-radius);
+  padding: 26px 22px;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.zc-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--zc-shadow);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+.zc-card .icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: #fff;
+  margin-bottom: 16px;
+}
+.zc-card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.zc-card p { margin: 0; font-size: 13px; color: var(--zc-text-sub); line-height: 1.7; }
+.zc-card .badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 11px;
+  color: var(--zc-accent);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: rgba(253, 230, 138, 0.25);
+}
+.zc-card .icon-1 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.zc-card .icon-2 { background: linear-gradient(135deg, #10b981, #059669); }
+.zc-card .icon-3 { background: linear-gradient(135deg, #f59e0b, #ea580c); }
+.zc-card .icon-4 { background: linear-gradient(135deg, #f472b6, #db2777); }
+.zc-card .icon-5 { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.zc-card .icon-6 { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+.zc-card .icon-7 { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.zc-card .icon-8 { background: linear-gradient(135deg, #84cc16, #65a30d); }
+
+/* ---------- 认证卡片 ---------- */
+.auth-wrap {
+  min-height: calc(100vh - 64px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+}
+.auth-card {
+  width: 420px;
+  max-width: 100%;
+  background: var(--zc-card);
+  border: 1px solid var(--zc-border);
+  border-radius: 20px;
+  box-shadow: var(--zc-shadow);
+  padding: 38px 36px 30px;
+}
+.auth-card h2 {
+  margin: 0 0 6px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+.auth-card .sub {
+  text-align: center;
+  color: var(--zc-text-sub);
+  font-size: 13px;
+  margin-bottom: 26px;
+}
+.auth-footer {
+  text-align: center;
+  padding: 26px 0 34px;
+  color: #94a3b8;
+  font-size: 13px;
+}

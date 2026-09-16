@@ -21,12 +21,17 @@
 |---|---|
 | 0 | 成功 |
 | 40100 | 未登录 / token 失效 |
-| 40300 | 无权限 |
+| 40101 | 用户名或密码错误 |
+| 40300 | 无权限 / 账号被禁用 |
 | 40400 | 资源不存在 |
 | 41001 | 参数错误 |
+| 41002 | 用户名已被注册 |
+| 42900 | 登录失败次数过多（限流锁定 10 分钟） |
 | 42001 | 选课时间冲突 |
 | 42002 | 课程名额已满 |
 | 42003 | 重复选课 |
+| 50000 | 服务器内部错误 |
+| 50001 | KV 不可用 |
 
 ## 4. 路径规范
 
@@ -35,10 +40,16 @@
 
 ## 5. 模块端点清单（随开发更新）
 
-### auth
-- `POST /api/auth/login` 登录 → { token, user }
-- `POST /api/auth/logout` 退出（清理 KV session）
-- `GET  /api/auth/me` 当前用户信息
+### auth（已实现，v0.1）
+- `POST /api/auth/register` 注册（username/password/realName，默认授予 student 角色）→ { id, username, realName }
+- `POST /api/auth/login` 登录 → { accessToken, refreshToken, expiresIn, user:{id,username,realName,roles[]} }
+- `POST /api/auth/refresh` 刷新访问令牌（body: refreshToken；轮换+重放检测）→ 同 login 返回结构
+- `POST /api/auth/logout` 退出（吊销 refreshToken）
+- `GET  /api/auth/me` 当前用户信息（Bearer）→ { id, username, realName, email, phone, roles[] }
+- `GET  /api/health` 健康检查（含数据库连通性，公开）
+- `GET  /api/kv-check` KV 连通性验证（Edge Functions，公开，验收用）
+
+**认证安全设计**：bcrypt(10) 密码哈希；JWT HS256 访问令牌 2h；刷新令牌 48 字节随机、库内存 SHA-256 哈希、7 天有效、每次刷新轮换，检测到重放立即吊销该用户全部会话；登录失败 5 次锁定 10 分钟（实例级）；登录行为写入 sys_login_log 审计。
 
 ### course（选课）
 - `GET  /api/course/list?term=&page=` 课程列表

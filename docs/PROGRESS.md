@@ -10,6 +10,7 @@
 - 2026-09-16：`.env`（连接配置）+ `cert/isrgrootx1.pem`（CA 证书）落盘，`.gitignore` 已排除机密
 - 2026-09-16：连通性读写测试全部通过（`scripts/db-test.py`，建库 `zhihui_campus` 成功）
 - 2026-09-16：项目文件夹改名"智汇校园-一站式服务平台"→"智汇校园一站式服务平台"，Git 初始化完成
+- 2026-09-16：首次提交 `5be781a` 推送成功 → **GitHub 远端：github.com/keaidang/zhihui-campus**（阶段 0 完成）
 
 ## 阶段计划
 
@@ -19,9 +20,25 @@
 - [x] 建立文档体系（PRD/ARCHITECTURE/DATABASE/API/CONVENTIONS/PROGRESS）
 - [x] 注册 TiDB Cloud Starter + 创建 zhihui_campus 库 + 连通性测试通过
 - [x] Git 仓库初始化 + 首次提交（GitHub 远端：zhihui-campus）
+- [x] GitHub 推送完成（用户终端执行；凭据此前已存于 Windows 凭据管理器，无需重新授权）
+- [x] EdgeOne CLI v1.6.40 安装完成（托管工作区，入口 `scripts/eo.cmd`）
+- [x] EdgeOne 登录完成（国际站 Global，账号 keaitx@gmail.com）
+- [x] Makers 项目关联完成：`eo.cmd makers link -n zhihui-campus`（关联配置在项目根 `.edgeone/`）
+- [x] 生成控制台粘贴清单 `scripts/edgeone-env-paste.txt`（6 个环境变量 + CA 证书全文）
+- [x] 控制台：开通 KV 并创建命名空间 `zhihuicampus`、绑定项目（KV 绑定变量名：`zhihuicampus`）
+- [x] **阶段 1 地基代码完成（2026-09-16 晚）**：
+  - 数据库：schema-001-auth.sql 已执行（sys_user / sys_role / sys_user_role / sys_refresh_token / sys_login_log + 3 个基础角色）
+  - 后端认证 API：register / login / refresh / logout / me + health（node-functions/），冒烟测试通过
+  - Edge Functions：/api/kv-check（KV 连通性验收用）
+  - Web 门户前端：Vue3 + Element Plus + Pinia，首页（一站式模块矩阵）+ 登录/注册页，本地构建通过
+  - 安全：bcrypt + JWT 双令牌 + 刷新轮换/重放检测 + 登录锁定 + 审计日志 + 参数化查询 + 安全响应头
+- [ ] **待用户：控制台环境变量新增 `JWT_SECRET`**（值在本地 .env，见 scripts/edgeone-env-paste.txt v3）
+- [ ] **待用户：确认 EdgeOne 构建设置**：框架预设 Vite / 构建命令 `npm run build` / 输出目录 `dist`（若控制台未自动识别）
+- [ ] **待用户：git push 后验收**：首页 UI → 注册 → 登录 → /api/health → /api/kv-check
+- [ ] 已知优化项：Element Plus 全量引入导致主 chunk 1.2MB，后续改按需引入 + manualChunks 分包
+- [ ] 控制台：配置环境变量（对照 scripts/edgeone-env-paste.txt 逐条粘贴）
+- [ ] 控制台：Git 集成连接 keaidang/zhihui-campus（main 分支，push 即自动部署）
 - [ ] 初始化代码骨架（web-admin / miniprogram / node-functions / edge-functions / seed）
-- [ ] EdgeOne Pages 创建项目、开通 KV、绑定命名空间
-- [ ] 连接串写入 EdgeOne 环境变量（不进 Git）
 
 ### 阶段 1 · 地基（先做，其他模块全依赖它）
 - [ ] 统一登录 + JWT + KV session

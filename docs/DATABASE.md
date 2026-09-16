@@ -12,6 +12,10 @@
 
 ## 2. 表清单（按模块）
 
+> **落地进度（2026-09-16）**：`database/schema-001-auth.sql` 已在 zhihui_campus 库执行完毕，
+> 已建实际表：`sys_user` / `sys_role` / `sys_user_role` / `sys_refresh_token` / `sys_login_log`（RBAC 采用独立角色表 + 关联表，
+> 与下方早期草案的 role 字段/permission 点表设计相比更规范，以此为准）。后续模块建表继续走 `schema-NNN-*.sql` 递增脚本。
+
 ### sys 系统与权限
 | 表 | 说明 | 关键字段 |
 |---|---|---|

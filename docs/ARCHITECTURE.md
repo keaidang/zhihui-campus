@@ -4,14 +4,16 @@
 
 ```
 全部跑在 EdgeOne Pages 上：
-  ├─ Vue 3 管理端        → Pages 静态托管（全球 CDN）
-  ├─ uni-app 小程序/H5端  → 静态托管
+  ├─ Vue 3 管理端        → Pages 静态托管（全球 CDN，桌面端专用地址）
+  ├─ uni-app 小程序/H5端  → 独立地址静态托管（不做网页自适应，移动端体验独立设计）
   ├─ Edge Functions      → 登录态校验（KV Session）、限流、计数
   ├─ Node Functions      → 核心业务 API（连 MySQL）
   ├─ KV                  → Session、功能开关、热数据计数
   ├─ Blob                → 图片、附件
   └─ TiDB Cloud Serverless → 结构化业务数据（MySQL 兼容）
 ```
+
+**前端多端策略（定稿）**：不采用响应式自适应网页，各端独立——管理端桌面专用；移动端以微信小程序为主 + H5 独立地址（uni-app 一套代码编译两端，维护成本低）；三端共用同一套 `/api` 后端，鉴权 Token 统一。
 
 唯一外部依赖是数据库；其余全部 Serverless，Git 推送即部署。
 
@@ -58,11 +60,14 @@
 
 **分工铁律：离 KV 近的轻活给 Edge（登录态/限流/计数），碰数据库的重活给 Node（业务 API/事务）。** 两边路由同处 `/api` 命名空间，规划路径避免撞车。
 
+**KV 实例信息（定稿）**：命名空间 `zhihuicampus`，绑定到项目的变量名同为 `zhihuicampus` —— Edge Functions 内通过 `zhihuicampus.get()/put()` 访问（key 前缀规范见 DATABASE.md：session: / config: / counter: / ratelimit:）。
+
 ## 2.6 数据库连接规范（已验证可用）
 
 - 连接配置在项目根 `.env`（已 gitignore），键：`DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME / DB_CA_PATH`
 - 端口 **4000**（非 3306）；TiDB 强制 TLS，CA 证书 `cert/isrgrootx1.pem`（ISRG Root X1，公开证书可入库）
-- Node Functions 连库模板：`mysql2` + 连接池 `connectionLimit: 10` + `ssl: { ca: readFileSync(...) }`
+- **线上 CA 传递方案（定稿）**：EdgeOne 环境变量值**上限 1000 字符**且禁止换行，PEM 证书（base64 后 1856 字符）超限无法放入 → **最终决策：线上不配置 DB_CA_CERT**。Node.js 运行时内置信任库含 ISRG Root X1，`ssl: { rejectUnauthorized: true }`（或不传 ca）即可直连 TiDB，已实测验证（scripts/noca-test.py）。本地开发仍可用 `.env` 的 `DB_CA_PATH` 显式加载证书；代码端做兼容：有 DB_CA_CERT 就还原 PEM，没有就走系统信任库
+- Node Functions 连库模板：`mysql2` + 连接池 `connectionLimit: 10` + `ssl: { rejectUnauthorized: true }`（线上默认走系统信任库；本地如需显式 CA 用 `.env` 的 DB_CA_PATH）
 - Serverless 冷启动会导致首次 TLS 握手 1~2 秒，演示前先预热一次请求
 - 连通性自检脚本：`scripts/db-test.py`（本地验证用，不参与部署）
 

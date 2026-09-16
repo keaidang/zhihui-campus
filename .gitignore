@@ -6,6 +6,14 @@
 # scripts 目录只保留自检脚本，其余全部为本地临时产物
 scripts/*
 !scripts/db-test.py
+!scripts/run-schema.py
+!scripts/smoke-auth.mjs
+!scripts/eo.cmd
+
+# Node/构建日志
+*.log
+npm-exit.txt
+npm-build-exit.txt
 
 # 依赖与构建产物
 node_modules/
