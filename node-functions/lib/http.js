@@ -1,13 +1,26 @@
 // node-functions/lib/http.js — 统一响应与安全头
 // 响应格式约定见 docs/API.md: { code, message, data }
 
+// CORS：同源部署时不影响；多端独立域名（admin/m 子域）跨域调用时必需。
+// 白名单通过环境变量 CORS_ORIGIN 配置（逗号分隔），未配置则放开（鉴权走 Bearer 无 Cookie，风险可控）
+const allowOrigin = () => process.env.CORS_ORIGIN || '*';
+
 const SECURITY_HEADERS = {
   'Content-Type': 'application/json; charset=UTF-8',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Cache-Control': 'no-store',
+  'Access-Control-Allow-Origin': allowOrigin(),
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
 };
+
+/** CORS 预检：跨域场景浏览器对带 JSON/Authorization 的请求自动发起 OPTIONS */
+export function preflight() {
+  return new Response(null, { status: 204, headers: SECURITY_HEADERS });
+}
 
 export function ok(data = null, message = 'ok') {
   return new Response(JSON.stringify({ code: 0, message, data }), {

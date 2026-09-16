@@ -11,6 +11,7 @@ export const useAuthStore = defineStore('auth', {
     // 刷新令牌存 localStorage（XSS 风险与 UX 的折中；后续可升级 HttpOnly Cookie 方案）
     refreshToken: localStorage.getItem(REFRESH_KEY) || '',
     user: null, // { id, username, realName, roles[] }
+    restored: false, // 本轮页面生命周期内是否已尝试恢复会话
   }),
   getters: {
     isLoggedIn: (s) => !!s.accessToken,
@@ -51,6 +52,16 @@ export const useAuthStore = defineStore('auth', {
         return true;
       }
       return false;
+    },
+
+    /** 页面加载时的会话恢复：F5 后 accessToken 已丢失，用 refreshToken 静默换回 */
+    async restoreSession() {
+      if (this.restored) return;
+      this.restored = true;
+      if (this.refreshToken && !this.accessToken) {
+        const okRefresh = await this.tryRefresh().catch(() => false);
+        if (okRefresh) await this.fetchMe().catch(() => {});
+      }
     },
 
     async logout() {

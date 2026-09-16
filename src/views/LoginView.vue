@@ -1,84 +1,89 @@
 <template>
-  <div>
-    <header class="zc-navbar">
-      <div class="zc-container inner">
-        <div class="zc-logo" @click="$router.push('/')">
-          <el-icon :size="26"><Sunny /></el-icon>
-          <span>智汇校园</span>
-          <span class="sub">SMART CAMPUS</span>
+  <div class="gate-page">
+    <!-- 抬头：校名品牌 + 认证标题 -->
+    <header class="gate-header zc-container">
+      <div class="gate-brand">
+        <span class="badge">智</span>
+        <div>
+          <strong>智汇校园</strong>
+          <span>ZHIHUI CAMPUS PLATFORM</span>
         </div>
-        <el-button text @click="$router.push('/')">返回首页</el-button>
       </div>
+      <h1 class="gate-title">智慧校园 · 统一身份认证</h1>
     </header>
 
-    <div class="auth-wrap">
-      <div class="auth-card">
-        <h2>{{ mode === 'login' ? '欢迎回来' : '加入智汇校园' }}</h2>
-        <p class="sub">{{ mode === 'login' ? '登录你的统一校园账号' : '注册即开通全部校园服务' }}</p>
+    <!-- 认证卡片 -->
+    <main class="gate-main">
+      <div class="gate-card">
+        <h2>{{ mode === 'login' ? '账号密码登录' : '注册统一账号' }}</h2>
+        <div class="divider"></div>
 
-        <el-tabs v-model="mode" stretch>
-          <!-- 登录 -->
-          <el-tab-pane label="登录" name="login">
-            <el-form :model="loginForm" size="large" @submit.prevent>
-              <el-form-item>
-                <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" clearable />
-              </el-form-item>
-              <el-form-item>
-                <el-input
-                  v-model="loginForm.password"
-                  type="password"
-                  placeholder="密码"
-                  :prefix-icon="Lock"
-                  show-password
-                  @keyup.enter="doLogin"
-                />
-              </el-form-item>
-              <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doLogin">
-                登 录
-              </el-button>
-            </el-form>
-          </el-tab-pane>
+        <!-- 登录 -->
+        <el-form v-if="mode === 'login'" :model="loginForm" size="large" @submit.prevent>
+          <el-form-item>
+            <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" clearable />
+          </el-form-item>
+          <el-form-item>
+            <el-input
+              v-model="loginForm.password"
+              type="password"
+              placeholder="密码"
+              :prefix-icon="Lock"
+              show-password
+              @keyup.enter="doLogin"
+            />
+          </el-form-item>
+          <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doLogin">
+            登录
+          </el-button>
+        </el-form>
 
-          <!-- 注册 -->
-          <el-tab-pane label="注册" name="register">
-            <el-form :model="regForm" size="large" @submit.prevent>
-              <el-form-item>
-                <el-input v-model="regForm.realName" placeholder="姓名" :prefix-icon="Postcard" clearable />
-              </el-form-item>
-              <el-form-item>
-                <el-input v-model="regForm.username" placeholder="用户名（字母开头，4~32 位）" :prefix-icon="User" clearable />
-              </el-form-item>
-              <el-form-item>
-                <el-input
-                  v-model="regForm.password"
-                  type="password"
-                  placeholder="密码（至少 8 位）"
-                  :prefix-icon="Lock"
-                  show-password
-                />
-              </el-form-item>
-              <el-form-item>
-                <el-input
-                  v-model="regForm.confirm"
-                  type="password"
-                  placeholder="确认密码"
-                  :prefix-icon="Lock"
-                  show-password
-                  @keyup.enter="doRegister"
-                />
-              </el-form-item>
-              <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
-                注 册
-              </el-button>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
+        <!-- 注册 -->
+        <el-form v-else :model="regForm" size="large" @submit.prevent>
+          <el-form-item>
+            <el-input v-model="regForm.realName" placeholder="姓名" :prefix-icon="Postcard" clearable />
+          </el-form-item>
+          <el-form-item>
+            <el-input v-model="regForm.username" placeholder="用户名（字母开头，4~32 位）" :prefix-icon="User" clearable />
+          </el-form-item>
+          <el-form-item>
+            <el-input
+              v-model="regForm.password"
+              type="password"
+              placeholder="密码（至少 8 位）"
+              :prefix-icon="Lock"
+              show-password
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-input
+              v-model="regForm.confirm"
+              type="password"
+              placeholder="确认密码"
+              :prefix-icon="Lock"
+              show-password
+              @keyup.enter="doRegister"
+            />
+          </el-form-item>
+          <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
+            注 册
+          </el-button>
+        </el-form>
 
-        <p class="sub" style="margin: 18px 0 0">
-          注册即代表同意《校园平台服务协议》· 默认开通学生角色
-        </p>
+        <div class="gate-links">
+          <a v-if="mode === 'login'" @click="mode = 'register'">免费注册</a>
+          <a v-else @click="mode = 'login'">返回登录</a>
+          <span>|</span>
+          <a @click="onForgot">忘记密码</a>
+        </div>
+
+        <p class="gate-tip">一个账号通行全部校园服务 · 默认开通学生角色</p>
       </div>
-    </div>
+    </main>
+
+    <footer class="gate-footer">
+      智汇校园 · 一站式智慧校园服务平台 © 2026
+    </footer>
   </div>
 </template>
 
@@ -141,11 +146,12 @@ async function doRegister() {
     loading.value = false;
   }
 }
+
+function onForgot() {
+  ElMessage.info('请联系管理员重置密码');
+}
 </script>
 
 <style scoped>
 .w-full { width: 100%; }
-:deep(.el-tabs__nav-wrap::after) { display: none; }
-:deep(.el-tabs__active-bar) { height: 3px; border-radius: 2px; }
-:deep(.el-form-item) { margin-bottom: 20px; }
 </style>

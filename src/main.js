@@ -7,6 +7,7 @@ import 'element-plus/dist/index.css';
 
 import App from './App.vue';
 import router from './router';
+import { useAuthStore } from './stores/auth';
 import './styles.css';
 
 const app = createApp(App);
@@ -15,7 +16,11 @@ for (const [name, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(name, component);
 }
 
-app.use(createPinia());
+const pinia = createPinia();
+app.use(pinia);
 app.use(router);
 app.use(ElementPlus, { locale: zhCn });
-app.mount('#app');
+
+// 挂载前静默恢复会话：F5 后用 refreshToken 换回 accessToken，避免"刷新页面就掉线"
+const auth = useAuthStore(pinia);
+auth.restoreSession().catch(() => {}).finally(() => app.mount('#app'));

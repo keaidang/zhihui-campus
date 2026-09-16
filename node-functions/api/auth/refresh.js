@@ -2,6 +2,9 @@
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody } from '../../lib/http.js';
 import { signAccessToken, rotateRefreshToken, newRefreshToken, saveRefreshToken } from '../../lib/auth.js';
+import { preflight } from '../../lib/http.js';
+
+export { preflight as onRequestOptions };
 
 export async function onRequestPost(context) {
   try {

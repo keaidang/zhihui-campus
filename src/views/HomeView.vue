@@ -63,14 +63,14 @@
       </div>
     </section>
 
-    <footer class="auth-footer">
+    <footer class="site-footer">
       智汇校园 · 一站式智慧校园服务平台 © 2026 · EdgeOne 全栈驱动
     </footer>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../stores/auth';
@@ -78,14 +78,6 @@ import { useAuthStore } from '../stores/auth';
 const router = useRouter();
 const auth = useAuthStore();
 const modulesRef = ref(null);
-
-// 已登录用户静默恢复会话
-onMounted(async () => {
-  if (!auth.isLoggedIn && auth.refreshToken) {
-    const okRefresh = await auth.tryRefresh();
-    if (okRefresh) auth.fetchMe();
-  }
-});
 
 const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', iconClass: 'icon-1', ready: false },

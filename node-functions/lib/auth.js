@@ -37,8 +37,9 @@ function sha256(s) {
 }
 
 export async function saveRefreshToken(userId, token) {
-  const expiresAt = new Date(Date.now() + REFRESH_TTL_SEC * 1000)
-    .toISOString().slice(0, 19).replace('T', ' ');
+  // 传 Date 对象：由连接池按 timezone('+08:00') 统一序列化/反序列化。
+  // 勿改回 toISOString() 字符串——UTC 墙钟 + 池时区解读会造成 8 小时偏移
+  const expiresAt = new Date(Date.now() + REFRESH_TTL_SEC * 1000);
   await query(
     'INSERT INTO sys_refresh_token (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
     [userId, sha256(token), expiresAt],
@@ -94,4 +95,24 @@ export function recordFail(key) {
 
 export function clearFail(key) {
   failMap.delete(key);
+}
+
+/** 注册频控（实例级内存版：每 IP 每小时最多 5 次，防脚本批量注册） */
+const regMap = new Map(); // ip -> { count, windowStart }
+const REG_MAX = 5;
+const REG_WINDOW_MS = 60 * 60 * 1000;
+
+export function registerAllowed(ip) {
+  const rec = regMap.get(ip);
+  if (!rec || Date.now() - rec.windowStart > REG_WINDOW_MS) return true;
+  return rec.count < REG_MAX;
+}
+
+export function registerRecord(ip) {
+  const rec = regMap.get(ip);
+  if (!rec || Date.now() - rec.windowStart > REG_WINDOW_MS) {
+    regMap.set(ip, { count: 1, windowStart: Date.now() });
+  } else {
+    rec.count += 1;
+  }
 }

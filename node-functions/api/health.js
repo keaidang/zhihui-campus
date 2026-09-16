@@ -1,6 +1,8 @@
 // GET /api/health — 公开健康检查（含数据库连通性）
 import { getPool } from '../lib/db.js';
-import { ok, jsonError } from '../lib/http.js';
+import { ok, jsonError, preflight } from '../lib/http.js';
+
+export { preflight as onRequestOptions };
 
 export async function onRequestGet() {
   try {

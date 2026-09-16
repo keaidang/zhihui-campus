@@ -38,3 +38,19 @@ export async function query(sql, params = []) {
   const [rows] = await getPool().execute(sql, params);
   return rows;
 }
+
+/** 事务封装：fn(conn) 内用 conn.execute 执行多条语句，任一失败自动回滚 */
+export async function withTransaction(fn) {
+  const conn = await getPool().getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}

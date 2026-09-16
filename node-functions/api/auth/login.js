@@ -3,6 +3,9 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
 import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
+import { preflight } from '../../lib/http.js';
+
+export { preflight as onRequestOptions };
 
 export async function onRequestPost(context) {
   try {

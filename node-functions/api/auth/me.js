@@ -1,7 +1,9 @@
 // GET /api/auth/me — 获取当前登录用户信息（需 Bearer Token）
 import { query } from '../../lib/db.js';
-import { ok, fail, jsonError } from '../../lib/http.js';
+import { ok, fail, jsonError, preflight } from '../../lib/http.js';
 import { verifyAccessToken } from '../../lib/auth.js';
+
+export { preflight as onRequestOptions };
 
 export async function onRequestGet(context) {
   try {
