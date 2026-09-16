@@ -64,7 +64,8 @@
     </section>
 
     <footer class="site-footer">
-      智汇校园 · 一站式智慧校园服务平台 © 2026 · EdgeOne 全栈驱动
+      清北大学 · 智汇校园一站式服务平台 © 2026 ·
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
     </footer>
   </div>
 </template>

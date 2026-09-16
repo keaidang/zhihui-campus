@@ -9,12 +9,13 @@
           <span>ZHIHUI CAMPUS PLATFORM</span>
         </div>
       </div>
-      <h1 class="gate-title">智慧校园 · 统一身份认证</h1>
+      <h1 class="gate-title">智汇校园 · 统一身份认证</h1>
     </header>
 
     <!-- 认证卡片 -->
     <main class="gate-main">
       <div class="gate-card">
+        <img class="card-school-name" src="/name.png" alt="清北大学" />
         <h2>{{ mode === 'login' ? '账号密码登录' : '注册统一账号' }}</h2>
         <div class="divider"></div>
 
