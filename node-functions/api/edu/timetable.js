@@ -21,7 +21,7 @@ export async function onRequestGet(context) {
            JOIN edu_class x ON x.id = e.class_id
            JOIN edu_course c ON c.id = x.course_id
            JOIN sys_user u ON u.id = x.teacher_id
-          WHERE e.student_id = ? AND e.term = ? AND e.status = 1
+          WHERE e.student_id = ? AND e.term = ? AND e.status IN (1, 2)
           ORDER BY x.week_day, x.section`,
         [userId, TERM],
       );
