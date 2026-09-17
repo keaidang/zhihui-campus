@@ -37,6 +37,8 @@ export function fail(code, message, status = 400) {
 }
 
 export function jsonError(e) {
+  // 业务性错误（guard.js HttpError）按其自带 code/status 返回，不吞成 500
+  if (e && typeof e.toResponse === 'function') return e.toResponse();
   console.error('[api-error]', e);
   return fail(50000, '服务器内部错误', 500);
 }

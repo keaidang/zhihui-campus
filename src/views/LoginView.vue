@@ -81,7 +81,8 @@
     </main>
 
     <footer class="gate-footer">
-      智汇校园 · 一站式智慧校园服务平台 © 2026
+      清北大学 · 智汇校园一站式服务平台 © 2026 ·
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
     </footer>
   </div>
 </template>
@@ -111,7 +112,8 @@ async function doLogin() {
     const res = await auth.login(loginForm.username, loginForm.password);
     if (res.code === 0) {
       ElMessage.success(`欢迎回来，${res.data.user.realName || res.data.user.username}！`);
-      router.push('/');
+      const redirect = router.currentRoute.value.query.redirect;
+      router.push(typeof redirect === 'string' && redirect ? redirect : '/workbench');
     } else {
       ElMessage.error(res.message || '登录失败');
     }

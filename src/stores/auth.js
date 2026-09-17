@@ -15,8 +15,22 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isLoggedIn: (s) => !!s.accessToken,
+    roles: (s) => s.user?.roles || [],
+    isAdmin: (s) => (s.user?.roles || []).includes('admin'),
+    isStaff: (s) =>
+      (s.user?.roles || []).some((r) => ['admin', 'counselor', 'teacher', 'leader'].includes(r)),
+    primaryRole: (s) => {
+      const order = ['admin', 'leader', 'counselor', 'teacher', 'student'];
+      const mine = s.user?.roles || [];
+      return order.find((r) => mine.includes(r)) || 'student';
+    },
   },
   actions: {
+    /** 是否拥有任一角色 */
+    hasRole(list) {
+      const mine = this.user?.roles || [];
+      return list.some((r) => mine.includes(r));
+    },
     async login(username, password) {
       const res = await api('/api/auth/login', {
         method: 'POST',

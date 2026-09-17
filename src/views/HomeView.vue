@@ -18,7 +18,8 @@
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                  <el-dropdown-item command="workbench">进入工作台</el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -107,6 +108,8 @@ async function onCommand(cmd) {
   if (cmd === 'logout') {
     await auth.logout();
     ElMessage.success('已退出登录');
+  } else if (cmd === 'workbench') {
+    router.push('/workbench');
   }
 }
 </script>

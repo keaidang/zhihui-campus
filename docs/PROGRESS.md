@@ -78,4 +78,23 @@
 
 - 2026-09-16：项目初始化、TiDB 就绪、阶段 1 地基上线（认证 + 门户）
 - 2026-09-16（深夜）：地基代码审计后修复——P1 刷新令牌时区偏移 8h、P1 刷新页面丢登录态（main.js 挂载前 restoreSession）；P2 注册接口 IP 频控 + 建用户/授角色事务化 + 唯一键冲突兜底、P2 刷新令牌条件更新防并发竞态、P2 全端点 CORS/OPTIONS 支持；UI 改版为庄重学术蓝风格（登录页参照传统"统一身份认证"版式：深蓝灰半透明卡片 + 校名抬头；背景纱罩减薄使照片清晰显形）
+- 2026-09-17：**品牌与合规上线**——域名 https://campus.keaidang.com/ 生效；校徽 public/logo.png（favicon/导航/抬头）+ 书法校名 public/name.png；页脚 ICP 备案（苏ICP备2026056678号 → beian.miit.gov.cn）；背景图"加载不可见"真凶定位（body 不透明底色盖住 z-index:-1 背景层）并修复
+- 2026-09-17：**登录 500 破案并修复**——①JWT_SECRET 未注入 EdgeOne 函数运行时（新增 /api/health 诊断位 jwtConfigured/protocol）；②TiDB Serverless 对 mysql2 预编译语句偶发 `malform packet error`，全项目 query() 改文本协议（execute → query，防注入不变）；本地 5 轮稳定性验证 + 线上注册/登录终验通过
+- 2026-09-17：**功能架构定稿**（docs/RESEARCH-功能架构调研.md）：五层架构 + RBAC 五角色（student/teacher/counselor/leader/admin）；一期教务线（选课+成绩课表）+ 学工线（请销假审批流）双线并行；砍掉校园点餐
+- 2026-09-17（当晚）：**基础部分落地**——
+  - 数据库 schema-002-base.sql：五角色种子、sys_department（6 院系种子）、sys_class（3 班级种子）、sys_user 扩展 user_no/dept_id/class_id
+  - 后端 lib/guard.js：HttpError + requireAuth + requireRoles（角色实时查库，不信令牌）+ dataScope（self/dept/all）
+  - 管理端 API：/api/admin/meta（角色+院系+班级）、/api/admin/users（分页列表/搜索/改状态/分配角色/设归属）、/api/admin/departments（列表/新增/启停）
+  - /api/auth/me 增强：返回 user_no/dept/class + 数据库实时角色
+  - 前端：PortalShell（顶栏+按角色侧边菜单）、WorkbenchView（按角色功能矩阵）、UserManageView（用户管理）、路由守卫（登录态+角色）
+  - 工具：scripts/migrate.mjs（SQL 迁移执行器）、scripts/grant-role.mjs（角色授予/建号/重置密码）
+  - 引导账号：`admin` / `Zhihui@2026`（角色 admin+student，归属计算机学院；**首次登录务必改密**）
+
+## 下一步（阶段 1 收尾 → 阶段 2 一期）
+
+- [ ] 院系班级管理页（API 已就绪，前端待做）
+- [ ] M1 教务线：schema-003（course/teaching_class/course_selection/score）+ 选课 API（事务 + 条件 UPDATE 防超卖 + 唯一键防重选）+ 学生选课页 + 教师成绩录入页
+- [ ] M2 学工线：schema-004（flow_instance/flow_node + leave_apply + repair_order）+ 请销假审批流 API + 学生申请页 + 辅导员审批页
+- [ ] 公告模块（含 M2）
+- [ ] 已知优化项：Element Plus 按需引入 + manualChunks 分包（主 chunk 1.2MB）
 

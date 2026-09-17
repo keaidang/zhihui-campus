@@ -38,6 +38,37 @@
 - 前缀 `/api/{module}/{resource}`，RESTful 动词：GET 查 / POST 增 / PUT 改 / DELETE 删
 - 管理端专用接口前缀 `/api/admin/...`（需对应角色）
 
+## 5. 接口清单（截至 2026-09-17）
+
+### 5.1 认证（公开 / 需登录）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | /api/auth/register | 公开 | 学生自助注册（默认 student 角色，IP 频控 5 次/时） |
+| POST | /api/auth/login | 公开 | 登录，返回双令牌 + user{roles} |
+| POST | /api/auth/refresh | 公开 | 刷新令牌轮换（重放检测） |
+| POST | /api/auth/logout | 登录 | 吊销刷新令牌 |
+| GET | /api/auth/me | 登录 | 当前用户（含 user_no / dept / class + 数据库实时角色） |
+| GET | /api/health | 公开 | 健康检查（db / jwtConfigured / protocol 诊断位） |
+
+### 5.2 管理端基础（阶段 1 基础部分）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/admin/meta | admin / counselor | 角色列表 + 院系列表 + 班级列表 + 当前数据范围 |
+| GET | /api/admin/users | admin / counselor | 分页用户列表，支持 keyword / role / deptId / status 过滤（counselor 仅本院） |
+| POST | /api/admin/users | admin / counselor | `{userId, action, value}`；action=`setStatus`(改启停) / `setRoles`(仅 admin) / `setProfile`(学号工号+院系班级) |
+| GET | /api/admin/departments | admin / counselor | 院系列表（含用户数/班级数） |
+| POST | /api/admin/departments | admin | `{action: create \| setStatus}` |
+
+### 5.3 鉴权中间件约定（node-functions/lib/guard.js）
+
+- `requireAuth(context)` → JWT 载荷；`requireRoles(context, [codes])` → **角色实时查库**（令牌角色过期不影响判定），并返回 `deptId`
+- `dataScope(roles, deptId)` → `{ type: 'all' | 'dept' | 'self' }`，业务 SQL 必须按此强制拼接 WHERE
+- 角色编码：`student` / `teacher` / `counselor` / `leader` / `admin`
+- 业务错误统一抛 `HttpError(code, message, status)`，`jsonError` 自动按其 status 返回（不再吞成 500）
+
+
 ## 5. 模块端点清单（随开发更新）
 
 ### auth（已实现，v0.1）
