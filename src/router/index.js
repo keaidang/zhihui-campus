@@ -5,7 +5,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
-    { path: '/login', name: 'login', component: () => import('../views/LoginView.vue') },
+    { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { gate: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

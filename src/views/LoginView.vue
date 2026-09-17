@@ -1,11 +1,12 @@
 <template>
   <div class="gate-page">
-    <!-- 抬头：校名品牌 + 认证标题 -->
-    <header class="gate-header zc-container">
+    <!-- 抬头：校徽 + 书法校名 + 竖分隔线 + 认证标题（整体居中，参考统一身份认证截图） -->
+    <header class="gate-header">
       <div class="gate-brand">
         <img class="gate-logo" src="/logo.png" alt="清北大学校徽" />
         <img class="gate-name" src="/name.png" alt="清北大学" />
       </div>
+      <span class="gate-vline" aria-hidden="true"></span>
       <h1 class="gate-title">智汇校园 · 统一身份认证</h1>
     </header>
 
