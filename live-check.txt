@@ -1,17 +1,0 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="æ¸åå¤§å­¦ Â· æºæ±æ ¡å­ä¸ç«å¼æºæ§æ ¡å­æå¡å¹³å°" />
-    <title>æ¸åå¤§å­¦ Â· æºæ±æ ¡å­ä¸ç«å¼æå¡å¹³å°</title>
-    <script type="module" crossorigin src="/assets/index-Cdwk5xNF.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CT2t0-ir.css">
-  </head>
-  <body>
-    <div id="app"></div>
-  </body>
-</html>
-

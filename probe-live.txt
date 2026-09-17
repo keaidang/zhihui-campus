@@ -1,2 +1,0 @@
-﻿REGISTER probe212640 => 200 {"code":0,"message":"注册成功","data":{"id":5602429,"username":"probe212640","realName":"????"}}
-LOGIN => 500 {"code":50000,"message":"服务器内部错误","data":null}

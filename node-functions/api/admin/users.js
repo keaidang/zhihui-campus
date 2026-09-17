@@ -2,8 +2,8 @@
 // 权限：admin（全校）、counselor（仅本院，且不能改角色）
 // GET  分页列表  ?keyword=&role=&deptId=&status=&page=1&pageSize=20
 // POST 单条操作  { userId, action: setStatus | setRoles | setProfile, value }
-import { ok, fail, jsonError, readBody, preflight } from '../../lib/http.js';
-import { requireRoles, MANAGER_ROLES, dataScope, ERR_FORBIDDEN } from '../../lib/guard.js';
+import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
+import { requireRoles, MANAGER_ROLES, dataScope, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
 
 export { preflight as onRequestOptions };
@@ -78,6 +78,7 @@ export async function onRequestPost(context) {
     const { roles, userId: operatorId } = await requireRoles(context, MANAGER_ROLES);
     const scope = dataScope(roles, null);
     const isAdmin = roles.includes('admin');
+    const ip = clientIp(context.request);
     const body = await readBody(context.request);
     const targetId = Number(body.userId);
     const action = String(body.action || '');
@@ -99,20 +100,29 @@ export async function onRequestPost(context) {
       const next = Number(value) === 1 ? 1 : 0;
       if (targetId === operatorId) return fail(41005, '不能修改自己的账号状态');
       await query('UPDATE sys_user SET status = ? WHERE id = ?', [next, targetId]);
+      await opLog(operatorId, 'user.setStatus', `user:${targetId}`, String(next), ip);
       return ok({ userId: targetId, status: next }, next === 1 ? '账号已启用' : '账号已禁用');
     }
 
     if (action === 'setProfile') {
       const userNo = String(value?.userNo ?? '').trim().slice(0, 32);
-      const deptId = value?.deptId ? Number(value.deptId) : null;
+      // 越权修复：院系归属只有超管能改；辅导员只能补学号/班级，
+      // 否则可把用户 dept_id 置空使其逃出"本院"数据范围（scope 失效）
+      let deptId = target.dept_id;
+      if (isAdmin) deptId = value?.deptId ? Number(value.deptId) : null;
       const classId = value?.classId ? Number(value.classId) : null;
-      if (!isAdmin && deptId && deptId !== target.dept_id) throw ERR_FORBIDDEN('不能调整到其他院系');
+      if (classId) {
+        const cls = await query('SELECT id, dept_id FROM sys_class WHERE id = ?', [classId]);
+        if (cls.length === 0) return fail(41001, '班级不存在');
+        if (deptId && cls[0].dept_id !== deptId) return fail(41001, '班级不属于所选院系');
+      }
       await query('UPDATE sys_user SET user_no = ?, dept_id = ?, class_id = ? WHERE id = ?', [
         userNo,
         deptId,
         classId,
         targetId,
       ]);
+      await opLog(operatorId, 'user.setProfile', `user:${targetId}`, JSON.stringify({ userNo, deptId, classId }), ip);
       return ok({ userId: targetId }, '归属信息已更新');
     }
 
@@ -138,6 +148,7 @@ export async function onRequestPost(context) {
           ]);
         }
       });
+      await opLog(operatorId, 'user.setRoles', `user:${targetId}`, codes.join(','), ip);
       return ok({ userId: targetId, roles: codes }, '角色已更新（重新登录后菜单生效）');
     }
 

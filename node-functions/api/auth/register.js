@@ -7,6 +7,8 @@ import { registerAllowed, registerRecord } from '../../lib/auth.js';
 
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/; // 字母开头, 4~32 位
 const PASSWORD_MIN = 8;
+// 保留用户名：防止仿冒管理/系统账号做钓鱼
+const RESERVED_NAMES = ['admin', 'root', 'administrator', 'system', 'sysop', 'operator', 'support', 'master'];
 
 export async function onRequestPost(context) {
   try {
@@ -18,6 +20,9 @@ export async function onRequestPost(context) {
 
     if (!USERNAME_RE.test(username)) {
       return fail(41001, '用户名须为字母开头、4~32 位字母数字下划线');
+    }
+    if (RESERVED_NAMES.includes(username.toLowerCase())) {
+      return fail(41002, '该用户名为系统保留，请更换');
     }
     if (password.length < PASSWORD_MIN || password.length > 64) {
       return fail(41001, `密码长度须为 ${PASSWORD_MIN}~64 位`);

@@ -1,6 +1,0 @@
-[1] 注册等价 OK: probe_01118f
-[2] 用户查询 OK, valid = true
-[3] 角色查询 OK: student
-[4] 刷新令牌 INSERT(Date 参数) OK, expires_at = Thu Sep 24 2026 21:18:13 GMT+0800 (中国标准时间)
-ERR !! 复现到错误: ER_UNKNOWN_ERROR malform packet error INSERT INTO sys_login_log (user_id, username, ip, user_agent, success) VALUES (?, ?, ?, ?, 1)
-探针数据已清理

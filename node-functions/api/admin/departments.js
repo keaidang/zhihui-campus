@@ -1,7 +1,7 @@
 // /api/admin/departments — 院系管理（列表 / 新增 / 启停）
 // 权限：admin 可写；counselor 只读
-import { ok, fail, jsonError, readBody, preflight } from '../../lib/http.js';
-import { requireRoles, MANAGER_ROLES, ERR_FORBIDDEN } from '../../lib/guard.js';
+import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
+import { requireRoles, MANAGER_ROLES, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
 
 export { preflight as onRequestOptions };
@@ -24,8 +24,9 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   try {
-    const { roles } = await requireRoles(context, MANAGER_ROLES);
+    const { roles, userId: operatorId } = await requireRoles(context, MANAGER_ROLES);
     if (!roles.includes('admin')) throw ERR_FORBIDDEN('仅超级管理员可维护院系');
+    const ip = clientIp(context.request);
     const body = await readBody(context.request);
     const action = String(body.action || 'create');
 
@@ -42,6 +43,7 @@ export async function onRequestPost(context) {
         name,
         sort,
       ]);
+      await opLog(operatorId, 'dept.create', `dept:${code}`, name, ip);
       return ok({ id: r.insertId, code, name }, '院系已创建');
     }
 
@@ -50,6 +52,7 @@ export async function onRequestPost(context) {
       const status = Number(body.value) === 1 ? 1 : 0;
       if (!id) return fail(41001, '缺少院系 id');
       await query('UPDATE sys_department SET status = ? WHERE id = ?', [status, id]);
+      await opLog(operatorId, 'dept.setStatus', `dept:${id}`, String(status), ip);
       return ok({ id, status }, status === 1 ? '院系已启用' : '院系已停用');
     }
 

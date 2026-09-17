@@ -49,6 +49,19 @@ INSERT IGNORE INTO sys_department (code, name, sort) VALUES
   ('FL',  '外国语学院',           5),
   ('ME',  '机械工程学院',         6);
 
+-- 7. 管理操作审计表（谁在何时对谁做了什么，安全审计必备）
+CREATE TABLE IF NOT EXISTS sys_op_log (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  operator_id BIGINT UNSIGNED NOT NULL COMMENT '操作人',
+  action      VARCHAR(64)  NOT NULL COMMENT '动作: user.setRoles 等',
+  target      VARCHAR(128) NOT NULL DEFAULT '' COMMENT '操作对象',
+  detail      VARCHAR(512) NOT NULL DEFAULT '' COMMENT '变更明细',
+  ip          VARCHAR(64)  NOT NULL DEFAULT '',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_op_time (operator_id, created_at),
+  KEY idx_target (target)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '管理操作审计日志';
+
 -- 6. 班级种子数据（示例：计算机学院 2026 级）
 INSERT INTO sys_class (dept_id, name, grade)
 SELECT d.id, '计算机 2601 班', 2026 FROM sys_department d WHERE d.code = 'CS'

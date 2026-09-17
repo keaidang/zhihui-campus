@@ -1,1 +1,0 @@
-﻿{"code":0,"message":"ok","data":{"db":"up","jwtConfigured":false,"protocol":"text-query","time":"2026-09-17T13:31:55.368Z"}}

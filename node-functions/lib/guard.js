@@ -73,6 +73,19 @@ export function dataScope(roles, deptId) {
   return { type: 'self', deptId: null };
 }
 
+/** 管理操作审计：所有 /api/admin/* 的写操作必须留痕 */
+export async function opLog(operatorId, action, target, detail, ip = '') {
+  try {
+    await query(
+      'INSERT INTO sys_op_log (operator_id, action, target, detail, ip) VALUES (?, ?, ?, ?, ?)',
+      [operatorId, String(action).slice(0, 64), String(target).slice(0, 128), String(detail).slice(0, 512), String(ip).slice(0, 64)],
+    );
+  } catch {
+    // 审计失败不阻断业务，但要在服务端日志可见
+    console.error('[op-log-fail]', operatorId, action, target);
+  }
+}
+
 /** 常用：管理端角色（超管 + 辅导员可进，具体能力在各自接口内用 scope 区分） */
 export const ADMIN_ROLES = ['admin'];
 export const MANAGER_ROLES = ['admin', 'counselor'];

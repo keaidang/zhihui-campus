@@ -116,7 +116,14 @@
           <el-input v-model="profileForm.userNo" placeholder="如 2026001 / T0001" />
         </el-form-item>
         <el-form-item label="院系">
-          <el-select v-model="profileForm.deptId" placeholder="选择院系" clearable style="width: 100%" @change="profileForm.classId = ''">
+          <el-select
+            v-model="profileForm.deptId"
+            placeholder="选择院系"
+            clearable
+            :disabled="!auth.isAdmin"
+            style="width: 100%"
+            @change="profileForm.classId = ''"
+          >
             <el-option v-for="d in meta.departments" :key="d.id" :label="d.name" :value="String(d.id)" />
           </el-select>
         </el-form-item>

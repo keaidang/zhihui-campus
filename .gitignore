@@ -3,17 +3,35 @@
 .env.local
 *.pem.bak
 
-# scripts 目录只保留自检脚本，其余全部为本地临时产物
+# scripts 目录白名单制：只保留正式脚本，其余为本地临时产物
 scripts/*
 !scripts/db-test.py
 !scripts/run-schema.py
 !scripts/smoke-auth.mjs
 !scripts/eo.cmd
+!scripts/migrate.mjs
+!scripts/grant-role.mjs
+
+# 调试探针与本地验证产物（严禁入库）
+probe*
+canary*
+*-report.txt
+*-check.txt
+last*.txt
+push-result.txt
+live-check.txt
+health-live.txt
+deploy-check.txt
+verify.txt
+b.txt
+c.txt
+tracked.txt
 
 # Node/构建日志
 *.log
 npm-exit.txt
 npm-build-exit.txt
+npm-build2-exit.txt
 
 # 依赖与构建产物
 node_modules/
@@ -24,3 +42,6 @@ build/
 # 系统文件
 .DS_Store
 Thumbs.db
+audit-status.txt
+s.txt
+node-ok.txt
