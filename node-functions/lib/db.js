@@ -47,28 +47,40 @@ const TRANSIENT = [
   'PROTOCOL_CONNECTION_LOST',
   'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
   'ERR_SOCKET_BAD_PORT',
+  'ER_USER_LIMIT_REACHED',
+  'ER_CON_COUNT_ERROR',
 ];
 function isTransient(e) {
   if (!e) return false;
   if (TRANSIENT.includes(e.code)) return true;
-  const msg = String(e.message || '');
-  return msg.includes('malform packet') || msg.includes('connect ECONNRESET') || msg.includes('Connection lost');
+  if (typeof e.code === 'string' && e.code.startsWith('PROTOCOL')) return true;
+  const msg = String(e.message || '').toLowerCase();
+  return (
+    msg.includes('malform packet') ||
+    msg.includes('econnreset') ||
+    msg.includes('connection lost') ||
+    msg.includes('handshake') ||
+    msg.includes('ssl') ||
+    msg.includes('timeout') ||
+    msg.includes('too many connection')
+  );
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function query(sql, params = []) {
-  try {
-    const [rows] = await getPool().query(sql, params);
-    return rows;
-  } catch (e) {
-    if (isTransient(e)) {
-      // 换一条连接重试（结束坏连接）
-      await sleep(150);
+  for (let attempt = 0; ; attempt++) {
+    try {
       const [rows] = await getPool().query(sql, params);
       return rows;
+    } catch (e) {
+      // 瞬时错误最多重试 2 次（间隔递增），仍失败则抛给上层
+      if (attempt < 2 && isTransient(e)) {
+        await sleep(150 * (attempt + 1));
+        continue;
+      }
+      throw e;
     }
-    throw e;
   }
 }
 
