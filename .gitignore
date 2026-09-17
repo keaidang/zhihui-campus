@@ -27,6 +27,10 @@ b.txt
 c.txt
 tracked.txt
 
+# 根目录 / node-functions 下的临时验证产物（全为本地调试用，一律不入库）
+/*.txt
+node-functions/*.txt
+
 # Node/构建日志
 *.log
 npm-exit.txt
