@@ -87,10 +87,12 @@ CREATE TABLE IF NOT EXISTS af_notice (
   KEY idx_dept_pinned (dept_id, pinned, status)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '公告表';
 
--- 6. 演示公告种子（幂等）
+-- 6. 演示公告种子（幂等；发布人取真实 admin 账号 id）
 INSERT INTO af_notice (title, content, publisher_id, dept_id, pinned)
-SELECT '2026-2027 学年第一学期选课通知', '各位同学：本学期选课已开放，请登录智汇校园平台在"课程选课"模块完成选课。选课期间名额实时变动，先到先得；退改选截止第 2 周周五 17:00。如有疑问请联系本院辅导员。', 1, NULL, 1
- WHERE NOT EXISTS (SELECT 1 FROM af_notice WHERE title LIKE '2026-2027 学年第一学期选课通知%');
+SELECT '2026-2027 学年第一学期选课通知', '各位同学：本学期选课已开放，请登录智汇校园平台在"课程选课"模块完成选课。选课期间名额实时变动，先到先得；退改选截止第 2 周周五 17:00。如有疑问请联系本院辅导员。', a.id, NULL, 1
+ FROM sys_user a WHERE a.username = 'admin'
+   AND NOT EXISTS (SELECT 1 FROM af_notice WHERE title LIKE '2026-2027 学年第一学期选课通知%');
 INSERT INTO af_notice (title, content, publisher_id, dept_id, pinned)
-SELECT '校园冬季消防安全提示', '近期气温下降，宿舍用电负荷增大。严禁使用大功率电器，人走断电；发现消防隐患请通过平台"宿舍报修"或联系宿管中心 8800。', 1, NULL, 0
- WHERE NOT EXISTS (SELECT 1 FROM af_notice WHERE title LIKE '校园冬季消防安全提示%');
+SELECT '校园冬季消防安全提示', '近期气温下降，宿舍用电负荷增大。严禁使用大功率电器，人走断电；发现消防隐患请通过平台"宿舍报修"或联系宿管中心 8800。', a.id, NULL, 0
+ FROM sys_user a WHERE a.username = 'admin'
+   AND NOT EXISTS (SELECT 1 FROM af_notice WHERE title LIKE '校园冬季消防安全提示%');

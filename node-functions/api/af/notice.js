@@ -28,10 +28,10 @@ export async function onRequestGet(context) {
     ];
     const rows = await query(
       `SELECT n.id, n.title, n.content, n.pinned, n.created_at, n.dept_id,
-              d.name AS dept_name, u.real_name AS publisher_name
+              d.name AS dept_name, COALESCE(u.real_name, '系统管理员') AS publisher_name
          FROM af_notice n
          LEFT JOIN sys_department d ON d.id = n.dept_id
-         JOIN sys_user u ON u.id = n.publisher_id
+         LEFT JOIN sys_user u ON u.id = n.publisher_id
         WHERE ${where.join(' AND ')}
         ORDER BY n.pinned DESC, n.created_at DESC
         LIMIT ? OFFSET ?`,

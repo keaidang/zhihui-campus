@@ -92,7 +92,7 @@ export async function onRequestPost(context) {
         if (e.message === 'NOT_ENROLLED') return fail(42006, '未选中该课程或已退课');
         throw e;
       }
-      const [after] = await query('SELECT enrolled, capacity FROM edu_class WHERE id = ?', [classId]);
+      const after = await query('SELECT enrolled, capacity FROM edu_class WHERE id = ?', [classId]);
       return ok(after[0], '退课成功');
     }
 
