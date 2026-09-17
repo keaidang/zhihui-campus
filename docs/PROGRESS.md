@@ -4,7 +4,12 @@
 
 ## 当前状态
 
-**阶段：阶段 0 项目基建（进行中）· 云端资源已就绪**
+**阶段：一期（M1 教务线 + M2 学工线）全量上线并验证 ✅**
+
+- 线上：https://campus.keaidang.com/ （EdgeOne Pages，git push 即部署）
+- 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务（选课防超卖/课表/成绩）、M2 学工（请销假审批流/报修/公告）、门户 SSO 联动 + 角色主题工作台
+- 质量基线：安全审计完成（docs/AUDIT-2026-09-17.md）；M1+M2 线上 16 步全链路验证通过
+- 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
 - 2026-09-16：`.env`（连接配置）+ `cert/isrgrootx1.pem`（CA 证书）落盘，`.gitignore` 已排除机密
@@ -14,7 +19,7 @@
 
 ## 阶段计划
 
-### 阶段 0 · 项目基建
+### 阶段 0 · 项目基建（全部完成）
 - [x] 确定项目名：智汇校园
 - [x] 确定架构：EdgeOne 全栈 + TiDB Serverless（备选云 RDS）+ KV + Blob
 - [x] 建立文档体系（PRD/ARCHITECTURE/DATABASE/API/CONVENTIONS/PROGRESS）
@@ -27,49 +32,47 @@
 - [x] 生成控制台粘贴清单 `scripts/edgeone-env-paste.txt`（6 个环境变量 + CA 证书全文）
 - [x] 控制台：开通 KV 并创建命名空间 `zhihuicampus`、绑定项目（KV 绑定变量名：`zhihuicampus`）
 - [x] **阶段 1 地基代码完成（2026-09-16 晚）**：
-  - 数据库：schema-001-auth.sql 已执行（sys_user / sys_role / sys_user_role / sys_refresh_token / sys_login_log + 3 个基础角色）
+  - 数据库：schema-001-auth.sql 已执行（sys_user / sys_role / sys_user_role / sys_refresh_token / sys_login_log）
   - 后端认证 API：register / login / refresh / logout / me + health（node-functions/），冒烟测试通过
   - Edge Functions：/api/kv-check（KV 连通性验收用）
-  - Web 门户前端：Vue3 + Element Plus + Pinia，首页（一站式模块矩阵）+ 登录/注册页，本地构建通过
+  - Web 门户前端：Vue3 + Element Plus + Pinia，首页 + 登录/注册页
   - 安全：bcrypt + JWT 双令牌 + 刷新轮换/重放检测 + 登录锁定 + 审计日志 + 参数化查询 + 安全响应头
-- [ ] **待用户：控制台环境变量新增 `JWT_SECRET`**（值在本地 .env，见 scripts/edgeone-env-paste.txt v3）
-- [ ] **待用户：确认 EdgeOne 构建设置**：框架预设 Vite / 构建命令 `npm run build` / 输出目录 `dist`（若控制台未自动识别）
-- [ ] **待用户：git push 后验收**：首页 UI → 注册 → 登录 → /api/health → /api/kv-check
-- [ ] 已知优化项：Element Plus 全量引入导致主 chunk 1.2MB，后续改按需引入 + manualChunks 分包
-- [ ] 控制台：配置环境变量（对照 scripts/edgeone-env-paste.txt 逐条粘贴）
-- [ ] 控制台：Git 集成连接 keaidang/zhihui-campus（main 分支，push 即自动部署）
-- [ ] 初始化代码骨架（web-admin / miniprogram / node-functions / edge-functions / seed）
+- [x] 控制台环境变量 JWT_SECRET 配置（生产环境）+ Git 集成自动部署（2026-09-17 验证）
+- [x] 域名 https://campus.keaidang.com/ 绑定生效 + ICP 备案页脚
 
-### 阶段 1 · 地基（先做，其他模块全依赖它）
-- [ ] 统一登录 + JWT + KV session
-- [ ] RBAC 权限 + 管理端布局与动态菜单
-- [ ] 学生管理 CRUD + 学籍档案
+### 阶段 1 · 地基 + 基础部分（2026-09-17 完成）
+- [x] 统一登录 + JWT 双令牌（KV session 备案，当前 Bearer 直验）
+- [x] RBAC 五角色（student/teacher/counselor/leader/admin）+ guard.js 权限中间件（实时查库 + 数据范围）
+- [x] 组织架构：sys_department（6 院系）+ sys_class + sys_user 扩展（user_no/dept_id/class_id）
+- [x] 用户管理页（搜索/启停/角色分配/归属设置，防自锁/防越权）
+- [x] 安全审计一轮（docs/AUDIT-2026-09-17.md：1 P1 + 3 P2 全修复）
 
-### 阶段 2 · 核心三件套
-- [ ] 选课：列表/课表/选退课/时间冲突检测/并发扣名额 + 压测脚本
-- [ ] 图书：书目/副本/借还/逾期
-- [ ] 宿舍：楼栋/房间/分配/报修工单流转
+### 阶段 2 · 一期双线（2026-09-17 深夜完成）
+- [x] **M1 教务线**：schema-003（edu_course/edu_class/edu_elect）+ 选课 API（事务 + 条件 UPDATE 防超卖 + 唯一键防重选）+ 学生选课页 + 成绩课表页（GPA 统计）+ 教师课程/成绩录入页
+- [x] **M2 学工线**：schema-004（flow_instance/flow_node 通用审批流 + af_leave/af_repair/af_notice）+ 请销假闭环（申请→审批→销假）+ 报修工单（提交/受理/完成）+ 公告（发布/置顶/撤回，院系定向）
+- [x] 门户：主页 4 张服务卡 SSO 联动（未登录带 redirect 去登录→原路跳回）、工作台五角色主题色 + 账号信息卡 + 常用资源链接
+- [x] 线上 16 步全链路验证（选课→审批→销假→报修→录成绩→查成绩→越权回归 40301）
 
-### 阶段 3 · 扩展模块（每个 3~5 天一个）
-- [ ] 社团管理
-- [ ] 校园点餐（模拟支付）
-- [ ] 二手交易
-- [ ] 失物招领
-- [ ] 健身打卡（KV 计数）
+### 阶段 3 · M3 生活服务（未开始）
+- [ ] 图书借阅（schema-005）
+- [ ] 二手交易 / 失物招领 / 社团活动
 
-### 阶段 4 · 收尾
-- [ ] 数据可视化大屏
-- [ ] 消息通知（站内信）
+### 阶段 4 · 收尾（未开始）
+- [ ] M4 校领导驾驶舱（只读大屏）
+- [ ] uni-app 小程序端
 - [ ] 种子数据完善、全流程演示彩排
-- [ ] 论文初稿（架构选型、数据库设计、并发控制为三章核心素材）
+- [ ] 论文初稿（选课并发控制 / 审批流引擎 / 云边协同为三章核心素材）
 
 ## 已知坑与备忘
 
+- **TiDB Serverless 禁用 mysql2 execute()（预编译协议）**——统一走 db.js query() 文本协议；query() 已内置瞬时错误重试 + 连接池 5，别删
+- **线上 500 会落库 sys_op_log(action='error.500')**，远程诊断真实错误用它
+- **当前学期口径 TERM='2026-2027-1'** 硬编码在 edu 相关 API，换学期需统一修改
+- 演示账号 admin/admin 为用户指定弱密码（2026-09-18），对外开放前必须改强密码
 - KV 为 60 秒最终一致 → 选课名额/库存一律走数据库，KV 只放容忍延迟的计数
 - TiDB Serverless 有冷启动，演示前先预热一次请求
 - Supabase 免费版 7 天不活跃休眠（当前未选用，仅备忘）
-- Node Functions 连接池 max 设 5~10，防连接数打满
-- **DATETIME 一律传 Date 对象**：toISOString() UTC 字符串 + 连接池 timezone('+08:00') 会造成 8 小时偏移（已踩坑修复）
+- **DATETIME 一律传 Date 对象或 'YYYY-MM-DD HH:mm:ss'**：toISOString() UTC 字符串 + 连接池 timezone('+08:00') 会造成 8 小时偏移（已踩坑修复）
 - **多端独立域名部署时必须配 CORS_ORIGIN 环境变量**（Node Functions 已内置 CORS 响应头与 OPTIONS 预检，未配 CORS_ORIGIN 时默认放行）
 - sys_refresh_token 过期/吊销记录暂无清理任务，量大后需定期清理（低优先级）
 - 登录失败锁定为实例级内存版，多实例下尽力而为，后续可迁 KV
@@ -77,24 +80,17 @@
 ## 变更记录
 
 - 2026-09-16：项目初始化、TiDB 就绪、阶段 1 地基上线（认证 + 门户）
-- 2026-09-16（深夜）：地基代码审计后修复——P1 刷新令牌时区偏移 8h、P1 刷新页面丢登录态（main.js 挂载前 restoreSession）；P2 注册接口 IP 频控 + 建用户/授角色事务化 + 唯一键冲突兜底、P2 刷新令牌条件更新防并发竞态、P2 全端点 CORS/OPTIONS 支持；UI 改版为庄重学术蓝风格（登录页参照传统"统一身份认证"版式：深蓝灰半透明卡片 + 校名抬头；背景纱罩减薄使照片清晰显形）
-- 2026-09-17：**品牌与合规上线**——域名 https://campus.keaidang.com/ 生效；校徽 public/logo.png（favicon/导航/抬头）+ 书法校名 public/name.png；页脚 ICP 备案（苏ICP备2026056678号 → beian.miit.gov.cn）；背景图"加载不可见"真凶定位（body 不透明底色盖住 z-index:-1 背景层）并修复
-- 2026-09-17：**登录 500 破案并修复**——①JWT_SECRET 未注入 EdgeOne 函数运行时（新增 /api/health 诊断位 jwtConfigured/protocol）；②TiDB Serverless 对 mysql2 预编译语句偶发 `malform packet error`，全项目 query() 改文本协议（execute → query，防注入不变）；本地 5 轮稳定性验证 + 线上注册/登录终验通过
-- 2026-09-17：**功能架构定稿**（docs/RESEARCH-功能架构调研.md）：五层架构 + RBAC 五角色（student/teacher/counselor/leader/admin）；一期教务线（选课+成绩课表）+ 学工线（请销假审批流）双线并行；砍掉校园点餐
-- 2026-09-17（当晚）：**基础部分落地**——
-  - 数据库 schema-002-base.sql：五角色种子、sys_department（6 院系种子）、sys_class（3 班级种子）、sys_user 扩展 user_no/dept_id/class_id
-  - 后端 lib/guard.js：HttpError + requireAuth + requireRoles（角色实时查库，不信令牌）+ dataScope（self/dept/all）
-  - 管理端 API：/api/admin/meta（角色+院系+班级）、/api/admin/users（分页列表/搜索/改状态/分配角色/设归属）、/api/admin/departments（列表/新增/启停）
-  - /api/auth/me 增强：返回 user_no/dept/class + 数据库实时角色
-  - 前端：PortalShell（顶栏+按角色侧边菜单）、WorkbenchView（按角色功能矩阵）、UserManageView（用户管理）、路由守卫（登录态+角色）
-  - 工具：scripts/migrate.mjs（SQL 迁移执行器）、scripts/grant-role.mjs（角色授予/建号/重置密码）
-  - 引导账号：`admin` / `Zhihui@2026`（角色 admin+student，归属计算机学院；**首次登录务必改密**）
+- 2026-09-16（深夜）：地基代码审计后修复（时区偏移/丢登录态/频控/事务化/CORS）；UI 改版庄重学术蓝
+- 2026-09-17：品牌与合规上线（域名/校徽/书法校名/ICP 备案）；登录 500 破案（JWT_SECRET 注入 + TiDB 文本协议）；功能架构定稿（五角色 + 一期双线 + 砍点餐）
+- 2026-09-17（晚）：基础部分落地（schema-002 五角色/院系/班级、guard.js、管理端 API、PortalShell/工作台/用户管理）；安全审计修复（P1 归属越权 + sys_op_log 审计 + 保留用户名 + 仓库卫生）；db.js 瞬时错误重试根治随机 500（15/15 压测零 500）
+- 2026-09-17（深夜）：**M1 教务线 + M2 学工线全量上线**（schema-003/004、7 个业务 API、9 个业务页面）；主页 SSO 联动；工作台五角色主题改版（--role-accent）+ 校园实景背景 + 资源链接；16 步线上验证全过；修复公告 LEFT JOIN/出分课程课表消失/选课返回体三个 bug
+- 2026-09-18：admin 密码按用户要求重置为 `admin`（弱密码，演示专用）；**文档全面更新 + 新增 HANDOVER.md 交接文档**
 
-## 下一步（阶段 1 收尾 → 阶段 2 一期）
+## 下一步
 
 - [ ] 院系班级管理页（API 已就绪，前端待做）
-- [ ] M1 教务线：schema-003（course/teaching_class/course_selection/score）+ 选课 API（事务 + 条件 UPDATE 防超卖 + 唯一键防重选）+ 学生选课页 + 教师成绩录入页
-- [ ] M2 学工线：schema-004（flow_instance/flow_node + leave_apply + repair_order）+ 请销假审批流 API + 学生申请页 + 辅导员审批页
-- [ ] 公告模块（含 M2）
-- [ ] 已知优化项：Element Plus 按需引入 + manualChunks 分包（主 chunk 1.2MB）
+- [ ] M3 图书借阅（schema-005）
+- [ ] M3 二手/失物/社团
+- [ ] M4 驾驶舱
+- [ ] 已知优化项：Element Plus 按需引入 + manualChunks 分包（主 chunk 偏大）
 

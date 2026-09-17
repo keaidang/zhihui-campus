@@ -1,36 +1,53 @@
 # DATABASE · 数据库设计（单一事实来源）
 
 > 目标库：TiDB Cloud Serverless（MySQL 8.0 兼容语法）。**任何表结构变更必须先改本文档，再改代码。**
+> **实际建表以 `database/schema-001~004-*.sql` 为准**（幂等可重复执行，`scripts/migrate.mjs` 跑批）；本文第 3 节起为未实现模块的规划草案。
 
 ## 1. 命名与通用规范
 
-- 表名：`snake_case`，按模块加前缀：`sys_`（系统）、`stu_`（学生/选课）、`lib_`（图书）、`dorm_`（宿舍）、`club_`（社团）、`meal_`（点餐）、`mkt_`（二手）、`lost_`（失物）、`fit_`（健身）
-- 主键：`id BIGINT AUTO_INCREMENT`
-- 通用字段：`created_at DATETIME`、`updated_at DATETIME`、`deleted_at DATETIME NULL`（软删除）
-- 金额用 `DECIMAL(10,2)`，状态用 `TINYINT`（含义注释写清楚）
+- 表名：`snake_case`，按模块加前缀：`sys_`（系统/权限/组织）、`edu_`（教务）、`flow_`（审批流）、`af_`（学工事务）、`lib_`（图书）、`dorm_`（宿舍）、`club_`（社团）、`mkt_`（二手）、`lost_`（失物）
+- ~~点餐 meal_~~ 已砍（涉及支付，2026-09-17 决策）
+- 主键：`id BIGINT UNSIGNED AUTO_INCREMENT`
+- 通用字段：`created_at DATETIME`，需要时加 `updated_at`；状态用 `TINYINT`（含义注释写清楚）
 - 字符集 `utf8mb4`
 
-## 2. 表清单（按模块）
+## 2. 已实现表清单（截至 2026-09-18）
 
-> **落地进度（2026-09-16）**：`database/schema-001-auth.sql` 已在 zhihui_campus 库执行完毕，
-> 已建实际表：`sys_user` / `sys_role` / `sys_user_role` / `sys_refresh_token` / `sys_login_log`（RBAC 采用独立角色表 + 关联表，
-> 与下方早期草案的 role 字段/permission 点表设计相比更规范，以此为准）。后续模块建表继续走 `schema-NNN-*.sql` 递增脚本。
-
-### sys 系统与权限
-| 表 | 说明 | 关键字段 |
+### sys 系统与权限（schema-001 + schema-002）
+| 表 | 说明 | 关键点 |
 |---|---|---|
-| sys_user | 统一用户表 | username, password_hash, real_name, role(TINYINT:1学生2教师3后勤4管理员), phone, avatar_url, status |
-| sys_student_profile | 学籍档案 | user_id, student_no, department, major, class_name, grade, enrollment_year |
-| sys_role_permission | 角色权限点 | role, perm_code, 说明: RBAC 映射 |
-| sys_notice | 公告 | title, content, publisher_id, target_role |
+| sys_user | 统一用户表 | username, password_hash, real_name, email, phone, status；**扩展 user_no(学号/工号), dept_id, class_id**（数据范围判定依据） |
+| sys_role | 角色表 | 五角色种子：student/teacher/counselor/leader/admin |
+| sys_user_role | 用户-角色关联 | 一个用户可多角色 |
+| sys_refresh_token | 刷新令牌 | SHA-256 哈希落库 + 轮换 + 重放全吊销 |
+| sys_login_log | 登录审计 | IP/UA/成败 |
+| sys_department | 院系 | 6 院系种子（清北大学） |
+| sys_class | 班级 | dept_id, grade；3 个班种子 |
+| sys_op_log | 管理操作审计 | operator_id, action, target, detail, ip；**500 错误也落这里（action='error.500'）** |
 
-### stu 选课
-| 表 | 说明 | 关键字段 |
+### edu 教务（schema-003，M1）
+| 表 | 说明 | 关键点 |
 |---|---|---|
-| stu_course | 课程 | code, name, teacher_id, credit, capacity, enrolled(已选人数), week_day, start_section, end_section, term |
-| stu_course_selection | 选课记录 | course_id, student_id, term, **UNIQUE(course_id, student_id)** 防重复选 |
+| edu_course | 课程主表 | code(唯一), name, credit, hours, dept_id；6 门种子 |
+| edu_class | 教学班（开课） | course_id, teacher_id, term='2026-2027-1', **capacity/enrolled**, week_day, section, classroom；3 个种子班绑 teacher01 |
+| edu_elect | 选课与成绩（成绩内嵌） | **UNIQUE(class_id, student_id) 防重选**；status: 1修读中 2已出分 0已退课；score, grade(优/良/中/及格/不及格) |
 
-### lib 图书
+**防超卖范式（论文核心段落素材）**：事务内① `INSERT IGNORE` 选课记录（唯一键占位，冲突=重复选课）→ ② 条件 `UPDATE edu_class SET enrolled=enrolled+1 WHERE id=? AND status=1 AND enrolled<capacity`，affectedRows=0 即名额满 → 回滚。退课反向：置 status=0 + `GREATEST(enrolled-1,0)`。实测并发安全，比草案的 SELECT FOR UPDATE 更简洁。
+
+### flow + af 学工（schema-004，M2）
+| 表 | 说明 | 关键点 |
+|---|---|---|
+| flow_instance | 审批流实例 | biz_type('leave'...), biz_id, applicant_id, dept_id, status(1进行中 2通过 3驳回 4已销假), current_node |
+| flow_node | 审批流节点 | instance_id, node_order, handler_role, handler_id, status(0待处理 1通过 2驳回), opinion, handled_at；**UNIQUE(instance_id, node_order)** |
+| af_leave | 请假单 | student_id, dept_id, type(事假/病假/其他), reason, start_at/end_at, status(1审批中 2已批准 3已驳回 4已销假), back_at, instance_id |
+| af_repair | 报修工单 | user_id, location, category(水电/家具/网络/门锁/其他), description, contact, status(0待受理 1处理中 2已完成), handler_id, remark |
+| af_notice | 公告 | title, content, publisher_id, dept_id(NULL=全校), pinned, status(1发布 0撤回) |
+
+**审批流引擎（论文亮点素材）**：flow_instance/flow_node 两表通用驱动，与具体业务解耦。新审批业务只需：建业务单据 + 插 instance + 按 node_order 插节点。请假链路：申请→辅导员审批(实时匹配本院 counselor)→通过/驳回→销假。后续奖助/调宿复用。
+
+## 3. 未实现模块表规划（草案，实现前先按实情修订）
+
+### lib 图书（M3，schema-005）
 | 表 | 说明 | 关键字段 |
 |---|---|---|
 | lib_book | 书目 | isbn, title, author, publisher, category, cover_url |
@@ -45,7 +62,7 @@
 | dorm_assignment | 住宿分配 | room_id, user_id, check_in_at, check_out_at |
 | dorm_repair_order | 报修工单 | room_id, user_id, description, image_url, status(1提交2受理3完成4评价), handler_id, rating |
 
-### club 社团
+### club 社团（M3）
 | 表 | 说明 | 关键字段 |
 |---|---|---|
 | club_info | 社团 | name, category, president_id, member_count, intro |
@@ -53,66 +70,23 @@
 | club_activity | 活动 | club_id, title, location, start_at, capacity |
 | club_registration | 活动报名 | activity_id, user_id, **UNIQUE(activity_id, user_id)** |
 
-### meal 点餐（模拟支付）
-| 表 | 说明 | 关键字段 |
-|---|---|---|
-| meal_canteen / meal_window | 食堂/档口 | name, location |
-| meal_dish | 菜品 | window_id, name, price, image_url, status |
-| meal_order | 订单 | order_no, user_id, total, status(1待取餐2已完成3已取消), pickup_code |
-| meal_order_item | 订单明细 | order_id, dish_id, qty, price_snapshot |
-
-### mkt 二手交易
+### mkt 二手交易（M3）
 | 表 | 说明 | 关键字段 |
 |---|---|---|
 | mkt_item | 商品 | seller_id, title, description, price, images(json), status(1在售2已售3下架), category |
 | mkt_want | 求购 | user_id, title, description |
 | mkt_chat | 留言/联系 | item_id, from_id, to_id, content |
 
-### lost 失物招领
+### lost 失物招领（M3）
 | 表 | 说明 | 关键字段 |
 |---|---|---|
 | lost_record | 记录 | type(1失物2招领), user_id, title, description, image_url, location, found_at, status(1待认领2已认领3已关闭), claimer_id |
 
-### fit 健身打卡
+### fit 健身打卡（可选）
 | 表 | 说明 | 关键字段 |
 |---|---|---|
 | fit_checkin | 打卡记录 | user_id, date, **UNIQUE(user_id, date)** 每天一次 |
 | fit_stats | 统计（可选） | user_id, total_days —— 也可由 KV count:fit:{user_id} 承载 |
-
-## 3. 核心表完整 SQL 示例
-
-```sql
-CREATE TABLE stu_course (
-  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-  code          VARCHAR(20)  NOT NULL COMMENT '课程编号',
-  name          VARCHAR(64)  NOT NULL,
-  teacher_id    BIGINT       NOT NULL,
-  credit        DECIMAL(3,1) NOT NULL DEFAULT 1.0,
-  capacity      INT          NOT NULL DEFAULT 0 COMMENT '容量',
-  enrolled      INT          NOT NULL DEFAULT 0 COMMENT '已选人数',
-  week_day      TINYINT      NOT NULL COMMENT '1-7 星期几',
-  start_section TINYINT      NOT NULL COMMENT '起始节次',
-  end_section   TINYINT      NOT NULL,
-  term          VARCHAR(16)  NOT NULL COMMENT '如 2026-2027-1',
-  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at    DATETIME     NULL,
-  KEY idx_term (term),
-  KEY idx_teacher (teacher_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程表';
-
-CREATE TABLE stu_course_selection (
-  id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-  course_id  BIGINT NOT NULL,
-  student_id BIGINT NOT NULL,
-  term       VARCHAR(16) NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_course_student (course_id, student_id),
-  KEY idx_student (student_id, term)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='选课记录';
-```
-
-**选课并发方案（论文核心段落素材）**：事务内 `SELECT ... FOR UPDATE` 课程行 → 校验 `enrolled < capacity` 且无时间冲突 → 插入选课记录（唯一键兜底）→ `UPDATE stu_course SET enrolled = enrolled + 1` → 提交。并发脚本压测演示。
 
 ## 4. KV Key 规范（仅字母/数字/下划线，≤512B）
 
@@ -121,7 +95,6 @@ CREATE TABLE stu_course_selection (
 | `session_{token}` | 登录态（JSON: userId, role, exp） |
 | `config_{name}` | 功能开关/配置 |
 | `count_visit_{page}` | 访问计数 |
-| `count_fit_{userId}_{yyyymmdd}` | 打卡连续天数缓存 |
 | `ratelimit_{userId}_{window}` | 接口限流窗口 |
 
 ## 5. Blob 目录规范
@@ -136,4 +109,6 @@ notice/{noticeId}/{n}.jpg       公告附件
 
 ## 6. 种子数据
 
-`seed/seed.js`：生成 4 角色账号、2 学期课程各 30 门、书目 100 本、楼栋 4 栋、菜品 50 个、二手/失物各 20 条。任何会话跑一遍即可恢复演示环境。
+- 当前种子随 schema 脚本幂等写入（角色/院系/班级/课程/教学班/公告），账号用 `scripts/grant-role.mjs` 创建（见 HANDOVER.md 第 2 节）
+- 演示数据现状：teacher01 任教 3 班；student01 已选 CS101 且有 92 分成绩（勿清库）
+- 后续如需批量种子（书目 100 本等），写 `seed/seed.js` 并在此登记

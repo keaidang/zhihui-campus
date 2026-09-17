@@ -21,24 +21,25 @@
 |---|---|
 | 0 | 成功 |
 | 40100 | 未登录 / token 失效 |
-| 40101 | 用户名或密码错误 |
-| 40300 | 无权限 / 账号被禁用 |
+| 40103 | 登录状态已失效（guard.js） |
+| 40301 | 无权限（guard.js HttpError，含数据范围越界） |
 | 40400 | 资源不存在 |
-| 41001 | 参数错误 |
-| 41002 | 用户名已被注册 |
+| 41001~41006 | 管理端参数/归属/自锁类错误 |
 | 42900 | 登录失败次数过多（限流锁定 10 分钟） |
-| 42001 | 选课时间冲突 |
-| 42002 | 课程名额已满 |
-| 42003 | 重复选课 |
-| 50000 | 服务器内部错误 |
+| 42001~42006 | 教务线：参数/停选/重复选课/不存在/名额满/未选中 |
+| 43001~43004 | 学工线：请假参数/不在审批中/不可销假/不存在 |
+| 44001~44004 | 报修：参数/已受理/不可完成/不存在 |
+| 45001/45004 | 公告：参数/不存在 |
+| 50000 | 服务器内部错误（同步落库 sys_op_log 供远程诊断） |
 | 50001 | KV 不可用 |
 
 ## 4. 路径规范
 
-- 前缀 `/api/{module}/{resource}`，RESTful 动词：GET 查 / POST 增 / PUT 改 / DELETE 删
-- 管理端专用接口前缀 `/api/admin/...`（需对应角色）
+- 前缀 `/api/{module}/{resource}`，实际落地用 GET + POST（EdgeOne Functions 环境简化）
+- 管理端专用接口前缀 `/api/admin/...`；教务 `/api/edu/...`；学工 `/api/af/...`
+- 写操作审计：管理端写操作 + 成绩录入/审批/工单处理/公告发布全部落 `sys_op_log`（guard.js opLog）
 
-## 5. 接口清单（截至 2026-09-17）
+## 5. 接口清单（截至 2026-09-18，与代码同步）
 
 ### 5.1 认证（公开 / 需登录）
 
@@ -68,38 +69,51 @@
 - 角色编码：`student` / `teacher` / `counselor` / `leader` / `admin`
 - 业务错误统一抛 `HttpError(code, message, status)`，`jsonError` 自动按其 status 返回（不再吞成 500）
 
+### 5.4 教务线（M1，已上线验证）
 
-## 5. 模块端点清单（随开发更新）
+> 学期口径 `TERM='2026-2027-1'`（API 内硬编码）
 
-### auth（已实现，v0.1）
-- `POST /api/auth/register` 注册（username/password/realName，默认授予 student 角色）→ { id, username, realName }
-- `POST /api/auth/login` 登录 → { accessToken, refreshToken, expiresIn, user:{id,username,realName,roles[]} }
-- `POST /api/auth/refresh` 刷新访问令牌（body: refreshToken；轮换+重放检测）→ 同 login 返回结构
-- `POST /api/auth/logout` 退出（吊销 refreshToken）
-- `GET  /api/auth/me` 当前用户信息（Bearer）→ { id, username, realName, email, phone, roles[] }
-- `GET  /api/health` 健康检查（含数据库连通性，公开）
-- `GET  /api/kv-check` KV 连通性验证（Edge Functions，公开，验收用）
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/edu/course | 登录 | 选课目录（课程+教学班+名额实时+`mine` 已选标记） |
+| POST | /api/edu/course | student | `{action:'enroll'\|'drop', classId}`；事务+条件 UPDATE 防超卖，唯一键防重选 |
+| GET | /api/edu/timetable | student/teacher/admin | 周课表（学生=所选含已出分；教师=任教班） |
+| GET | /api/edu/score | student | 成绩单 + summary（GPA/学分/已出分门数） |
+| GET | /api/edu/score?classId= | teacher/admin | 教学班选课名单（含现有成绩） |
+| POST | /api/edu/score | teacher/admin | `{classId, items:[{studentId, score}]}` 批量录成绩，等级自动换算，审计留痕 |
+| GET | /api/edu/teach | teacher/admin | 我的教学班列表（admin 查全部）；`?classId=` 返回选课名单 |
 
-**认证安全设计**：bcrypt(10) 密码哈希；JWT HS256 访问令牌 2h；刷新令牌 48 字节随机、库内存 SHA-256 哈希、7 天有效、每次刷新轮换，检测到重放立即吊销该用户全部会话；登录失败 5 次锁定 10 分钟（实例级）；登录行为写入 sys_login_log 审计。
+### 5.5 学工线（M2，已上线验证）
 
-### course（选课）
-- `GET  /api/course/list?term=&page=` 课程列表
-- `GET  /api/course/timetable` 我的课表
-- `POST /api/course/select` 选课（body: courseId）
-- `DELETE /api/course/select/:courseId` 退课
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/af/leave?status= | student=本人；staff=本院/全校 | 请假单列表（含审批意见） |
+| POST | /api/af/leave | student | `{action:'apply', type, reason, startAt, endAt}`；同时建 flow_instance + flow_node |
+| POST | /api/af/leave | counselor/admin | `{action:'approve'\|'reject', leaveId, opinion}`（counselor 仅本院） |
+| POST | /api/af/leave | student | `{action:'back', leaveId}` 销假（已批准→已销假） |
+| GET | /api/af/repair?status= | 本人 / staff 全部 | 报修工单列表 |
+| POST | /api/af/repair | 登录 | `{action:'create', location, category, description, contact}` |
+| POST | /api/af/repair | counselor/admin | `{action:'accept'\|'finish', id, remark}` 工单流转 |
+| GET | /api/af/notice | 登录 | 公告列表（学生=全校+本院；staff 全部；置顶优先） |
+| POST | /api/af/notice | teacher/counselor/admin | `{action:'publish', title, content[, deptId, pinned]}`；counselor/teacher 强制本院 |
+| POST | /api/af/notice | 发布者/admin | `{action:'revoke'\|'pin', id}` 撤回/置顶（pin 仅 admin） |
 
-### library（图书）
-- `GET  /api/library/books?keyword=` 检索
-- `POST /api/library/borrow` 借书（copyId）
-- `POST /api/library/return/:recordId` 还书
-- `GET  /api/library/my` 我的借阅
+### 5.6 审批流约定（flow_instance / flow_node）
 
-### dorm（宿舍）
-- `POST /api/dorm/repair` 提交报修（含 Blob 图片）
-- `GET  /api/dorm/repair/my` 我的工单
-- `PUT  /api/admin/dorm/repair/:id/status` 工单流转
+- 请假单创建时同步生成：`flow_instance(biz_type='leave', status=1, current_node=1)` + `flow_node(node_order=1, handler_role='counselor')`
+- 审批通过 → instance status=2；驳回 → 3；销假 → 4。后续奖助/调宿等审批复用同一套两表引擎
+- 审批人权限校验：handler_role + 申请人 dept_id 与辅导员 deptId 匹配（admin 豁免）
 
-### meal / market / lost / club / fitness
-- 各模块标准 CRUD，开发时在下方补充
+
+## 6. 未实现模块端点（规划，实现后在此补充）
+
+### library（图书，M3）
+- `GET /api/library/books?keyword=` 检索；`POST /api/library/borrow` 借书；`POST /api/library/return/:recordId` 还书；`GET /api/library/my` 我的借阅
+
+### market / lost / club（M3）
+- 各模块标准 CRUD，开发时在此补充
+
+### dashboard（M4 驾驶舱）
+- `GET /api/admin/dashboard` 聚合统计（leader 只读，scope=all）
 
 <!-- TODO: 每完成一个模块，把实际实现的端点补充到这里 -->

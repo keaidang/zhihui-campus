@@ -52,11 +52,32 @@
 
 | 存储 | 放什么 | 不放什么 |
 |---|---|---|
-| MySQL(TiDB) | 用户、课程、选课、成绩、借阅、宿舍、工单、订单、商品、帖子等结构化数据 | 文件二进制 |
-| KV | session:token、config:*、count:*（打卡天数/访问计数）、限流窗口 | 需要强一致的业务计数（选课名额！走数据库） |
+| MySQL(TiDB) | 用户、课程、选课、成绩、审批流、请假、报修、公告、借阅、商品等结构化数据 | 文件二进制 |
+| KV | session:token、config:*、count:*、限流窗口 | 需要强一致的业务计数（选课名额！走数据库） |
 | Blob | avatar/、market/、lost/、notice/ 下的图片附件 | 小键值状态 |
 
-**重要**：KV 是 60 秒最终一致，所有"不能错的计数"（选课名额、库存）必须走数据库事务 + 乐观锁，KV 只放可容忍延迟的计数。
+**重要**：KV 是 60 秒最终一致，所有"不能错的计数"（选课名额、库存）必须走数据库事务，KV 只放可容忍延迟的计数。
+
+### ADR-5 权限模型：guard.js 三层防线（2026-09-17 定稿）
+
+- **第一层（前端路由守卫）**：登录态 + meta.roles，未登录带 redirect 去登录页（SSO 回跳体验）
+- **第二层（guard.js requireRoles）**：**角色实时查库**，不信 JWT 内角色（撤权即时生效）；业务错误抛 HttpError 由 jsonError 按自带 status 返回
+- **第三层（dataScope 数据范围）**：admin/leader=all、counselor=dept、其他=self，SQL 层强制拼接 WHERE，前端过滤只作展示
+- 管理端写操作全部 `opLog()` 落 sys_op_log 审计；防自锁（不能禁自己/摘自己的 admin）
+- 论文口径：RBAC + 数据范围双维权限模型，优于单一角色点表
+
+### ADR-6 TiDB Serverless 连接韧性（2026-09-17 线上压测结论）
+
+- **禁用 mysql2 execute()（预编译协议）**：TiDB Serverless 代理偶发 `malform packet error`，全项目统一 query() 文本协议（占位符转义防注入不变）
+- db.js query() 内置**瞬时错误自动重试**（ECONNRESET/malform/握手/SSL/连接数上限，换连接最多 2 次）+ 连接池 5
+- 随机 500 同步落 sys_op_log（action='error.500'）供远程诊断（线上无控制台）
+- 论文口径：Serverless 数据库的瞬时故障是常态，数据访问层必须内建重试韧性
+
+### ADR-7 通用审批流：两表引擎（2026-09-17 定稿）
+
+- flow_instance（谁发起的什么业务，走到哪）+ flow_node（每个节点一个处理角色 + 处理留痕），与具体业务解耦
+- 新审批业务（奖助/调宿）只需建业务单据 + 插 instance + 按 node_order 插节点，不新增流程代码
+- 处理人实时匹配 handler_role + 数据范围（辅导员只审本院），杜绝指定死处理人
 
 ## 2.5 双运行时分工：Edge Functions vs Node Functions
 
@@ -94,7 +115,10 @@
 
 ## 4. 关键技术亮点（论文/答辩素材）
 
-1. 选课并发控制：数据库乐观锁 + 唯一键防重复选课
-2. 存储选型论证：KV vs Blob vs 关系库的分工设计
-3. 边缘全栈部署：静态资源全球 CDN + Serverless API，零运维
-4. RBAC 权限模型：统一账号体系支撑全部模块
+1. **选课并发控制**：事务 + 唯一键占位 + 条件 UPDATE 防超卖（比 SELECT FOR UPDATE 更简洁，实测并发安全）
+2. **通用审批流引擎**：flow_instance/flow_node 两表驱动，业务零侵入复用
+3. **存储选型论证**：KV vs Blob vs 关系库的分工设计（KV 最终一致的边界）
+4. **边缘全栈部署**：静态资源全球 CDN + Serverless API，零运维，git push 即部署
+5. **RBAC + 数据范围双维权限**：guard.js 三层防线（路由守卫/实时查库/SQL 强制拼接）
+6. **Serverless 数据库韧性**：瞬时错误识别 + 自动重试 + 错误落库远程诊断
+7. **五角色主题化门户**：CSS 变量注入的角色主题色 + SSO 回跳（redirect 原路跳转）
