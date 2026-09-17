@@ -40,6 +40,17 @@ export function jsonError(e) {
   // 业务性错误（guard.js HttpError）按其自带 code/status 返回，不吞成 500
   if (e && typeof e.toResponse === 'function') return e.toResponse();
   console.error('[api-error]', e);
+  // 错误落库（尽力而为）：边缘运行时没有日志控制台，落 sys_op_log 便于远程诊断
+  import('./db.js')
+    .then(({ getPool }) =>
+      getPool()
+        .query(
+          'INSERT INTO sys_op_log (operator_id, action, target, detail) VALUES (0, ?, ?, ?)',
+          ['error.500', String(e?.code || ''), String(e?.message || '').slice(0, 500)],
+        )
+        .catch(() => {}),
+    )
+    .catch(() => {});
   return fail(50000, '服务器内部错误', 500);
 }
 
