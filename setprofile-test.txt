@@ -1,0 +1,2 @@
+﻿uid=2000001 => 200 {"code":0,"message":"归属信息已更新","data":{"userId":2000001}}
+uid=1 => 500 {"code":50000,"message":"服务器内部错误","data":null}

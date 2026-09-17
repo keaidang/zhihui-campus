@@ -15,7 +15,7 @@ export function getPool() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'zhihui_campus',
     waitForConnections: true,
-    connectionLimit: Number(process.env.DB_POOL_MAX || 8),
+    connectionLimit: Number(process.env.DB_POOL_MAX || 5),
     queueLimit: 0,
     enableKeepAlive: true,
     timezone: '+08:00',
@@ -36,10 +36,40 @@ export function getPool() {
 /** 参数化查询便捷封装（强制防注入）
  *  ★ 用文本协议 query() 而非 execute()：TiDB Serverless 代理对预编译语句
  *    (COM_STMT_EXECUTE) 存在 "malform packet error" 偶发兼容问题，
- *    曾导致登录成功路径随机 500。mysql2 文本协议同样是占位符转义，防注入不变。 */
+ *    曾导致登录成功路径随机 500。mysql2 文本协议同样是占位符转义，防注入不变。
+ *  ★ 瞬时错误自动重试一次：TiDB 免费层建连/代理偶发抖动（连接重置、坏包、
+ *    连接数瞬时打满），表现为同请求随机 500——重试即可恢复。 */
+const TRANSIENT = [
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+  'ERR_SOCKET_BAD_PORT',
+];
+function isTransient(e) {
+  if (!e) return false;
+  if (TRANSIENT.includes(e.code)) return true;
+  const msg = String(e.message || '');
+  return msg.includes('malform packet') || msg.includes('connect ECONNRESET') || msg.includes('Connection lost');
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function query(sql, params = []) {
-  const [rows] = await getPool().query(sql, params);
-  return rows;
+  try {
+    const [rows] = await getPool().query(sql, params);
+    return rows;
+  } catch (e) {
+    if (isTransient(e)) {
+      // 换一条连接重试（结束坏连接）
+      await sleep(150);
+      const [rows] = await getPool().query(sql, params);
+      return rows;
+    }
+    throw e;
+  }
 }
 
 /** 事务封装：fn(conn) 内用 conn.query 执行多条语句，任一失败自动回滚 */
