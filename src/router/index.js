@@ -19,6 +19,62 @@ const router = createRouter({
       component: () => import('../views/admin/UserManageView.vue'),
       meta: { requiresAuth: true, roles: ['admin', 'counselor'] },
     },
+    // ---- 教务线（M1）----
+    {
+      path: '/edu/elect',
+      name: 'edu-elect',
+      component: () => import('../views/edu/ElectView.vue'),
+      meta: { requiresAuth: true, roles: ['student'] },
+    },
+    {
+      path: '/edu/scores',
+      name: 'edu-scores',
+      component: () => import('../views/edu/ScoresView.vue'),
+      meta: { requiresAuth: true, roles: ['student'] },
+    },
+    {
+      path: '/edu/teach',
+      name: 'edu-teach',
+      component: () => import('../views/edu/TeachView.vue'),
+      meta: { requiresAuth: true, roles: ['teacher', 'admin'] },
+    },
+    {
+      path: '/edu/score-entry',
+      name: 'edu-score-entry',
+      component: () => import('../views/edu/ScoreEntryView.vue'),
+      meta: { requiresAuth: true, roles: ['teacher', 'admin'] },
+    },
+    // ---- 学工线（M2）----
+    {
+      path: '/af/leave',
+      name: 'af-leave',
+      component: () => import('../views/af/LeaveView.vue'),
+      meta: { requiresAuth: true, roles: ['student'] },
+    },
+    {
+      path: '/af/approve',
+      name: 'af-approve',
+      component: () => import('../views/af/ApproveView.vue'),
+      meta: { requiresAuth: true, roles: ['counselor', 'admin'] },
+    },
+    {
+      path: '/af/repair',
+      name: 'af-repair',
+      component: () => import('../views/af/RepairView.vue'),
+      meta: { requiresAuth: true, roles: ['student'] },
+    },
+    {
+      path: '/af/repair-manage',
+      name: 'af-repair-manage',
+      component: () => import('../views/af/RepairManageView.vue'),
+      meta: { requiresAuth: true, roles: ['counselor', 'admin'] },
+    },
+    {
+      path: '/af/notice',
+      name: 'af-notice',
+      component: () => import('../views/af/NoticeView.vue'),
+      meta: { requiresAuth: true },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

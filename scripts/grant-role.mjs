@@ -44,10 +44,13 @@ if (!username || !roleCode) {
         const [d] = await conn.query('SELECT id FROM sys_department WHERE code = ?', [deptCode]);
         deptId = d[0]?.id ?? null;
       }
+      // real_name / user_no 支持 --name=xxx --no=xxx；缺省用用户名，学号留空由管理端补
+      const realName = (process.argv.find((a) => a.startsWith('--name=')) || '').split('=')[1] || username;
+      const userNo = (process.argv.find((a) => a.startsWith('--no=')) || '').split('=')[1] || '';
       const hash = bcrypt.hashSync(DEFAULT_PWD, 10);
       const [ins] = await conn.query(
         'INSERT INTO sys_user (username, password_hash, real_name, dept_id, user_no) VALUES (?, ?, ?, ?, ?)',
-        [username, hash, '系统管理员', deptId, 'ADMIN001'],
+        [username, hash, realName, deptId, userNo],
       );
       users = [{ id: ins.insertId, username }];
       log.push(`已创建用户 ${username}，初始密码 ${DEFAULT_PWD}（请立即修改）`);

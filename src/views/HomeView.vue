@@ -46,6 +46,9 @@
           <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
             立即开始
           </el-button>
+          <el-button v-else type="primary" size="large" round @click="$router.push('/workbench')">
+            进入工作台
+          </el-button>
           <el-button size="large" round class="ghost-btn" @click="scrollToModules">浏览全部服务</el-button>
         </div>
       </div>
@@ -85,19 +88,40 @@ const auth = useAuthStore();
 const modulesRef = ref(null);
 
 const modules = [
-  { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', iconClass: 'icon-1', ready: false },
-  { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', iconClass: 'icon-2', ready: false },
-  { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', iconClass: 'icon-3', ready: false },
-  { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', iconClass: 'icon-4', ready: false },
+  { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', iconClass: 'icon-1', ready: true, path: '/edu/elect', roles: ['student'] },
+  { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', iconClass: 'icon-2', ready: true, path: '/edu/scores', roles: ['student'] },
+  { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', iconClass: 'icon-3', ready: true, path: '/af/leave', roles: ['student'] },
+  { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', iconClass: 'icon-4', ready: true, path: '/af/repair', roles: ['student'] },
   { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', iconClass: 'icon-5', ready: false },
   { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', iconClass: 'icon-6', ready: false },
   { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', iconClass: 'icon-7', ready: false },
   { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', iconClass: 'icon-8', ready: false },
 ];
 
-function onModule(m) {
-  if (m.ready) return;
-  ElMessage.info(`「${m.title}」模块即将上线，敬请期待`);
+/**
+ * SSO 联动：已登录 → 直接进入对应服务；未登录 → 去登录页并记住目标，
+ * 登录成功后原路跳回（LoginView 读取 redirect 参数）。
+ * 面向学生的服务入口对教师/辅导员等角色自动改为进入工作台。
+ */
+async function onModule(m) {
+  if (!m.ready || !m.path) {
+    ElMessage.info(`「${m.title}」模块即将上线，敬请期待`);
+    return;
+  }
+  if (!auth.isLoggedIn) {
+    router.push({ name: 'login', query: { redirect: m.path } });
+    return;
+  }
+  if (!auth.user) {
+    await auth.fetchMe().catch(() => {});
+  }
+  if (m.roles && !auth.hasRole(m.roles)) {
+    // 教职工点学生服务入口：带去与自己权限匹配的工作台
+    ElMessage.info(`「${m.title}」面向学生开放，已为你进入工作台`);
+    router.push('/workbench');
+    return;
+  }
+  router.push(m.path);
 }
 
 function scrollToModules() {
