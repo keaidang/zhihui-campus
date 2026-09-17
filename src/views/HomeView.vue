@@ -30,20 +30,23 @@
       </div>
     </header>
 
-    <!-- Hero -->
-    <section class="zc-hero zc-container">
-      <img class="school-name-img" src="/name.png" alt="清北大学" />
-      <h1>一站式智慧校园服务平台</h1>
-      <p>
-        学习、生活、社交，一个入口全部搞定。
-        智汇校园把选课、图书、宿舍、点餐、二手、失物招领、社团与运动装进同一个平台，
-        让校园生活更简单、更高效、更有温度。
-      </p>
-      <div class="actions">
-        <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
-          立即开始
-        </el-button>
-        <el-button size="large" round @click="scrollToModules">浏览全部服务</el-button>
+    <!-- Hero：校园实景 + 深蓝渐变压暗 + 白字（高校门户通行做法） -->
+    <section class="zc-hero">
+      <div class="zc-container hero-inner">
+        <img class="school-name-img hero-school-name" src="/name.png" alt="清北大学" />
+        <h1>一站式智慧校园服务平台</h1>
+        <p>
+          学习、生活、社交，一个入口全部搞定。
+          智汇校园把选课、成绩、课表、请假、报修、图书、
+          二手、失物招领、社团与运动装进同一个平台，
+          让校园生活更简单、更高效、更有温度。
+        </p>
+        <div class="actions">
+          <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
+            立即开始
+          </el-button>
+          <el-button size="large" round class="ghost-btn" @click="scrollToModules">浏览全部服务</el-button>
+        </div>
       </div>
     </section>
 
@@ -82,13 +85,13 @@ const modulesRef = ref(null);
 
 const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', iconClass: 'icon-1', ready: false },
-  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Reading', iconClass: 'icon-2', ready: false },
-  { title: '宿舍生活', desc: '宿舍报修、水电查询、调宿申请', icon: 'House', iconClass: 'icon-3', ready: false },
-  { title: '校园点餐', desc: '食堂菜单、在线下单、取餐叫号', icon: 'Food', iconClass: 'icon-4', ready: false },
-  { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', iconClass: 'icon-5', ready: false },
-  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', iconClass: 'icon-6', ready: false },
-  { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', iconClass: 'icon-7', ready: false },
-  { title: '运动打卡', desc: '跑步打卡、连续天数、活力排行', icon: 'TrophyBase', iconClass: 'icon-8', ready: false },
+  { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', iconClass: 'icon-2', ready: false },
+  { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', iconClass: 'icon-3', ready: false },
+  { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', iconClass: 'icon-4', ready: false },
+  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', iconClass: 'icon-5', ready: false },
+  { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', iconClass: 'icon-6', ready: false },
+  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', iconClass: 'icon-7', ready: false },
+  { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', iconClass: 'icon-8', ready: false },
 ];
 
 function onModule(m) {

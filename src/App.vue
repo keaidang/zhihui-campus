@@ -1,5 +1,5 @@
 <template>
-  <SunnyBackdrop :plain="route.meta.gate === true" />
+  <SunnyBackdrop v-if="route.meta.gate === true" :plain="true" />
   <router-view />
 </template>
 
