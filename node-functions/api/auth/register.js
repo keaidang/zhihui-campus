@@ -34,13 +34,13 @@ export async function onRequestPost(context) {
     let userId;
     try {
       userId = await withTransaction(async (conn) => {
-        const [ins] = await conn.execute(
+        const [ins] = await conn.query(
           'INSERT INTO sys_user (username, password_hash, real_name) VALUES (?, ?, ?)',
           [username, hash, realName],
         );
-        const [roles] = await conn.execute("SELECT id FROM sys_role WHERE code = 'student'");
+        const [roles] = await conn.query("SELECT id FROM sys_role WHERE code = 'student'");
         if (roles[0]) {
-          await conn.execute(
+          await conn.query(
             'INSERT IGNORE INTO sys_user_role (user_id, role_id) VALUES (?, ?)',
             [ins.insertId, roles[0].id],
           );

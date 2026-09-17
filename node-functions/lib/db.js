@@ -33,13 +33,16 @@ export function getPool() {
   return pool;
 }
 
-/** 参数化查询便捷封装（强制防注入） */
+/** 参数化查询便捷封装（强制防注入）
+ *  ★ 用文本协议 query() 而非 execute()：TiDB Serverless 代理对预编译语句
+ *    (COM_STMT_EXECUTE) 存在 "malform packet error" 偶发兼容问题，
+ *    曾导致登录成功路径随机 500。mysql2 文本协议同样是占位符转义，防注入不变。 */
 export async function query(sql, params = []) {
-  const [rows] = await getPool().execute(sql, params);
+  const [rows] = await getPool().query(sql, params);
   return rows;
 }
 
-/** 事务封装：fn(conn) 内用 conn.execute 执行多条语句，任一失败自动回滚 */
+/** 事务封装：fn(conn) 内用 conn.query 执行多条语句，任一失败自动回滚 */
 export async function withTransaction(fn) {
   const conn = await getPool().getConnection();
   try {

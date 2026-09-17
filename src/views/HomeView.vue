@@ -4,9 +4,8 @@
     <header class="zc-navbar">
       <div class="zc-container inner">
         <div class="zc-logo" @click="$router.push('/')">
-          <el-icon :size="26"><Sunny /></el-icon>
-          <span>智汇校园</span>
-          <span class="sub">SMART CAMPUS</span>
+          <img class="brand-logo" src="/logo.png" alt="清北大学校徽" />
+          <img class="brand-name" src="/name.png" alt="清北大学" />
         </div>
         <div>
           <template v-if="auth.isLoggedIn">
@@ -33,6 +32,7 @@
 
     <!-- Hero -->
     <section class="zc-hero zc-container">
+      <img class="school-name-img" src="/name.png" alt="清北大学" />
       <h1>一站式智慧校园服务平台</h1>
       <p>
         学习、生活、社交，一个入口全部搞定。

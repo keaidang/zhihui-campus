@@ -3,11 +3,8 @@
     <!-- 抬头：校名品牌 + 认证标题 -->
     <header class="gate-header zc-container">
       <div class="gate-brand">
-        <span class="badge">智</span>
-        <div>
-          <strong>智汇校园</strong>
-          <span>ZHIHUI CAMPUS PLATFORM</span>
-        </div>
+        <img class="gate-logo" src="/logo.png" alt="清北大学校徽" />
+        <img class="gate-name" src="/name.png" alt="清北大学" />
       </div>
       <h1 class="gate-title">智汇校园 · 统一身份认证</h1>
     </header>
