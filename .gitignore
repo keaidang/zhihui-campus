@@ -49,3 +49,8 @@ Thumbs.db
 audit-status.txt
 s.txt
 node-ok.txt
+
+# 手动下载的仓库副本与一次性验证脚本（严禁入库）
+zhihui-campus-main/
+check-*.mjs
+verify-*.mjs
