@@ -12,8 +12,8 @@
     <div class="wb-cols">
       <!-- 左列：账号信息卡 + 校园资源 -->
       <div class="wb-left">
-        <!-- 账号信息卡（配色跟随角色主题） -->
-        <section class="wb-profile">
+        <!-- 账号信息卡 -->
+        <section class="wb-profile wb-panel">
           <div class="wp-top">
             <el-avatar :size="56" class="wp-avatar">{{ initial }}</el-avatar>
             <div class="wp-id">
@@ -33,7 +33,7 @@
         </section>
 
         <!-- 校园资源（外部链接） -->
-        <section class="wb-res">
+        <section class="wb-res wb-panel">
           <h4><el-icon><Link /></el-icon> 常用资源</h4>
           <a v-for="r in RESOURCES" :key="r.name" :href="r.url" target="_blank" rel="noopener noreferrer" class="res-item">
             <span class="res-dot" :style="{ background: r.color }"></span>
@@ -52,7 +52,7 @@
             v-for="m in modules"
             :key="m.title"
             class="wb-card"
-            :class="{ ready: m.path }"
+            :class="m.path ? 'ready' : 'pending-card'"
             @click="onOpen(m)"
           >
             <span class="wb-card-badge">{{ m.path ? '可用' : '即将上线' }}</span>
@@ -155,27 +155,54 @@ function onOpen(m) {
 </script>
 
 <style scoped>
+/* 欢迎条：深蓝实景玻璃面板 + 素金细节，替代角色配色 */
 .wb-hero {
-  background: linear-gradient(120deg, var(--role-accent, #17325c), color-mix(in srgb, var(--role-accent, #17325c) 72%, #0f1e33));
-  color: #fff;
-  border-radius: 14px;
-  padding: 24px 30px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 26px 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--role-accent, #17325c) 30%, transparent);
+  color: #fff;
+  background: url('/web-pc.png') center / cover no-repeat;
+  box-shadow: 0 14px 38px rgba(10, 24, 46, 0.32);
 }
-.wb-hero h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: 1px; }
-.wb-hero p { margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.wb-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(13, 28, 52, 0.88) 0%, rgba(23, 50, 92, 0.72) 60%, rgba(23, 50, 92, 0.55) 100%);
+}
+.wb-hero > div { position: relative; z-index: 1; }
+.wb-hero h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* 标题前的素金竖条 */
+.wb-hero h2::before {
+  content: '';
+  width: 4px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--zc-gold);
+}
+.wb-hero p { margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.82); }
 .wb-hero-badge span {
   display: inline-block;
   font-size: 12px;
   letter-spacing: 1px;
   padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(6px);
   white-space: nowrap;
 }
 
@@ -188,34 +215,37 @@ function onOpen(m) {
 }
 .wb-left { display: flex; flex-direction: column; gap: 18px; }
 
-/* 账号信息卡：角色主题色渐变头 + 白底明细 */
-.wb-profile {
+/* 通用玻璃卡 */
+.wb-panel {
+  background: var(--zc-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--zc-glass-border);
   border-radius: 14px;
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid rgba(23, 50, 92, 0.08);
-  box-shadow: 0 6px 24px rgba(23, 50, 92, 0.07);
+  box-shadow: 0 10px 30px rgba(15, 35, 66, 0.09);
 }
+
+/* 账号信息卡 */
+.wb-profile { overflow: hidden; }
 .wp-top {
-  background: linear-gradient(135deg, var(--role-accent, #17325c), color-mix(in srgb, var(--role-accent, #17325c) 65%, #101c30));
   padding: 20px;
   display: flex;
   align-items: center;
   gap: 14px;
+  background: linear-gradient(135deg, rgba(23, 50, 92, 0.94), rgba(35, 74, 133, 0.88));
 }
 .wp-avatar {
-  background: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
   color: #fff;
   font-size: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.38);
 }
 .wp-id h3 { margin: 0 0 6px; font-size: 17px; color: #fff; letter-spacing: 1px; }
 .wp-role-tag {
   display: inline-block;
   font-size: 11px;
   color: #fff;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 999px;
   padding: 2px 10px;
   letter-spacing: 1px;
@@ -235,13 +265,7 @@ function onOpen(m) {
 .wp-meta span { text-align: right; word-break: break-all; }
 
 /* 资源链接卡 */
-.wb-res {
-  background: #fff;
-  border: 1px solid rgba(23, 50, 92, 0.08);
-  border-radius: 14px;
-  padding: 16px 18px;
-  box-shadow: 0 6px 24px rgba(23, 50, 92, 0.07);
-}
+.wb-res { padding: 16px 18px; }
 .wb-res h4 {
   margin: 0 0 10px;
   font-size: 14px;
@@ -262,7 +286,7 @@ function onOpen(m) {
   font-size: 13.5px;
   transition: background 0.15s;
 }
-.res-item:hover { background: rgba(37, 99, 235, 0.06); }
+.res-item:hover { background: rgba(23, 50, 92, 0.06); }
 .res-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .res-name { font-weight: 600; flex: none; }
 .res-desc { color: var(--zc-text-sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -273,16 +297,35 @@ function onOpen(m) {
 .wb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .wb-card {
   position: relative;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(23, 50, 92, 0.08);
-  border-radius: 12px;
+  overflow: hidden;
+  background: var(--zc-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--zc-glass-border);
+  border-radius: 13px;
   padding: 20px 18px;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  box-shadow: 0 4px 16px rgba(23, 50, 92, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  box-shadow: 0 6px 20px rgba(15, 35, 66, 0.07);
 }
-.wb-card:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(23, 50, 92, 0.12); }
-.wb-card.ready { border-color: color-mix(in srgb, var(--role-accent) 45%, transparent); }
+/* 悬停顶部素金线 */
+.wb-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--zc-gold), rgba(200, 163, 95, 0.15));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+}
+.wb-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 30px rgba(15, 35, 66, 0.13);
+}
+.wb-card:hover::before { transform: scaleX(1); }
 .wb-card-badge {
   position: absolute;
   top: 12px;
@@ -292,22 +335,24 @@ function onOpen(m) {
   border: 1px solid var(--zc-border);
   border-radius: 999px;
   padding: 1px 8px;
+  background: rgba(255, 255, 255, 0.6);
 }
 .wb-card.ready .wb-card-badge {
-  color: var(--role-accent);
-  border-color: color-mix(in srgb, var(--role-accent) 40%, transparent);
-  background: color-mix(in srgb, var(--role-accent) 8%, #fff);
+  color: var(--zc-navy);
+  border-color: rgba(23, 50, 92, 0.28);
 }
+.wb-card.pending-card { filter: saturate(0.35); opacity: 0.82; }
 .wb-icon {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--role-accent), color-mix(in srgb, var(--role-accent) 60%, #101c30));
+  background: linear-gradient(135deg, #2d5a9e, var(--zc-navy));
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 14px;
+  box-shadow: 0 6px 14px rgba(23, 50, 92, 0.2);
 }
 .wb-card h4 { margin: 0 0 6px; font-size: 15px; }
 .wb-card p { margin: 0; font-size: 12.5px; color: var(--zc-text-sub); line-height: 1.6; }

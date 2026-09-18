@@ -61,19 +61,20 @@
 
 | 角色 | 主题色 | 菜单/能力 |
 |---|---|---|
-| student 蓝 #2563eb | 选课、成绩课表、请销假、报修、公告 |
-| teacher 青 #0d9488 | 我的课程、成绩录入、公告发布（本院） |
-| counselor 琥珀 #d97706 | 请假审批（本院）、报修处理、学生名册（本院）、公告 |
-| leader 紫 #7c3aed | 纯只读，M4 驾驶舱（未做），公告 |
-| admin 红 #dc2626 | 全部 + 用户/角色管理独占 |
+| student | 统一学术风 | 选课、成绩课表、请销假、报修、公告 |
+| teacher | 统一学术风 | 我的课程、成绩录入、公告发布（本院） |
+| counselor | 统一学术风 | 请假审批（本院）、报修处理、学生名册（本院）、公告 |
+| leader | 统一学术风 | 纯只读，M4 驾驶舱（未做），公告 |
+| admin | 统一学术风 | 全部 + 用户/角色管理独占 |
 
-- 主题色由 `PortalShell.vue` 注入 CSS 变量 `--role-accent`，工作台/菜单/卡片全部跟随
+- **视觉方向（2026-09-18 用户定稿）**：不再按角色区分主题色，全站统一"学术深蓝 #17325c + 素金 #c8a35f 点缀 + 玻璃拟态卡片"，校园实景背景清晰透出；角色仅以文字徽标呈现
+- 旧 `--role-accent` 机制已移除（PortalShell/WorkbenchView）；新 CSS 变量：--zc-gold、--zc-glass、--zc-glass-border（核对 :root）
 - 角色判定三层：前端路由守卫（体验）→ guard.js requireRoles **实时查库**（真权限）→ dataScope SQL 层强制拼接（数据范围 self/dept/all）
 
 ## 5. 必须遵守的铁律（全部踩过坑）
 
 1. **TiDB Serverless 禁用 mysql2 `execute()`（预编译协议）**：代理偶发 malform packet error。全项目统一 `db.js query()` 文本协议
-2. **db.js query() 内置瞬时错误重试**（ECONNRESET/malform/握手/SSL，换连接最多 2 次）+ 连接池 5 —— 随机 500 的根治方案，**别删**
+2. **db.js query() 内置瞬时错误重试**（ECONNRESET/malform/握手/SSL，换连接最多 2 次）+ 连接池 5；**withTransaction 事务封装同样内置瞬时错误重试**（换新连接最多 2 次，要求业务幂等——选课/退课满足）—— 随机 500 的根治方案，**别删**
 3. **500 会落库 sys_op_log(action='error.500')**，线上无控制台时用这个远程诊断真实错误
 4. **新业务模块统一走 guard.js**：requireRoles + dataScope + HttpError + opLog（管理写操作必须审计留痕）
 5. **JWT_SECRET 必须在 EdgeOne 控制台配置且选生产环境**；env 变量改后必须重新部署才生效

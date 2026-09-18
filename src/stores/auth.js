@@ -56,14 +56,20 @@ export const useAuthStore = defineStore('auth', {
 
     async tryRefresh() {
       if (!this.refreshToken) return false;
-      const res = await api('/api/auth/refresh', {
-        method: 'POST',
-        auth: false,
-        body: { refreshToken: this.refreshToken },
-      });
-      if (res.code === 0) {
-        this._applySession(res.data);
-        return true;
+      // 瞬时错误(50000)退避重试：TiDB 抖动导致的刷新失败不应把用户踢回登录页；
+      // 40100=令牌真失效（无效/过期/重放），重试无意义
+      for (let i = 0; i < 3; i++) {
+        const res = await api('/api/auth/refresh', {
+          method: 'POST',
+          auth: false,
+          body: { refreshToken: this.refreshToken },
+        }).catch(() => ({ code: 50000, message: 'network' }));
+        if (res.code === 0) {
+          this._applySession(res.data);
+          return true;
+        }
+        if (res.code !== 50000) return false;
+        await new Promise((s) => setTimeout(s, 600 * (i + 1)));
       }
       return false;
     },

@@ -5,7 +5,7 @@
 //  - 轮换: 每次刷新作废旧令牌签发新令牌 (检测重放: 旧令牌被复用则吊销该用户全部会话)
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
-import { query } from './db.js';
+import { query, withTransaction } from './db.js';
 
 const ACCESS_TTL_SEC = 2 * 60 * 60;      // 2h
 const REFRESH_TTL_SEC = 7 * 24 * 60 * 60; // 7d
@@ -65,6 +65,36 @@ export async function rotateRefreshToken(token) {
   }
   await query('UPDATE sys_refresh_token SET revoked = 1 WHERE id = ?', [row.id]);
   return { ok: true, userId: row.user_id };
+}
+
+/** 原子轮换（事务版，配合瞬时错误重试）：旧版"作废旧令牌+另插新令牌"两步分离，
+ *  中间撞上 TiDB 瞬时 500 会导致旧令牌已作废、新令牌未落库 → 客户端刷新令牌
+ *  永久失效，F5 必跳登录页（甚至触发重放保护吊销全部会话）。
+ *  现改为同一行原位换 hash：任一步失败整体回滚，旧令牌保持有效、客户端可直接重试。 */
+export async function rotateRefreshTokenAtomic(token) {
+  const expiresAt = new Date(Date.now() + REFRESH_TTL_SEC * 1000);
+  return withTransaction(async (conn) => {
+    const hash = sha256(token);
+    const [rows] = await conn.query(
+      'SELECT id, user_id, expires_at, revoked FROM sys_refresh_token WHERE token_hash = ?',
+      [hash],
+    );
+    const row = rows[0];
+    if (!row) return { ok: false, reason: 'not_found' };
+    if (row.revoked) {
+      await conn.query('UPDATE sys_refresh_token SET revoked = 1 WHERE user_id = ?', [row.user_id]);
+      return { ok: false, reason: 'replayed' };
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return { ok: false, reason: 'expired' };
+    }
+    const next = newRefreshToken();
+    await conn.query(
+      'UPDATE sys_refresh_token SET token_hash = ?, expires_at = ? WHERE id = ?',
+      [sha256(next), expiresAt, row.id],
+    );
+    return { ok: true, userId: row.user_id, nextToken: next };
+  });
 }
 
 export async function revokeRefreshToken(token) {

@@ -1,6 +1,6 @@
 <template>
-  <div class="shell" :style="roleVars">
-    <!-- 校园实景背景（与登录页同源），轻度虚化 + 浅色纱罩保证可读性 -->
+  <div class="shell">
+    <!-- 校园实景背景（与登录页同源），微虚化 + 极轻纱罩，让实景清晰透出 -->
     <div class="shell-bg" aria-hidden="true"></div>
     <div class="shell-veil" aria-hidden="true"></div>
 
@@ -16,7 +16,7 @@
           <span class="shell-role">{{ roleLabel }}</span>
           <el-dropdown @command="onCommand">
             <span class="shell-user-btn">
-              <el-avatar :size="28" :style="{ background: 'var(--role-accent)' }">
+              <el-avatar :size="28" :style="{ background: 'var(--zc-navy)' }">
                 {{ auth.user?.realName?.charAt(0) || 'U' }}
               </el-avatar>
               <span class="shell-username">{{ auth.user?.realName || auth.user?.username }}</span>
@@ -96,19 +96,7 @@ const ROLE_LABEL = {
   student: '学生',
 };
 
-/** 五角色主题色（工作台/菜单/按钮跟随主角色变化） */
-const ACCENT = {
-  student: '#2563eb', // 学院蓝
-  teacher: '#0d9488', // 青绿
-  counselor: '#d97706', // 琥珀
-  leader: '#7c3aed', // 靛紫
-  admin: '#dc2626', // 庄重红
-};
-
 const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
-const roleVars = computed(() => ({
-  '--role-accent': ACCENT[auth.primaryRole] || ACCENT.student,
-}));
 
 /** 统一菜单表：ALL = 全角色；具体能力由路由守卫 + 后端 scope 双重兜底 */
 const MENUS = [
@@ -163,20 +151,20 @@ async function onCommand(cmd) {
   display: flex;
   flex-direction: column;
 }
-/* 校园实景背景（登录页同源照片）：轻度虚化，压浅色纱罩 */
+/* 校园实景背景：微虚化，实景清晰可辨 */
 .shell-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
   background: url('/web-pc.png') center / cover no-repeat;
-  filter: blur(7px) saturate(1.08);
-  transform: scale(1.06);
+  filter: blur(2px) saturate(1.05);
+  transform: scale(1.03);
 }
 .shell-veil {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: linear-gradient(180deg, rgba(240, 246, 252, 0.86) 0%, rgba(230, 240, 250, 0.9) 60%, rgba(222, 234, 248, 0.93) 100%);
+  background: linear-gradient(180deg, rgba(240, 246, 252, 0.55) 0%, rgba(233, 241, 250, 0.62) 55%, rgba(226, 236, 248, 0.7) 100%);
 }
 .shell-top,
 .shell-body,
@@ -209,8 +197,9 @@ async function onCommand(cmd) {
 .shell-user { display: flex; align-items: center; gap: 14px; }
 .shell-role {
   font-size: 12px;
-  color: #fff;
-  background: var(--role-accent, var(--zc-navy));
+  color: var(--zc-navy);
+  background: rgba(23, 50, 92, 0.07);
+  border: 1px solid rgba(23, 50, 92, 0.18);
   border-radius: 999px;
   padding: 3px 12px;
   letter-spacing: 1px;
@@ -231,29 +220,44 @@ async function onCommand(cmd) {
 .shell-side {
   width: 196px;
   flex: none;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(23, 50, 92, 0.08);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 14px;
   padding: 12px 10px;
   display: flex;
   flex-direction: column;
   min-height: 420px;
-  box-shadow: 0 6px 24px rgba(23, 50, 92, 0.07);
+  box-shadow: 0 10px 34px rgba(15, 35, 66, 0.1);
 }
 .shell-menu {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 11px 12px;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 14px;
   color: var(--zc-text);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
-.shell-menu:hover { background: rgba(37, 99, 235, 0.08); }
-.shell-menu.active { background: var(--role-accent, var(--zc-navy)); color: #fff; }
+.shell-menu:hover { background: rgba(23, 50, 92, 0.07); }
+.shell-menu.active {
+  background: linear-gradient(120deg, var(--zc-navy), #234a85);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(23, 50, 92, 0.28);
+}
+.shell-menu.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  height: 56%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--zc-gold);
+}
 .shell-menu.disabled { color: var(--zc-text-sub); cursor: not-allowed; }
 .shell-menu.disabled em { margin-left: auto; font-size: 11px; font-style: normal; opacity: 0.7; }
 .shell-menu-group { margin: 16px 0 6px; padding: 0 12px; font-size: 12px; color: var(--zc-text-sub); letter-spacing: 1px; }

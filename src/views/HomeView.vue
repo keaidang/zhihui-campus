@@ -59,12 +59,12 @@
       <h2 class="zc-section-title">校园服务 · 全都在这里</h2>
       <p class="zc-section-sub">统一账号登录，模块持续上新</p>
       <div class="zc-grid">
-        <div v-for="m in modules" :key="m.title" class="zc-card" @click="onModule(m)">
+        <div v-for="m in modules" :key="m.title" class="zc-card" :class="{ pending: !m.ready }" @click="onModule(m)">
           <span v-if="!m.ready" class="badge">即将上线</span>
-          <div class="icon-wrap" :class="m.iconClass">
+          <div class="icon-wrap">
             <el-icon :size="26"><component :is="m.icon" /></el-icon>
           </div>
-          <h3>{{ m.title }}</h3>
+          <h3>{{ m.title }}<el-icon class="go"><ArrowRight /></el-icon></h3>
           <p>{{ m.desc }}</p>
         </div>
       </div>
@@ -81,6 +81,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { ArrowRight } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 
 const router = useRouter();
@@ -88,14 +89,14 @@ const auth = useAuthStore();
 const modulesRef = ref(null);
 
 const modules = [
-  { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', iconClass: 'icon-1', ready: true, path: '/edu/elect', roles: ['student'] },
-  { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', iconClass: 'icon-2', ready: true, path: '/edu/scores', roles: ['student'] },
-  { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', iconClass: 'icon-3', ready: true, path: '/af/leave', roles: ['student'] },
-  { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', iconClass: 'icon-4', ready: true, path: '/af/repair', roles: ['student'] },
-  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', iconClass: 'icon-5', ready: false },
-  { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', iconClass: 'icon-6', ready: false },
-  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', iconClass: 'icon-7', ready: false },
-  { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', iconClass: 'icon-8', ready: false },
+  { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', ready: true, path: '/edu/elect', roles: ['student'] },
+  { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', ready: true, path: '/edu/scores', roles: ['student'] },
+  { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', ready: true, path: '/af/leave', roles: ['student'] },
+  { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', ready: true, path: '/af/repair', roles: ['student'] },
+  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', ready: false },
+  { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', ready: false },
+  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', ready: false },
+  { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', ready: false },
 ];
 
 /**

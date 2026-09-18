@@ -1,7 +1,7 @@
 // POST /api/auth/refresh — 刷新访问令牌（轮换刷新令牌）
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody } from '../../lib/http.js';
-import { signAccessToken, rotateRefreshToken, newRefreshToken, saveRefreshToken } from '../../lib/auth.js';
+import { signAccessToken, rotateRefreshTokenAtomic } from '../../lib/auth.js';
 import { preflight } from '../../lib/http.js';
 
 export { preflight as onRequestOptions };
@@ -12,7 +12,8 @@ export async function onRequestPost(context) {
     const refreshToken = String(body.refreshToken || '');
     if (!refreshToken) return fail(40100, '缺少刷新令牌', 401);
 
-    const result = await rotateRefreshToken(refreshToken);
+    // 原子轮换（事务+瞬时重试）：失败即回滚，旧令牌仍有效，客户端可重试
+    const result = await rotateRefreshTokenAtomic(refreshToken);
     if (!result.ok) {
       const msg = { not_found: '刷新令牌无效', expired: '登录已过期，请重新登录', replayed: '检测到异常会话，请重新登录' }[result.reason];
       return fail(40100, msg || '刷新失败', 401);
@@ -32,12 +33,9 @@ export async function onRequestPost(context) {
       [user.id],
     )).map((r) => r.code);
 
-    const newRefresh = newRefreshToken();
-    await saveRefreshToken(user.id, newRefresh);
-
     return ok({
       accessToken: signAccessToken(user, roles),
-      refreshToken: newRefresh,
+      refreshToken: result.nextToken,
       expiresIn: 2 * 60 * 60,
       user: { id: user.id, username: user.username, realName: user.real_name, roles },
     });

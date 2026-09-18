@@ -8,13 +8,16 @@
   --zc-primary-light: #3b82f6;
   --zc-sky: #0ea5e9;
   --zc-accent: #f59e0b;
+  --zc-gold: #c8a35f; /* 素金点缀：学术气质，用于激活指示/细节高亮 */
   --zc-text: #1e293b;
   --zc-text-sub: #64748b;
   --zc-bg: #f0f7ff;
   --zc-card: #ffffff;
   --zc-border: #e2e8f0;
   --zc-radius: 16px;
-  --zc-shadow: 0 8px 30px rgba(37, 99, 235, 0.08);
+  --zc-shadow: 0 12px 36px rgba(15, 35, 66, 0.1);
+  --zc-glass: rgba(255, 255, 255, 0.82);
+  --zc-glass-border: rgba(255, 255, 255, 0.65);
 }
 
 * { box-sizing: border-box; }
@@ -178,7 +181,7 @@ body { background: transparent; }
   margin: 0 auto 10px;
 }
 
-/* ---------- 模块卡片 ---------- */
+/* ---------- 模块卡片（玻璃拟态 · 学术深蓝统一色 · 悬停细节） ---------- */
 .zc-section-title {
   text-align: center;
   font-size: 26px;
@@ -194,38 +197,65 @@ body { background: transparent; }
 .zc-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 18px;
   padding-bottom: 80px;
 }
 @media (max-width: 1024px) { .zc-grid { grid-template-columns: repeat(2, 1fr); } }
 
 .zc-card {
-  background: var(--zc-card);
-  border: 1px solid var(--zc-border);
-  border-radius: var(--zc-radius);
-  padding: 26px 22px;
-  cursor: pointer;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
   position: relative;
   overflow: hidden;
+  background: var(--zc-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--zc-glass-border);
+  border-radius: var(--zc-radius);
+  padding: 26px 22px 22px;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  box-shadow: 0 6px 22px rgba(15, 35, 66, 0.07);
+}
+/* 顶部素金细线：悬停时展开，制造"被点亮"的细节感 */
+.zc-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--zc-gold), rgba(200, 163, 95, 0.15));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 .zc-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-5px);
+  background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--zc-shadow);
-  border-color: rgba(37, 99, 235, 0.35);
 }
+.zc-card:hover::before { transform: scaleX(1); }
 .zc-card .icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 50px;
+  height: 50px;
+  border-radius: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  font-size: 25px;
   color: #fff;
   margin-bottom: 16px;
+  background: linear-gradient(135deg, #2d5a9e, var(--zc-navy));
+  box-shadow: 0 6px 14px rgba(23, 50, 92, 0.22);
 }
-.zc-card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.zc-card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+/* 悬停浮现的箭头引导 */
+.zc-card h3 .go {
+  font-size: 15px;
+  color: var(--zc-gold);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.zc-card:hover h3 .go { opacity: 1; transform: translateX(0); }
 .zc-card p { margin: 0; font-size: 13px; color: var(--zc-text-sub); line-height: 1.7; }
 .zc-card .badge {
   position: absolute;
@@ -238,15 +268,9 @@ body { background: transparent; }
   padding: 2px 9px;
   background: rgba(100, 116, 139, 0.08);
 }
-/* 图标统一学术深蓝家族（庄重、去彩色） */
-.zc-card .icon-1 { background: linear-gradient(135deg, #2d6cb5, #17325c); }
-.zc-card .icon-2 { background: linear-gradient(135deg, #3a7bc0, #1e4e8c); }
-.zc-card .icon-3 { background: linear-gradient(135deg, #27619f, #142a4e); }
-.zc-card .icon-4 { background: linear-gradient(135deg, #4a83c9, #235a9e); }
-.zc-card .icon-5 { background: linear-gradient(135deg, #336fae, #1a3a68); }
-.zc-card .icon-6 { background: linear-gradient(135deg, #2a5f9e, #12294a); }
-.zc-card .icon-7 { background: linear-gradient(135deg, #4178b8, #1d4a85); }
-.zc-card .icon-8 { background: linear-gradient(135deg, #2e6ab0, #16305a); }
+/* 未上线模块：整体降饱和，弱化视觉重量 */
+.zc-card.pending { filter: saturate(0.35); opacity: 0.82; }
+.zc-card.pending:hover { filter: saturate(0.5); }
 
 /* ---------- 统一身份认证页（大气版式：居中抬头 + 纯虚化实景 + 毛玻璃深蓝卡片） ---------- */
 .gate-page {

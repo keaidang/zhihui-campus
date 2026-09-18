@@ -84,18 +84,32 @@ export async function query(sql, params = []) {
   }
 }
 
-/** 事务封装：fn(conn) 内用 conn.query 执行多条语句，任一失败自动回滚 */
+/** 事务封装：fn(conn) 内用 conn.query 执行多条语句，任一失败自动回滚
+ *  ★ 瞬时错误自动重试（换新连接，最多 2 次）：事务内语句此前没有 query() 的
+ *    重试兜底，选课等写操作偶发 500 的主因。要求 fn 业务幂等（选课/退课满足：
+ *    upsert 重激活 + 条件 UPDATE 天然可重入）；极小概率"提交成功但响应丢失"
+ *    的幻影提交，重试后会以业务错误码（如 42003）而非 500 返回，可接受。 */
 export async function withTransaction(fn) {
-  const conn = await getPool().getConnection();
-  try {
-    await conn.beginTransaction();
-    const result = await fn(conn);
-    await conn.commit();
-    return result;
-  } catch (e) {
-    await conn.rollback();
-    throw e;
-  } finally {
-    conn.release();
+  for (let attempt = 0; ; attempt++) {
+    let conn;
+    try {
+      conn = await getPool().getConnection();
+      await conn.beginTransaction();
+      const result = await fn(conn);
+      await conn.commit();
+      return result;
+    } catch (e) {
+      if (conn) {
+        try { await conn.rollback(); } catch { /* 连接已坏，忽略回滚错误 */ }
+      }
+      // 仅瞬时错误重试；业务错误（DUPLICATE/FULL/NOT_ENROLLED 等）直接抛出
+      if (attempt < 2 && isTransient(e)) {
+        await sleep(150 * (attempt + 1));
+        continue;
+      }
+      throw e;
+    } finally {
+      if (conn) conn.release();
+    }
   }
 }
