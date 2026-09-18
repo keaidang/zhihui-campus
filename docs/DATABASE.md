@@ -32,7 +32,7 @@
 | edu_class | 教学班（开课） | course_id, teacher_id, term='2026-2027-1', **capacity/enrolled**, week_day, section, classroom；3 个种子班绑 teacher01 |
 | edu_elect | 选课与成绩（成绩内嵌） | **UNIQUE(class_id, student_id) 防重选**；status: 1修读中 2已出分 0已退课；score, grade(优/良/中/及格/不及格) |
 
-**防超卖范式（论文核心段落素材）**：事务内① `INSERT IGNORE` 选课记录（唯一键占位，冲突=重复选课）→ ② 条件 `UPDATE edu_class SET enrolled=enrolled+1 WHERE id=? AND status=1 AND enrolled<capacity`，affectedRows=0 即名额满 → 回滚。退课反向：置 status=0 + `GREATEST(enrolled-1,0)`。实测并发安全，比草案的 SELECT FOR UPDATE 更简洁。
+**防超卖范式（论文核心段落素材）**：事务内① `INSERT ... ON DUPLICATE KEY UPDATE status = IF(status = 2, status, 1)` 选课记录（唯一键占位；冲突时已退课 status=0 → 重激活为 1，已选/已出分 status=1/2 → 无变化，affectedRows=0 即重复选课）→ ② 条件 `UPDATE edu_class SET enrolled=enrolled+1 WHERE id=? AND status=1 AND enrolled<capacity`，affectedRows=0 即名额满 → 回滚。退课反向：置 status=0 + `GREATEST(enrolled-1,0)`。**退课后可再次选课**（重激活原记录，成绩内嵌表不物理删行）。实测并发安全，比草案的 SELECT FOR UPDATE 更简洁。
 
 ### flow + af 学工（schema-004，M2）
 | 表 | 说明 | 关键点 |

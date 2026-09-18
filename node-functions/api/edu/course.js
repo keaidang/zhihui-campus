@@ -1,7 +1,7 @@
 // /api/edu/course — 选课中心（学生）
 // GET  选课目录：课程+教学班+名额实时；含本人已选标记
 // POST { action: 'enroll' | 'drop', classId }
-// 防超卖：条件 UPDATE (enrolled < capacity)；防重选：edu_elect 唯一键
+// 防超卖：条件 UPDATE (enrolled < capacity)；防重选：edu_elect 唯一键 + upsert 重激活退课记录
 import { ok, fail, jsonError, readBody, preflight } from '../../lib/http.js';
 import { requireRoles, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
@@ -55,14 +55,17 @@ export async function onRequestPost(context) {
 
     if (action === 'enroll') {
       if (cls.status !== 1) return fail(42002, '该教学班已停止选课');
-      // 并发选课事务：先唯一键占位，再条件 UPDATE 扣名额
+      // 并发选课事务：先唯一键占位/重激活，再条件 UPDATE 扣名额
+      // ON DUPLICATE KEY UPDATE：行不存在则插入(affectedRows=1)；
+      // 已退课(status=0)则重激活为修读中(affectedRows=2)；已选/已出分(status=1/2)则无变化(affectedRows=0)→DUPLICATE
       try {
         await withTransaction(async (conn) => {
-          const [ins] = await conn.query(
-            'INSERT IGNORE INTO edu_elect (class_id, student_id, term) VALUES (?, ?, ?)',
+          const [ups] = await conn.query(
+            `INSERT INTO edu_elect (class_id, student_id, term, status) VALUES (?, ?, ?, 1)
+               ON DUPLICATE KEY UPDATE status = IF(status = 2, status, 1)`,
             [classId, userId, TERM],
           );
-          if (ins.affectedRows === 0) throw new Error('DUPLICATE');
+          if (ups.affectedRows === 0) throw new Error('DUPLICATE');
           const [upd] = await conn.query(
             'UPDATE edu_class SET enrolled = enrolled + 1 WHERE id = ? AND status = 1 AND enrolled < capacity',
             [classId],

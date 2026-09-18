@@ -76,7 +76,7 @@
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | /api/edu/course | 登录 | 选课目录（课程+教学班+名额实时+`mine` 已选标记） |
-| POST | /api/edu/course | student | `{action:'enroll'\|'drop', classId}`；事务+条件 UPDATE 防超卖，唯一键防重选 |
+| POST | /api/edu/course | student | `{action:'enroll'\|'drop', classId}`；事务+条件 UPDATE 防超卖，唯一键+upsert 防重选/重激活退课记录 |
 | GET | /api/edu/timetable | student/teacher/admin | 周课表（学生=所选含已出分；教师=任教班） |
 | GET | /api/edu/score | student | 成绩单 + summary（GPA/学分/已出分门数） |
 | GET | /api/edu/score?classId= | teacher/admin | 教学班选课名单（含现有成绩） |
