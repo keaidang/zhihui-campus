@@ -21,6 +21,9 @@ const csvCell = (v) => {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
+/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss' */
+const fmtDT = (v) => (v ? new Date(v).toLocaleString('sv-SE').replace('T', ' ').slice(0, 19) : '');
+const fmtD = (v) => (v ? fmtDT(v).slice(0, 10) : '');
 
 /** 辅导员数据范围：本人带班 id 列表；admin 返回 null（不过滤） */
 async function scopeClassIds(roles, userId) {
@@ -81,8 +84,8 @@ export async function onRequestGet(context) {
             r.class_name || '未分班',
             r.dept_name || '',
             r.status === 1 ? '正常' : '禁用',
-            r.valid_until ? String(r.valid_until).slice(0, 10) : '长期',
-            String(r.last_login_at || '').slice(0, 19).replace('T', ' '),
+            r.valid_until ? fmtD(r.valid_until) : '长期',
+            fmtDT(r.last_login_at),
           ].map(csvCell).join(','),
         );
       }

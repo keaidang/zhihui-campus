@@ -30,6 +30,10 @@ function parseValidUntil(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss'（sv-SE locale 恰好是这个格式） */
+const fmtDT = (v) => (v ? new Date(v).toLocaleString('sv-SE').replace('T', ' ').slice(0, 19) : '');
+const fmtD = (v) => (v ? fmtDT(v).slice(0, 10) : '');
+
 export async function onRequestGet(context) {
   try {
     const { roles, deptId } = await requireRoles(context, MANAGER_ROLES);
@@ -91,9 +95,9 @@ export async function onRequestGet(context) {
             r.dept_name || '',
             r.class_name || '',
             r.status === 1 ? '正常' : '禁用',
-            r.valid_until ? String(r.valid_until).slice(0, 10) : '长期',
-            String(r.created_at || '').slice(0, 19).replace('T', ' '),
-            String(r.last_login_at || '').slice(0, 19).replace('T', ' '),
+            r.valid_until ? fmtD(r.valid_until) : '长期',
+            fmtDT(r.created_at),
+            fmtDT(r.last_login_at),
           ].map(csvCell).join(','),
         );
       }
