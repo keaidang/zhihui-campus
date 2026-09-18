@@ -20,11 +20,14 @@ export async function onRequestPost(context) {
     }
 
     const users = await query(
-      'SELECT id, username, real_name, status FROM sys_user WHERE id = ?',
+      'SELECT id, username, real_name, status, valid_until FROM sys_user WHERE id = ?',
       [result.userId],
     );
     const user = users[0];
     if (!user || user.status !== 1) return fail(40300, '账号不可用', 403);
+    if (user.valid_until && new Date(user.valid_until).getTime() < Date.now()) {
+      return fail(40300, '账号已过有效期，请联系管理员续期', 403);
+    }
 
     const roles = (await query(
       `SELECT r.code FROM sys_role r

@@ -6,10 +6,13 @@
           <h2>成绩课表</h2>
           <p>2026-2027 学年第一学期</p>
         </div>
-        <el-radio-group v-model="tab">
-          <el-radio-button value="score">成绩单</el-radio-button>
-          <el-radio-button value="table">周课表</el-radio-button>
-        </el-radio-group>
+        <div>
+          <el-button :icon="Download" round @click="onExport">导出课表</el-button>
+          <el-radio-group v-model="tab">
+            <el-radio-button value="score">成绩单</el-radio-button>
+            <el-radio-button value="table">周课表</el-radio-button>
+          </el-radio-group>
+        </div>
       </header>
 
       <!-- 成绩单 -->
@@ -77,8 +80,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import { Download } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
+import { useAuthStore } from '../../stores/auth';
+import { exportTimetable } from '../../utils/timetableExport';
 
 const tab = ref('score');
 const loading = ref(false);
@@ -91,6 +97,17 @@ const COLORS = ['#2563eb', '#0d9488', '#d97706', '#7c3aed', '#dc2626', '#0891b2'
 const colorOf = (code) => COLORS[(String(code).charCodeAt(0) + String(code).length) % COLORS.length];
 const byDay = (d) => tableList.value.filter((c) => c.week_day === d);
 const scoreType = (s) => (Number(s) >= 80 ? 'success' : Number(s) >= 60 ? 'warning' : 'danger');
+
+function onExport() {
+  const auth = useAuthStore();
+  const ok = exportTimetable({
+    title: '我的周课表',
+    subtitle: auth.user ? `${auth.user.realName || auth.user.username} · ${auth.user.userNo || ''}` : '',
+    term: '2026-2027 学年第一学期',
+    list: tableList.value,
+  });
+  if (!ok) ElMessage.warning('浏览器拦截了新窗口，请允许弹窗后重试');
+}
 
 async function load() {
   loading.value = true;

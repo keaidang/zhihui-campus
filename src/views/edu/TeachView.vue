@@ -6,7 +6,10 @@
           <h2>我的课程</h2>
           <p>2026-2027 学年第一学期 · 任教班级</p>
         </div>
-        <el-button :icon="Refresh" circle @click="load" />
+        <div>
+          <el-button :icon="Download" round @click="onExport">导出课表</el-button>
+          <el-button :icon="Refresh" circle @click="load" />
+        </div>
       </header>
 
       <div v-loading="loading" class="tc-grid">
@@ -48,9 +51,10 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Refresh } from '@element-plus/icons-vue';
+import { Refresh, Download } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
+import { exportTimetable } from '../../utils/timetableExport';
 
 const list = ref([]);
 const loading = ref(false);
@@ -71,6 +75,22 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+async function onExport() {
+  // 教师授课周课表：数据与教务端一致（week_day/section/classroom）
+  const res = await api('/api/edu/timetable');
+  if (res.code !== 0 || !res.data?.list?.length) {
+    ElMessage.warning(res.message || '本学期暂无授课安排');
+    return;
+  }
+  const ok = exportTimetable({
+    title: '我的授课周课表',
+    subtitle: '任课教师',
+    term: res.data.term,
+    list: res.data.list,
+  });
+  if (!ok) ElMessage.warning('浏览器拦截了新窗口，请允许弹窗后重试');
 }
 
 async function openRoster(c) {

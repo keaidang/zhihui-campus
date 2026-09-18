@@ -53,7 +53,9 @@ const TRANSIENT = [
 function isTransient(e) {
   if (!e) return false;
   if (TRANSIENT.includes(e.code)) return true;
-  if (typeof e.code === 'string' && e.code.startsWith('PROTOCOL')) return true;
+  if (typeof e.code === 'string' && (e.code.startsWith('PROTOCOL') || e.code.startsWith('ECONN'))) return true;
+  // MySQL/TiDB 瞬时错误码：2006 服务器断开、2013 查询中失去连接、4031 等待超时
+  if ([2006, 2013, 4031].includes(e.errno)) return true;
   const msg = String(e.message || '').toLowerCase();
   return (
     msg.includes('malform packet') ||
@@ -62,7 +64,11 @@ function isTransient(e) {
     msg.includes('handshake') ||
     msg.includes('ssl') ||
     msg.includes('timeout') ||
-    msg.includes('too many connection')
+    msg.includes('too many connection') ||
+    msg.includes('terminated') ||
+    msg.includes('aborted') ||
+    msg.includes('socket') ||
+    msg.includes('bad handshake')
   );
 }
 

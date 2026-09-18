@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
     }
 
     const users = await query(
-      'SELECT id, username, password_hash, real_name, status FROM sys_user WHERE username = ?',
+      'SELECT id, username, password_hash, real_name, status, valid_until FROM sys_user WHERE username = ?',
       [username],
     );
     const user = users[0];
@@ -38,6 +38,9 @@ export async function onRequestPost(context) {
       return fail(40101, '用户名或密码错误');
     }
     if (user.status !== 1) return fail(40300, '账号已被禁用，请联系管理员');
+    if (user.valid_until && new Date(user.valid_until).getTime() < Date.now()) {
+      return fail(40300, '账号已过有效期，请联系管理员续期');
+    }
 
     clearFail(lockKey);
     const roles = (await query(

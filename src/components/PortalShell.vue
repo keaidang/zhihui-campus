@@ -110,7 +110,8 @@ const MENUS = [
   { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'admin'] },
   { key: 'af-repair-m', label: '报修处理', icon: 'SetUp', path: '/af/repair-manage', roles: ['counselor', 'admin'] },
   { key: 'af-notice', label: '公告中心', icon: 'Bell', path: '/af/notice', roles: null },
-  { key: 'admin-users', label: '用户管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
+  { key: 'admin-students', label: '学生管理', icon: 'User', path: '/admin/students', roles: ['admin', 'counselor'] },
+  { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
 ];
 
 const menus = computed(() => MENUS.filter((m) => !m.roles || auth.hasRole(m.roles)));

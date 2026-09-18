@@ -2,9 +2,10 @@
   <PortalShell active="admin-users">
     <section class="um-head">
       <div>
-        <h2>用户管理</h2>
+        <h2>账号管理</h2>
         <p>
-          数据范围：{{ scopeLabel }}
+          统一身份认证账号：账号、姓名、权限、有效期、状态
+          · 数据范围：{{ scopeLabel }}
           <template v-if="meta.scope?.type === 'dept'">（仅本院用户）</template>
         </p>
       </div>
@@ -32,12 +33,21 @@
       </el-select>
       <el-button type="primary" @click="load(1)">查询</el-button>
       <el-button @click="reset">重置</el-button>
+      <div class="um-spacer"></div>
+      <template v-if="auth.isAdmin">
+        <el-button :icon="Plus" type="primary" plain @click="batchDlg = true">批量添加</el-button>
+        <el-button :icon="Delete" type="danger" plain :disabled="!selected.length" @click="batchRemove">
+          删除选中({{ selected.length }})
+        </el-button>
+      </template>
+      <el-button :icon="Download" plain @click="onExport">导出</el-button>
     </section>
 
     <!-- 列表 -->
     <section class="um-table">
-      <el-table :data="rows" v-loading="loading" stripe style="width: 100%">
-        <el-table-column prop="username" label="用户名" min-width="120" />
+      <el-table :data="rows" v-loading="loading" stripe style="width: 100%" @selection-change="selected = $event">
+        <el-table-column v-if="auth.isAdmin" type="selection" width="42" />
+        <el-table-column prop="username" label="账号" min-width="120" />
         <el-table-column prop="real_name" label="姓名" width="100" />
         <el-table-column prop="user_no" label="学号/工号" width="120" />
         <el-table-column label="角色" min-width="200">
@@ -61,13 +71,19 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="有效期" width="110">
+          <template #default="{ row }">
+            <span :class="{ 'um-expired': isExpired(row) }">{{ row.valid_until ? fmtDate(row.valid_until) : '长期' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="170">
           <template #default="{ row }">{{ fmt(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openProfile(row)">归属</el-button>
             <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
+            <el-button v-if="auth.isAdmin" size="small" @click="openValid(row)">有效期</el-button>
             <el-button
               size="small"
               :type="row.status === 1 ? 'danger' : 'success'"
@@ -75,6 +91,16 @@
               @click="toggleStatus(row)"
             >
               {{ row.status === 1 ? '禁用' : '启用' }}
+            </el-button>
+            <el-button
+              v-if="auth.isAdmin"
+              size="small"
+              type="danger"
+              link
+              :disabled="row.id === auth.user?.id"
+              @click="removeOne(row)"
+            >
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -138,14 +164,50 @@
         <el-button type="primary" :loading="saving" @click="saveProfile">保存</el-button>
       </template>
     </el-dialog>
+    <!-- 有效期设置 -->
+    <el-dialog v-model="validDlg" title="设置账号有效期" width="420px">
+      <p class="um-dlg-tip">账号：<strong>{{ current?.username }}</strong>（{{ current?.real_name || '未填姓名' }}）</p>
+      <el-date-picker
+        v-model="validPick"
+        type="date"
+        placeholder="选择过期日期（当天 23:59:59 失效）"
+        value-format="YYYY-MM-DD"
+        style="width: 100%"
+      />
+      <p class="um-dlg-tip" style="margin-top: 10px">清空日期表示长期有效；过期后账号无法登录与刷新会话。</p>
+      <template #footer>
+        <el-button @click="saveValid(null)">设为长期</el-button>
+        <el-button type="primary" :loading="saving" @click="saveValid(validPick)">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量添加账号 -->
+    <el-dialog v-model="batchDlg" title="批量添加账号" width="620px">
+      <el-alert type="info" :closable="false" style="margin-bottom: 12px"
+        title="每行一个账号：账号,姓名,密码,学号/工号（密码可省略，默认统一初始密码 Zhihui@2026）"
+        description="示例：stu260101,张三,,20260101" />
+      <el-input v-model="batchText" type="textarea" :rows="8" placeholder="账号,姓名,密码,学号/工号\nstu260101,张三,,20260101\nstu260102,李四,,20260102" />
+      <div class="um-dlg-tip" style="margin-top: 8px">
+        已识别 <b>{{ batchRows.length }}</b> 行；也可
+        <input type="file" accept=".csv,.txt" @change="onBatchFile" style="display:none" ref="batchFile" />
+        <el-link type="primary" @click="$refs.batchFile.click()">从 CSV 文件导入</el-link>
+      </div>
+      <template #footer>
+        <el-button @click="batchDlg = false">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!batchRows.length" @click="submitBatch">
+          创建 {{ batchRows.length }} 个账号
+        </el-button>
+      </template>
+    </el-dialog>
   </PortalShell>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { Plus, Delete, Download } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
-import { api } from '../../api/request';
+import { api, download } from '../../api/request';
 import { useAuthStore } from '../../stores/auth';
 
 const auth = useAuthStore();
@@ -167,6 +229,105 @@ const scopeLabel = computed(() => {
 
 function fmt(v) {
   return v ? String(v).slice(0, 19).replace('T', ' ') : '—';
+}
+
+const fmtDate = (v) => (v ? String(v).slice(0, 10) : '');
+const isExpired = (row) => row.valid_until && new Date(row.valid_until).getTime() < Date.now();
+
+/* ---- 导出 ---- */
+async function onExport() {
+  try {
+    const qs = new URLSearchParams({ export: 'csv' });
+    if (query.keyword) qs.set('keyword', query.keyword);
+    await download(`/api/admin/users?${qs.toString()}`, `账号列表-${new Date().toISOString().slice(0, 10)}.csv`);
+    ElMessage.success('已导出');
+  } catch (e) {
+    ElMessage.error(e.message || '导出失败');
+  }
+}
+
+/* ---- 有效期 ---- */
+const validDlg = ref(false);
+const validPick = ref('');
+function openValid(row) {
+  current.value = row;
+  validPick.value = row.valid_until ? fmtDate(row.valid_until) : '';
+  validDlg.value = true;
+}
+async function saveValid(v) {
+  saving.value = true;
+  try {
+    const res = await api('/api/admin/users', {
+      method: 'POST',
+      body: { userId: current.value.id, action: 'setValidUntil', value: v || null },
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message);
+      validDlg.value = false;
+      load();
+    } else ElMessage.error(res.message || '保存失败');
+  } finally {
+    saving.value = false;
+  }
+}
+
+/* ---- 批量添加 ---- */
+const batchDlg = ref(false);
+const batchText = ref('');
+const batchFile = ref(null);
+const batchRows = computed(() =>
+  batchText.value
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [username = '', realName = '', password = '', userNo = ''] = line.split(',').map((s) => s.trim());
+      return { username, realName, password, userNo };
+    }),
+);
+function onBatchFile(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => (batchText.value = String(reader.result || ''));
+  reader.readAsText(file, 'utf-8');
+  ev.target.value = '';
+}
+async function submitBatch() {
+  saving.value = true;
+  try {
+    const res = await api('/api/admin/users', {
+      method: 'POST',
+      body: { action: 'batchCreate', rows: batchRows.value },
+    });
+    if (res.code === 0) {
+      ElMessageBox.alert(
+        `创建 ${res.data.created.length} 个：${res.data.created.join('、') || '无'}${res.data.skipped.length ? `<br/>跳过 ${res.data.skipped.length} 个：${res.data.skipped.map((s) => `${s.username}(${s.reason})`).join('、')}` : ''}`,
+        '导入结果',
+        { dangerouslyUseHTMLString: true },
+      );
+      batchDlg.value = false;
+      batchText.value = '';
+      load(1);
+    } else ElMessage.error(res.message || '导入失败');
+  } finally {
+    saving.value = false;
+  }
+}
+
+/* ---- 删除 ---- */
+const selected = ref([]);
+async function removeOne(row) {
+  const ok = await ElMessageBox.confirm(`确定删除账号 ${row.username}（${row.real_name || '未填姓名'}）？该操作不可恢复。`, '删除账号', { type: 'warning' }).catch(() => false);
+  if (!ok) return;
+  const res = await api('/api/admin/users', { method: 'POST', body: { userId: row.id, action: 'delete' } });
+  if (res.code === 0) { ElMessage.success(res.message); load(); } else ElMessage.error(res.message || '删除失败');
+}
+async function batchRemove() {
+  const ok = await ElMessageBox.confirm(`确定删除选中的 ${selected.value.length} 个账号？该操作不可恢复。`, '批量删除', { type: 'warning' }).catch(() => false);
+  if (!ok) return;
+  const res = await api('/api/admin/users', { method: 'POST', body: { action: 'batchDelete', userIds: selected.value.map((r) => r.id) } });
+  if (res.code === 0) { ElMessage.success(res.message); load(); } else ElMessage.error(res.message || '删除失败');
 }
 
 function tagType(code) {
@@ -326,4 +487,6 @@ onMounted(async () => {
 .um-tag { margin-right: 6px; }
 .um-muted { color: var(--zc-text-sub); font-size: 12.5px; }
 .um-dlg-tip { margin: 0 0 14px; font-size: 13px; color: var(--zc-text-sub); }
+.um-spacer { flex: 1; }
+.um-expired { color: #b83232; font-weight: 600; }
 </style>

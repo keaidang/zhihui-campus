@@ -120,7 +120,7 @@ const BY_ROLE = {
   counselor: [
     { title: '请假审批', desc: '本院学生请销假审批', icon: 'Checked', path: '/af/approve' },
     { title: '报修处理', desc: '报修工单受理与派办', icon: 'SetUp', path: '/af/repair-manage' },
-    { title: '学生名册', desc: '本院学生信息管理', icon: 'UserFilled', path: '/admin/users' },
+    { title: '学生名册', desc: '本班学生名单与管理', icon: 'UserFilled', path: '/admin/students' },
     { title: '公告管理', desc: '发布本院公告', icon: 'Bell', path: '/af/notice' },
   ],
   teacher: [

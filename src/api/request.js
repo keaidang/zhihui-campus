@@ -27,7 +27,27 @@ export async function api(url, { method = 'GET', body, auth = true, retry = true
   }
 
   if (status >= 500) {
+    // 瞬时 500 兜底：自动重试一次（选课/退课等业务幂等，重试安全）
+    if (retry && method !== 'GET') {
+      await new Promise((s) => setTimeout(s, 800));
+      return api(url, { method, body, auth, retry: false });
+    }
     return { code: 50000, message: data?.message || '服务暂不可用，请稍后再试' };
   }
   return data; // { code, message, data }
+}
+
+/** 带鉴权的文件下载（CSV 导出等）：fetch → blob → 触发浏览器保存 */
+export async function download(url, filename) {
+  const store = useAuthStore();
+  const res = await fetch(url, {
+    headers: store.accessToken ? { Authorization: `Bearer ${store.accessToken}` } : {},
+  });
+  if (!res.ok) throw new Error(`下载失败 (${res.status})`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }

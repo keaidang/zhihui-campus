@@ -1,7 +1,9 @@
-// /api/admin/users — 用户管理（列表/搜索/改状态/分配角色/设归属）
-// 权限：admin（全校）、counselor（仅本院，且不能改角色）
+// /api/admin/users — 账号管理（列表/搜索/改状态/分配角色/设归属/有效期/创建/删除/导入导出）
+// 权限：admin（全校）、counselor（仅本院，且不能改角色/删除/创建）
 // GET  分页列表  ?keyword=&role=&deptId=&status=&page=1&pageSize=20
-// POST 单条操作  { userId, action: setStatus | setRoles | setProfile, value }
+//                ?export=csv → 全量导出（UTF-8 BOM，Excel 兼容）
+// POST 单条操作  { userId, action: setStatus | setRoles | setProfile | setValidUntil | delete | create | batchCreate | batchDelete, value }
+import bcrypt from 'bcryptjs';
 import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
 import { requireRoles, MANAGER_ROLES, dataScope, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
@@ -9,6 +11,24 @@ import { query, withTransaction } from '../../lib/db.js';
 export { preflight as onRequestOptions };
 
 const PAGE_MAX = 100;
+const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/;
+const DEFAULT_PWD = 'Zhihui@2026'; // 批量导入未指定密码时的统一初始密码
+const BATCH_MAX = 500;
+
+/** CSV 单元格转义：逗号/引号/换行 */
+const csvCell = (v) => {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** 有效期入参 → Date（'YYYY-MM-DD' 视为当天 23:59:59）或 null */
+function parseValidUntil(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) throw new Error('VALID_FORMAT');
+  const d = new Date(`${s.slice(0, 10)} 23:59:59`);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 export async function onRequestGet(context) {
   try {
@@ -42,10 +62,8 @@ export async function onRequestGet(context) {
     }
     const whereSql = where.join(' AND ');
 
-    const [{ total }] = await query(`SELECT COUNT(*) AS total FROM sys_user u WHERE ${whereSql}`, params);
-    const rows = await query(
-      `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, u.class_id,
-              u.created_at, u.last_login_at,
+    const selectSql = `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, u.class_id,
+              u.valid_until, u.created_at, u.last_login_at,
               d.name AS dept_name, c.name AS class_name,
               GROUP_CONCAT(r.code) AS role_codes
          FROM sys_user u
@@ -55,11 +73,40 @@ export async function onRequestGet(context) {
          LEFT JOIN sys_role r ON r.id = ur.role_id
         WHERE ${whereSql}
         GROUP BY u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, u.class_id,
-                 u.created_at, u.last_login_at, d.name, c.name
-        ORDER BY u.id DESC
-        LIMIT ? OFFSET ?`,
-      [...params, pageSize, (page - 1) * pageSize],
-    );
+                 u.valid_until, u.created_at, u.last_login_at, d.name, c.name
+        ORDER BY u.id DESC`;
+
+    // CSV 导出：全量（上限 5000），UTF-8 BOM 保证 Excel 中文不乱码
+    if (url.searchParams.get('export') === 'csv') {
+      const rows = await query(`${selectSql} LIMIT 5000`, params);
+      const header = ['账号', '姓名', '角色', '学号/工号', '院系', '班级', '状态', '有效期', '注册时间', '最近登录'];
+      const lines = [header.join(',')];
+      for (const r of rows) {
+        lines.push(
+          [
+            r.username,
+            r.real_name,
+            r.role_codes ? String(r.role_codes).split(',').join('|') : '',
+            r.user_no || '',
+            r.dept_name || '',
+            r.class_name || '',
+            r.status === 1 ? '正常' : '禁用',
+            r.valid_until ? String(r.valid_until).slice(0, 10) : '长期',
+            String(r.created_at || '').slice(0, 19).replace('T', ' '),
+            String(r.last_login_at || '').slice(0, 19).replace('T', ' '),
+          ].map(csvCell).join(','),
+        );
+      }
+      return new Response(`\ufeff${lines.join('\r\n')}`, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="accounts-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    }
+
+    const [{ total }] = await query(`SELECT COUNT(*) AS total FROM sys_user u WHERE ${whereSql}`, params);
+    const rows = await query(`${selectSql} LIMIT ? OFFSET ?`, [...params, pageSize, (page - 1) * pageSize]);
 
     return ok({
       list: rows.map((r) => ({ ...r, roles: r.role_codes ? String(r.role_codes).split(',') : [] })),
@@ -84,7 +131,115 @@ export async function onRequestPost(context) {
     const action = String(body.action || '');
     const value = body.value;
 
-    if (!targetId) return fail(41001, '缺少 userId');
+    if (!targetId) {
+      // ---- 无 userId 的管理动作：创建类（admin 独占） ----
+      if (!isAdmin) throw ERR_FORBIDDEN('仅超级管理员可创建/删除账号');
+
+      if (action === 'create' || action === 'batchCreate') {
+        const rowsIn =
+          action === 'batchCreate'
+            ? Array.isArray(body.rows)
+              ? body.rows.slice(0, BATCH_MAX)
+              : []
+            : [body];
+        if (rowsIn.length === 0) return fail(41001, '缺少账号数据');
+        // 默认密码统一哈希一次，避免批量 bcrypt 拖垮函数时长
+        const defaultHash = await bcrypt.hash(DEFAULT_PWD, 10);
+        const created = [];
+        const skipped = [];
+        const seen = new Set();
+        let customHashCache = { pwd: null, hash: null };
+        const hashOf = async (pwd) => {
+          const p = String(pwd || '').trim();
+          if (!p) return { pwd: DEFAULT_PWD, hash: defaultHash };
+          if (p.length < 8 || p.length > 64) throw new Error('PWD_FORMAT');
+          if (customHashCache.pwd === p) return { pwd: p, hash: customHashCache.hash };
+          const h = await bcrypt.hash(p, 10);
+          customHashCache = { pwd: p, hash: h };
+          return { pwd: p, hash: h };
+        };
+        try {
+          await withTransaction(async (conn) => {
+            for (const r of rowsIn) {
+              const username = String(r.username || '').trim();
+              const realName = String(r.realName || '').trim().slice(0, 32);
+              const validUntil = parseValidUntil(r.validUntil);
+              if (!USERNAME_RE.test(username) || !realName || seen.has(username)) {
+                skipped.push({ username, reason: !USERNAME_RE.test(username) ? '用户名不合法' : !realName ? '缺姓名' : '批内重复' });
+                continue;
+              }
+              const dup = await query('SELECT id FROM sys_user WHERE username = ?', [username]);
+              if (dup.length > 0) {
+                skipped.push({ username, reason: '已存在' });
+                continue;
+              }
+              seen.add(username);
+              const { pwd, hash } = await hashOf(r.password);
+              const deptId = r.deptId ? Number(r.deptId) : null;
+              const classId = r.classId ? Number(r.classId) : null;
+              const userNo = String(r.userNo || '').trim().slice(0, 32);
+              const [ins] = await conn.query(
+                `INSERT INTO sys_user (username, password_hash, real_name, user_no, dept_id, class_id, valid_until)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [username, hash, realName, userNo, deptId, classId, validUntil],
+              );
+              const codes = Array.isArray(r.roles) && r.roles.length ? r.roles.map(String) : ['student'];
+              const roleRows = await query(
+                `SELECT id FROM sys_role WHERE code IN (${codes.map(() => '?').join(',')})`,
+                codes,
+              );
+              for (const rr of roleRows) {
+                await conn.query('INSERT IGNORE INTO sys_user_role (user_id, role_id) VALUES (?, ?)', [ins.insertId, rr.id]);
+              }
+              created.push(username);
+            }
+          });
+        } catch (e) {
+          if (e.message === 'PWD_FORMAT') return fail(41001, '密码长度须为 8~64 位');
+          if (e.message === 'VALID_FORMAT') return fail(41001, '有效期格式应为 YYYY-MM-DD');
+          throw e;
+        }
+        await opLog(operatorId, action === 'create' ? 'user.create' : 'user.batchCreate', 'batch', `created=${created.length} skipped=${skipped.length}`, ip);
+        return ok(
+          { created, skipped, defaultPassword: created.length ? DEFAULT_PWD : undefined },
+          `成功创建 ${created.length} 个账号${skipped.length ? `，跳过 ${skipped.length} 个` : ''}`,
+        );
+      }
+
+      if (action === 'batchDelete') {
+        const ids = Array.isArray(body.userIds) ? [...new Set(body.userIds.map(Number).filter(Boolean))] : [];
+        if (ids.length === 0) return fail(41001, '缺少 userIds');
+        if (ids.length > BATCH_MAX) return fail(41001, `单次最多删除 ${BATCH_MAX} 个`);
+        if (ids.includes(operatorId)) return fail(41005, '不能删除自己的账号');
+        const placeholders = ids.map(() => '?').join(',');
+        const admins = await query(
+          `SELECT DISTINCT ur.user_id FROM sys_user_role ur
+             JOIN sys_role r ON r.id = ur.role_id
+            WHERE r.code = 'admin' AND ur.user_id IN (${placeholders})`,
+          ids,
+        );
+        const adminIds = new Set(admins.map((a) => a.user_id));
+        const deletable = ids.filter((id) => !adminIds.has(id));
+        const protectedCount = ids.length - deletable.length;
+        let deleted = 0;
+        if (deletable.length) {
+          const ph2 = deletable.map(() => '?').join(',');
+          await withTransaction(async (conn) => {
+            await conn.query(`DELETE FROM sys_user_role WHERE user_id IN (${ph2})`, deletable);
+            await conn.query(`DELETE FROM sys_refresh_token WHERE user_id IN (${ph2})`, deletable);
+            const [res] = await conn.query(`DELETE FROM sys_user WHERE id IN (${ph2})`, deletable);
+            deleted = res.affectedRows;
+          });
+        }
+        await opLog(operatorId, 'user.batchDelete', 'batch', `deleted=${deleted} protected=${protectedCount}`, ip);
+        return ok(
+          { deleted, protected: protectedCount },
+          `已删除 ${deleted} 个账号${protectedCount ? `，跳过管理员/保护账号 ${protectedCount} 个` : ''}`,
+        );
+      }
+
+      return fail(41001, '缺少 userId');
+    }
 
     const targets = await query('SELECT id, username, dept_id FROM sys_user WHERE id = ?', [targetId]);
     if (targets.length === 0) return fail(41004, '用户不存在');
@@ -124,6 +279,37 @@ export async function onRequestPost(context) {
       ]);
       await opLog(operatorId, 'user.setProfile', `user:${targetId}`, JSON.stringify({ userNo, deptId, classId }), ip);
       return ok({ userId: targetId }, '归属信息已更新');
+    }
+
+    if (action === 'setValidUntil') {
+      if (!isAdmin) throw ERR_FORBIDDEN('仅超级管理员可设置账号有效期');
+      let validUntil = null;
+      try {
+        validUntil = parseValidUntil(value);
+      } catch {
+        return fail(41001, '有效期格式应为 YYYY-MM-DD');
+      }
+      await query('UPDATE sys_user SET valid_until = ? WHERE id = ?', [validUntil, targetId]);
+      await opLog(operatorId, 'user.setValidUntil', `user:${targetId}`, validUntil ? String(validUntil).slice(0, 10) : 'long-term', ip);
+      return ok({ userId: targetId, validUntil }, validUntil ? '有效期已更新' : '已设为长期有效');
+    }
+
+    if (action === 'delete') {
+      if (!isAdmin) throw ERR_FORBIDDEN('仅超级管理员可删除账号');
+      if (targetId === operatorId) return fail(41005, '不能删除自己的账号');
+      const isAdminTarget = await query(
+        `SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
+          WHERE ur.user_id = ? AND r.code = 'admin'`,
+        [targetId],
+      );
+      if (isAdminTarget.length > 0) return fail(41007, '不能删除管理员账号，请先移除其管理员角色');
+      await withTransaction(async (conn) => {
+        await conn.query('DELETE FROM sys_user_role WHERE user_id = ?', [targetId]);
+        await conn.query('DELETE FROM sys_refresh_token WHERE user_id = ?', [targetId]);
+        await conn.query('DELETE FROM sys_user WHERE id = ?', [targetId]);
+      });
+      await opLog(operatorId, 'user.delete', `user:${targetId}`, target.username, ip);
+      return ok({ userId: targetId }, `已删除账号 ${target.username}`);
     }
 
     if (action === 'setRoles') {
