@@ -11,15 +11,24 @@ for (const line of fs.readFileSync('.env', 'utf8').split(/\r?\n/)) {
   if (m) process.env[m[1]] = m[2];
 }
 
-const conn = await mysql.createConnection({
-  host: process.env.DB_HOST,
-  port: +process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  ssl: { rejectUnauthorized: true },
-  multipleStatements: false,
-});
+let conn = null;
+for (let i = 0; i < 8 && !conn; i++) {
+  try {
+    conn = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      port: +process.env.DB_PORT,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      ssl: { rejectUnauthorized: true },
+      connectTimeout: 20000,
+    });
+  } catch (e) {
+    console.log(`连接失败（第 ${i + 1} 次）：${e.code || e.message}，8s 后重试…`);
+    await new Promise((s) => setTimeout(s, 8000));
+  }
+}
+if (!conn) { console.error('多次重试后仍无法连接数据库'); process.exit(1); }
 
 const TERM = '2026-2027-1';
 const DEFAULT_PWD = 'Zhihui@2026';
@@ -260,24 +269,32 @@ const geRows = (await conn.query('SELECT c.dept_id FROM edu_course c WHERE c.cod
   .map((g) => g.dept_id);
 
 let elects = 0;
+// 跨行政班共享的容量额度：同一教学班最多被多个班合选，但总数不得超过 capacity（防超员）
+const remaining = {};
+{
+  const [caps] = await conn.query('SELECT id, capacity, COALESCE(enrolled,0) enrolled FROM edu_class WHERE term = ? AND status = 1', [TERM]);
+  for (const c of caps) remaining[c.id] = Math.max(0, Number(c.capacity) - Number(c.enrolled));
+}
 for (const cls of classList) {
   const [students] = await conn.query('SELECT id FROM sys_user WHERE class_id = ? AND status = 1', [cls.id]);
   if (!students.length) continue;
   const deptEdu = (eduByDept[cls.dept_id] || []).filter((x) => !x.code.startsWith('GE'));
   const geEdu = (eduByDept[geRows[0]] || []).concat(eduByDept[geRows[1]] || []);
-  // 时段去重：同班学生选的课不能撞时间
+  // 时段去重 + 容量校验：同班学生选的课不能撞时间，且教学班剩余名额必须够全班
   const pick = [];
   const usedSlots = new Set();
-  for (const x of deptEdu) {
-    if (pick.length >= 4) break;
-    if (usedSlots.has(`${x.week_day}|${x.section}`)) continue;
-    pick.push(x); usedSlots.add(`${x.week_day}|${x.section}`);
-  }
-  for (const x of geEdu) {
-    if (pick.length >= 5) break;
-    if (usedSlots.has(`${x.week_day}|${x.section}`)) continue;
-    pick.push(x); usedSlots.add(`${x.week_day}|${x.section}`);
-  }
+  const tryPick = (pool, want) => {
+    for (const x of pool) {
+      if (pick.length >= want) break;
+      if (pick.some((p) => p.id === x.id)) continue;
+      if (usedSlots.has(`${x.week_day}|${x.section}`)) continue;
+      if (remaining[x.id] == null || remaining[x.id] < students.length) continue; // 名额不够，跳过
+      pick.push(x); usedSlots.add(`${x.week_day}|${x.section}`);
+      remaining[x.id] -= students.length;
+    }
+  };
+  tryPick(deptEdu, 4);
+  tryPick(geEdu, 5);
   for (const x of pick) {
     const values = students.map((s) => [x.id, s.id, TERM, 1]);
     try {
@@ -316,6 +333,11 @@ const [sizeCheck] = await conn.query(
 );
 console.log('--- 班级规模（应为 20~40 人且都有辅导员） ---');
 console.log(sizeCheck.map((r) => `${r.name}:${r.n}人${r.has_counselor ? '' : '【无辅导员!】'}`).join(' | '));
+
+const [overCheck] = await conn.query(
+  `SELECT COUNT(*) n FROM edu_class WHERE enrolled > capacity`,
+);
+console.log(`--- 超员检查：${Number(overCheck[0].n) === 0 ? '✅ 无超员教学班' : '❌ 超员教学班 ' + overCheck[0].n + ' 个'} ---`);
 
 await conn.end();
 console.log('✅ 演示数据生成完成。默认密码均为 Zhihui@2026');
