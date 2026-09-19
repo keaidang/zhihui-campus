@@ -106,7 +106,7 @@ function onExport() {
     term: '2026-2027 学年第一学期',
     list: tableList.value,
   });
-  if (!ok) ElMessage.warning('浏览器拦截了新窗口，请允许弹窗后重试');
+  if (!ok) ElMessage.warning('暂无课表数据');
 }
 
 async function load() {

@@ -111,6 +111,7 @@ const MENUS = [
   { key: 'af-repair-m', label: '报修处理', icon: 'SetUp', path: '/af/repair-manage', roles: ['counselor', 'admin'] },
   { key: 'af-notice', label: '公告中心', icon: 'Bell', path: '/af/notice', roles: null },
   { key: 'admin-students', label: '学生管理', icon: 'User', path: '/admin/students', roles: ['admin', 'counselor'] },
+  { key: 'admin-courses', label: '课程与排课', icon: 'Reading', path: '/admin/courses', roles: ['admin'] },
   { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
 ];
 

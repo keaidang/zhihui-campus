@@ -90,7 +90,7 @@ async function onExport() {
     term: res.data.term,
     list: res.data.list,
   });
-  if (!ok) ElMessage.warning('浏览器拦截了新窗口，请允许弹窗后重试');
+  if (!ok) ElMessage.warning('暂无课表数据');
 }
 
 async function openRoster(c) {

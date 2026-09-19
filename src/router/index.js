@@ -25,6 +25,12 @@ const router = createRouter({
       component: () => import('../views/admin/StudentManageView.vue'),
       meta: { requiresAuth: true, roles: ['admin', 'counselor'] },
     },
+    {
+      path: '/admin/courses',
+      name: 'admin-courses',
+      component: () => import('../views/admin/CourseManageView.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
     // ---- 教务线（M1）----
     {
       path: '/edu/elect',
