@@ -50,10 +50,10 @@ export async function onRequestPost(context) {
       const name = String(body.name || '').trim().slice(0, 64);
       const deptId = Number(body.deptId);
       const grade = Number(body.grade) || 0;
-      if (!name) return fail(41100, '班级名称必填');
-      if (!deptId) return fail(41100, '所属院系必选');
 
       if (action === 'create') {
+        if (!name) return fail(41100, '班级名称必填');
+        if (!deptId) return fail(41100, '所属院系必选');
         const dup = await query('SELECT id FROM sys_class WHERE name = ? AND dept_id = ?', [name, deptId]);
         if (dup.length) return fail(41101, '同一院系下班级名称已存在');
         const counselorId = body.counselorId ? Number(body.counselorId) : null;
