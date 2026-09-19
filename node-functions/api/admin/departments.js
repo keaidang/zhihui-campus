@@ -47,6 +47,25 @@ export async function onRequestPost(context) {
       return ok({ id: r.insertId, code, name }, '院系已创建');
     }
 
+    if (action === 'update') {
+      const id = Number(body.id);
+      if (!id) return fail(41001, '缺少院系 id');
+      const sets = [];
+      const params = [];
+      if (body.name != null) {
+        const name = String(body.name).trim().slice(0, 64);
+        if (!name) return fail(41001, '院系名称不能为空');
+        sets.push('name = ?');
+        params.push(name);
+      }
+      if (body.sort != null) { sets.push('sort = ?'); params.push(Number(body.sort) || 0); }
+      if (!sets.length) return fail(41001, '无可更新字段');
+      params.push(id);
+      await query(`UPDATE sys_department SET ${sets.join(', ')} WHERE id = ?`, params);
+      await opLog(operatorId, 'dept.update', `dept:${id}`, sets.join(','), ip);
+      return ok({ id }, '院系已更新');
+    }
+
     if (action === 'setStatus') {
       const id = Number(body.id);
       const status = Number(body.value) === 1 ? 1 : 0;
@@ -54,6 +73,20 @@ export async function onRequestPost(context) {
       await query('UPDATE sys_department SET status = ? WHERE id = ?', [status, id]);
       await opLog(operatorId, 'dept.setStatus', `dept:${id}`, String(status), ip);
       return ok({ id, status }, status === 1 ? '院系已启用' : '院系已停用');
+    }
+
+    if (action === 'delete') {
+      const id = Number(body.id);
+      if (!id) return fail(41001, '缺少院系 id');
+      const [users, classes] = await Promise.all([
+        query('SELECT COUNT(*) n FROM sys_user WHERE dept_id = ?', [id]),
+        query('SELECT COUNT(*) n FROM sys_class WHERE dept_id = ?', [id]),
+      ]);
+      if (Number(users[0].n) > 0) return fail(41003, `该院系下还有 ${users[0].n} 名人员，不能删除（可停用）`);
+      if (Number(classes[0].n) > 0) return fail(41003, `该院系下还有 ${classes[0].n} 个班级，不能删除（可停用）`);
+      await query('DELETE FROM sys_department WHERE id = ?', [id]);
+      await opLog(operatorId, 'dept.delete', `dept:${id}`, '', ip);
+      return ok(null, '院系已删除');
     }
 
     return fail(41001, '不支持的操作');
