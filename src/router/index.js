@@ -100,6 +100,37 @@ const router = createRouter({
       component: () => import('../views/MailView.vue'),
       meta: { requiresAuth: true },
     },
+    // ---- M3 生活服务 ----
+    {
+      path: '/library',
+      name: 'library',
+      component: () => import('../views/m3/LibraryView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lost-found',
+      name: 'lost-found',
+      component: () => import('../views/m3/LostFoundView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/club',
+      name: 'club',
+      component: () => import('../views/m3/ClubView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/forum',
+      name: 'forum',
+      component: () => import('../views/m3/ForumView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/forum/:id(\\d+)',
+      name: 'forum-thread',
+      component: () => import('../views/m3/ForumThreadView.vue'),
+      meta: { requiresAuth: true },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

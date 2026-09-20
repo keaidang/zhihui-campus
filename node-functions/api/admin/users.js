@@ -306,6 +306,23 @@ export async function onRequestPost(context) {
       return ok({ userId: targetId, validUntil }, validUntil ? '有效期已更新' : '已设为长期有效');
     }
 
+    if (action === 'resetPassword') {
+      if (!isAdmin) throw ERR_FORBIDDEN('仅超级管理员可重置登录密码');
+      if (target.username === 'admin' && targetId !== operatorId) {
+        return fail(41009, '不能重置其他管理员的主账号密码');
+      }
+      let pwd = String(body.password || '').trim();
+      if (!pwd) {
+        pwd = `Zh${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`;
+      }
+      if (pwd.length < 8) return fail(41008, '密码至少 8 位');
+      const hash = await bcrypt.hash(pwd, 10);
+      await query('UPDATE sys_user SET password_hash = ? WHERE id = ?', [hash, targetId]);
+      await query('DELETE FROM sys_refresh_token WHERE user_id = ?', [targetId]);
+      await opLog(operatorId, 'user.resetPassword', `user:${targetId}`, target.username, ip);
+      return ok({ userId: targetId, password: pwd }, `密码已重置：${pwd}（请立即告知用户）`);
+    }
+
     if (action === 'delete') {
       if (!isAdmin) throw ERR_FORBIDDEN('仅超级管理员可删除账号');
       if (targetId === operatorId) return fail(41005, '不能删除自己的账号');

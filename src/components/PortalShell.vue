@@ -103,6 +103,10 @@ const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
 /** 统一菜单表：ALL = 全角色；具体能力由路由守卫 + 后端 scope 双重兜底 */
 const MENUS = [
   { key: 'workbench', label: '工作台', icon: 'HomeFilled', path: '/workbench', roles: null },
+  { key: 'forum', label: '校园论坛', icon: 'ChatDotRound', path: '/forum', roles: null },
+  { key: 'library', label: '图书借阅', icon: 'Reading', path: '/library', roles: null },
+  { key: 'club', label: '社团活动', icon: 'Flag', path: '/club', roles: null },
+  { key: 'lf', label: '失物招领', icon: 'Search', path: '/lost-found', roles: null },
   { key: 'mail', label: '校园邮箱', icon: 'Promotion', path: '/mail', roles: null },
   { key: 'edu-elect', label: '课程选课', icon: 'Notebook', path: '/edu/elect', roles: ['student'] },
   { key: 'edu-scores', label: '成绩课表', icon: 'Collection', path: '/edu/scores', roles: ['student'] },

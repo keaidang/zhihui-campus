@@ -105,6 +105,32 @@
       </div>
     </main>
 
+    <!-- 忘记密码对话框 -->
+    <el-dialog v-model="forgotDlg" title="找回密码" width="420px">
+      <template v-if="forgotStep === 1">
+        <p class="forgot-tip">输入账号与注册时绑定的邮箱，验证码将发送至该邮箱</p>
+        <el-input v-model="forgotForm.username" placeholder="账号（用户名）" style="margin-bottom: 12px" />
+        <el-input v-model="forgotForm.email" placeholder="绑定邮箱（注册时验证的邮箱）" />
+      </template>
+      <template v-else>
+        <p class="forgot-tip">验证码已发送至 {{ forgotForm.email }}（10 分钟内有效，未收到请查垃圾邮件）</p>
+        <el-input v-model="forgotForm.code" placeholder="6 位邮箱验证码" maxlength="6" style="margin-bottom: 12px">
+          <template #append>
+            <el-button :disabled="forgotCooldown > 0 || forgotSending" @click="sendForgotCode">
+              {{ forgotCooldown > 0 ? `${forgotCooldown}s 后重发` : '重新发送' }}
+            </el-button>
+          </template>
+        </el-input>
+        <el-input v-model="forgotForm.newPassword" type="password" show-password placeholder="新密码（至少 8 位）" style="margin-bottom: 12px" />
+        <el-input v-model="forgotForm.confirm" type="password" show-password placeholder="确认新密码" @keyup.enter="doForgotReset" />
+      </template>
+      <template #footer>
+        <el-button @click="forgotDlg = false">取消</el-button>
+        <el-button v-if="forgotStep === 1" type="primary" :loading="forgotSending" @click="sendForgotCode">发送验证码</el-button>
+        <el-button v-else type="primary" :loading="forgotResetting" @click="doForgotReset">重置密码</el-button>
+      </template>
+    </el-dialog>
+
     <footer class="gate-footer">
       清北大学 · 智汇校园一站式服务平台 © 2026 ·
       <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
@@ -291,12 +317,77 @@ async function doRegister() {
 }
 
 function onForgot() {
-  ElMessage.info('请联系管理员重置密码');
+  forgotDlg.value = true;
+  forgotStep.value = 1;
+}
+
+// ---- 忘记密码（邮箱验证码自助找回） ----
+const forgotDlg = ref(false);
+const forgotStep = ref(1); // 1 发码 2 重置
+const forgotSending = ref(false);
+const forgotResetting = ref(false);
+const forgotCooldown = ref(0);
+const forgotForm = reactive({ username: '', email: '', code: '', newPassword: '', confirm: '' });
+
+async function sendForgotCode() {
+  if (!forgotForm.username.trim()) return ElMessage.warning('请输入账号');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(forgotForm.email.trim())) return ElMessage.warning('请输入正确的绑定邮箱');
+  forgotSending.value = true;
+  try {
+    const res = await api('/api/auth/password/forgot-send-code', {
+      method: 'POST',
+      auth: false,
+      body: { username: forgotForm.username, email: forgotForm.email },
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '验证码已发送');
+      forgotStep.value = 2;
+      forgotCooldown.value = 60;
+      const timer = setInterval(() => {
+        forgotCooldown.value--;
+        if (forgotCooldown.value <= 0) clearInterval(timer);
+      }, 1000);
+    } else {
+      ElMessage.error(res.message || '发送失败');
+    }
+  } finally {
+    forgotSending.value = false;
+  }
+}
+
+async function doForgotReset() {
+  if (!/^\d{6}$/.test(forgotForm.code.trim())) return ElMessage.warning('请输入 6 位验证码');
+  if (forgotForm.newPassword.length < 8) return ElMessage.warning('新密码至少 8 位');
+  if (forgotForm.newPassword !== forgotForm.confirm) return ElMessage.warning('两次输入的新密码不一致');
+  forgotResetting.value = true;
+  try {
+    const res = await api('/api/auth/password/forgot-reset', {
+      method: 'POST',
+      auth: false,
+      body: {
+        username: forgotForm.username,
+        email: forgotForm.email,
+        code: forgotForm.code,
+        newPassword: forgotForm.newPassword,
+      },
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '密码已重置，请使用新密码登录');
+      forgotDlg.value = false;
+      loginForm.username = forgotForm.username;
+      loginForm.password = '';
+    } else {
+      ElMessage.error(res.message || '重置失败');
+    }
+  } finally {
+    forgotResetting.value = false;
+  }
 }
 </script>
 
 <style scoped>
 .w-full { width: 100%; }
+.forgot-tip { margin: 0 0 12px; font-size: 12.5px; color: #64748b; line-height: 1.6; }
 
 /* 输入框 + 操作按钮同行：按钮做成兄弟节点。
    不要用 el-input 的 #append（Element Plus 会渲染成 display:table 的
