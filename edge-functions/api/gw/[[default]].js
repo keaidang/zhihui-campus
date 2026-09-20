@@ -139,9 +139,19 @@ export async function onRequest(context) {
   }
 
   // ── 3. 回源转发到 Node Functions ──
-  const target = new URL(request.url);
-  target.pathname = '/api/' + rest;
-  const upstream = await fetch(new Request(target, request));
+  // ★ 关键平台行为：同域 fetch 子请求走"节点缓存→静态源站"（不进函数路由，会拿到 SPA index.html）；
+  //   跨域 fetch 则重新进入目标域的完整函数路由 → /api/* 在目标域只匹配 Node Functions。
+  //   故转发目标取"另一个域名"（本项目双域名：campus.keaidang.com ↔ c.9o.pw），可用 env GW_ORIGIN 覆盖。
+  const ORIGINS = { 'campus.keaidang.com': 'https://c.9o.pw', 'c.9o.pw': 'https://campus.keaidang.com' };
+  let upstreamBase = (context.env && context.env.GW_ORIGIN) || ORIGINS[url.hostname] || 'https://c.9o.pw';
+  if (new URL(upstreamBase).hostname === url.hostname) {
+    // 无可用对端域名：放行会拿到 SPA，不如直接 502 快速失败
+    return json({ code: 50000, message: 'gateway upstream unavailable' }, 502);
+  }
+  const target = new URL(upstreamBase + '/api/' + rest + url.search);
+  const fwd = new Request(target, request);
+  fwd.headers.delete('host');
+  const upstream = await fetch(fwd);
   const res = new Response(upstream.body, upstream);
   res.headers.set('access-control-allow-origin', '*');
   if (kv) waitUntil(sweep(kv));
