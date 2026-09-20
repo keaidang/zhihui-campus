@@ -6,7 +6,9 @@ const KEY = process.env.LANQIN_API_KEY || '';
 const DOMAIN_ID = process.env.LANQIN_DOMAIN_ID || '';
 // 发信专用邮箱（k@keaidang.com）；SYSTEM_MAILBOX_ID(system@) 作为回退
 const SEND_MAILBOX_ID = process.env.LANQIN_SEND_MAILBOX_ID || process.env.LANQIN_SYSTEM_MAILBOX_ID || '';
-const SYSTEM_ADDRESS = process.env.LANQIN_SYSTEM_ADDRESS || 'k@keaidang.com';
+const SYSTEM_ADDRESS = process.env.LANQIN_SYSTEM_ADDRESS || 'system@keaidang.com';
+// 主用户 ID：API 新建邮箱必须归属该用户，否则 /send 报 404（不属于 Token 拥有者）
+const OWNER_USER_ID = process.env.LANQIN_OWNER_USER_ID || '';
 
 export const lanqinConfigured = () => Boolean(KEY && SEND_MAILBOX_ID);
 
@@ -68,6 +70,7 @@ export async function createMailbox(localPart, password, displayName) {
     password,
     displayName: displayName || undefined,
     quotaMb: 1024,
+    ...(OWNER_USER_ID ? { userId: OWNER_USER_ID } : {}),
   });
   if (!r.ok) {
     const msg = r.data?.error || r.data?.message || `HTTP ${r.status}`;
