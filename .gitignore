@@ -63,3 +63,6 @@ verify-*.mjs
 
 # 会话/调试工作目录（严禁入库）
 working/
+
+# 白名单补录：正式的 16 步全链路验证脚本
+!scripts/smoke-full.mjs
