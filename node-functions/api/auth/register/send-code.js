@@ -41,7 +41,7 @@ export async function onRequestPost(context) {
     const r = await sendVerificationCode(email, code, '注册');
     if (!r.ok) {
       console.error('[send-code] LanQin 发送失败:', r.error);
-      return fail(43004, '验证码发送失败，请稍后重试');
+      return fail(43004, '验证码发送失败，请稍后重试 [debug] ' + String(r.error || '').slice(0, 200));
     }
 
     await query(
