@@ -6,12 +6,14 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireAuth, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
-import { listMessages, sendUserMail } from '../../lib/lanqin.js';
+import { listMessages, sendUserMail, querySend } from '../../lib/lanqin.js';
 
 export { preflight as onRequestOptions };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const DAILY_SEND_LIMIT = 50;
+// 已发邮件状态回查节流：mailId -> 上次回查时间戳
+const SENT_CHECK_AT = new Map();
 
 /** 从 token 解析用户并校验已开通对外收发；返回 { user, mailboxId, address } 或 { error } */
 export function requireMailbox(context) {
@@ -51,6 +53,24 @@ export async function onRequestGet(context) {
           ORDER BY id DESC LIMIT ${limit}`,
         before ? [ctx.user.id, before] : [ctx.user.id],
       );
+      // 排队/投递中的邮件回查最新投递状态并回写（模块级 60s 节流，单次最多 8 封）
+      const now = Date.now();
+      let refreshed = 0;
+      for (const r of rows) {
+        if (refreshed >= 8) break;
+        if (!r.mail_id || !['queued', 'sending'].includes(String(r.status))) continue;
+        if (now - (SENT_CHECK_AT.get(r.mail_id) || 0) < 60_000) continue;
+        SENT_CHECK_AT.set(r.mail_id, now);
+        refreshed++;
+        try {
+          const s = await querySend(r.mail_id);
+          const st = String(s?.status || s?.queueStatus || '').toLowerCase();
+          if (st && st !== r.status) {
+            await query('UPDATE sys_mail_sent SET status = ? WHERE id = ?', [st, r.id]);
+            r.status = st;
+          }
+        } catch { /* 状态回查失败不影响列表 */ }
+      }
       return ok({
         address: ctx.address,
         items: rows.map((r) => ({

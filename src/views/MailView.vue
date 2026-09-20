@@ -28,13 +28,13 @@
         <!-- 左：邮件列表 -->
         <section class="ml-list">
           <div class="ml-tabs">
-            <button :class="{ on: box === 'inbox' }" @click="switchBox('inbox')">📥 收件箱</button>
-            <button :class="{ on: box === 'sent' }" @click="switchBox('sent')">📤 已发送</button>
+            <button :class="{ on: box === 'inbox' }" @click="switchBox('inbox')">收件箱</button>
+            <button :class="{ on: box === 'sent' }" @click="switchBox('sent')">已发送</button>
           </div>
           <div v-if="loading && !items.length" class="ml-loading" v-loading="true" element-loading-text="加载中…" />
           <template v-else>
             <p v-if="!items.length" class="ml-empty">
-              {{ box === 'inbox' ? '收件箱是空的，快给别人写封信吧 ✉️' : '还没有发过邮件' }}
+              {{ box === 'inbox' ? '收件箱是空的，快给别人写封信吧' : '还没有发过邮件' }}
             </p>
             <div
               v-for="m in items"
@@ -63,7 +63,7 @@
             <div class="ml-d-meta">
               <span v-if="box === 'sent'"><b>收件人：</b>{{ detail.to }}</span>
               <span v-else><b>发件人：</b>{{ senderName(detail.from) }}</span>
-              <span v-if="box === 'sent'"><b>状态：</b>{{ statusLabel(detail.status) }}</span>
+              <span v-if="box === 'sent'"><b>状态：</b><span class="ml-st" :class="statusClass(detail.status)">{{ statusLabel(detail.status) }}</span></span>
               <span><b>时间：</b>{{ fmtTime(detail.receivedAt || detail.sentAt) }}</span>
             </div>
             <div v-if="box !== 'sent' && detail.attachments?.length" class="ml-d-atts">
@@ -128,7 +128,13 @@ const form = ref({ to: '', subject: '', text: '' });
 const sending = ref(false);
 
 function statusLabel(s) {
-  return { queued: '⏳ 排队中', sending: '⏳ 投递中', relayed: '✅ 已送达', delivered: '✅ 已送达', failed: '❌ 投递失败', bounced: '❌ 被拒收', rejected: '❌ 被拒收' }[s] || s || '';
+  return {
+    queued: '排队中', sending: '投递中', relayed: '已送达', delivered: '已送达',
+    failed: '投递失败', bounced: '被对方拒收', rejected: '被对方拒收',
+  }[s] || s || '';
+}
+function statusClass(s) {
+  return ['relayed', 'delivered'].includes(s) ? 'ok' : ['failed', 'bounced', 'rejected'].includes(s) ? 'bad' : 'pending';
 }
 
 async function switchBox(b) {
@@ -324,6 +330,19 @@ onMounted(() => {
   white-space: nowrap;
 }
 .ml-more { text-align: center; padding: 6px 0; }
+
+.ml-st { display: inline-flex; align-items: center; gap: 5px; }
+.ml-st::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.75;
+}
+.ml-st.pending { color: #b45309; }
+.ml-st.ok { color: #15803d; }
+.ml-st.bad { color: #b91c1c; }
 
 .ml-detail {
   background: var(--zc-glass, rgba(255, 255, 255, 0.72));
