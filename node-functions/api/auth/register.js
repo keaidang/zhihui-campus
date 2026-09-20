@@ -50,9 +50,9 @@ export async function onRequestPost(context) {
     const dupEmail = await query('SELECT id FROM sys_user WHERE email = ? AND email != ""', [email]);
     if (dupEmail.length > 0) return fail(43114, '该邮箱已被其他账号绑定');
 
-    // 校验验证码：取该邮箱最新一条未使用记录
+    // 校验验证码：取该邮箱最新一条未使用记录（过期判断放 DB 侧，避免时区歧义）
     const codeRows = await query(
-      `SELECT id, code, attempts, expires_at FROM sys_email_code
+      `SELECT id, code, attempts, expires_at, (expires_at < NOW()) AS expired FROM sys_email_code
         WHERE email = ? AND purpose = 'register' AND used = 0
         ORDER BY id DESC LIMIT 1`,
       [email],
@@ -60,7 +60,7 @@ export async function onRequestPost(context) {
     if (codeRows.length === 0) return fail(43111, '请先获取邮箱验证码');
     const rec = codeRows[0];
     if (Number(rec.attempts) >= 5) return fail(43111, '验证码错误次数过多，请重新获取');
-    if (new Date(rec.expires_at).getTime() < Date.now()) return fail(43111, '验证码已过期，请重新获取');
+    if (Number(rec.expired) === 1) return fail(43111, '验证码已过期，请重新获取');
     if (String(rec.code) !== code) {
       await query('UPDATE sys_email_code SET attempts = attempts + 1 WHERE id = ?', [rec.id]);
       const left = 5 - Number(rec.attempts) - 1;
