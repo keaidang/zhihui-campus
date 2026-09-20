@@ -59,8 +59,11 @@ export async function onRequestGet(context) {
           GROUP BY DATE(created_at) ORDER BY d`,
       ),
       query(
-        `SELECT o.action, o.target, o.detail, o.created_at, u.real_name AS operator
+        `SELECT o.action, o.target, o.detail,
+                DATE_FORMAT(o.created_at, '%Y-%m-%d %H:%i') AS createdAt,
+                u.real_name AS operator
            FROM sys_op_log o LEFT JOIN sys_user u ON u.id = o.operator_id
+          WHERE o.action <> 'error.500'
           ORDER BY o.id DESC LIMIT 10`,
       ),
     ]);

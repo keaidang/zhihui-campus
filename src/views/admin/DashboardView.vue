@@ -93,7 +93,7 @@
         <h2>最近管理动态</h2>
         <el-table :data="data.recentOps" size="small" stripe>
           <el-table-column prop="createdAt" label="时间" width="150">
-            <template #default="{ row }">{{ String(row.createdAt).replace('T', ' ').slice(0, 16) }}</template>
+            <template #default="{ row }">{{ row.createdAt || '—' }}</template>
           </el-table-column>
           <el-table-column prop="operator" label="操作人" width="110" />
           <el-table-column prop="action" label="动作" width="180" />
