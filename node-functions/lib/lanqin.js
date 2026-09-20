@@ -93,8 +93,12 @@ export async function resetMailboxPassword(mailboxId, newPassword) {
 
 /** 检查邮箱前缀在邮件服务器是否已被占用（列出后按 localPart 匹配，尽力而为） */
 export async function isLocalPartTaken(localPart) {
-  const r = await call('GET', `/mailboxes?limit=100&q=${encodeURIComponent(localPart)}`);
-  if (!r.ok) return null; // 查询失败时不阻塞（创建时服务器还会兜底校验）
-  const items = r.data?.items || [];
-  return items.some((m) => String(m.localPart || '').toLowerCase() === localPart.toLowerCase() && m.status === 'active');
+  try {
+    const r = await call('GET', `/mailboxes?limit=100&q=${encodeURIComponent(localPart)}`);
+    if (!r.ok) return null; // 查询失败时不阻塞（创建时服务器还会兜底校验）
+    const items = r.data?.items || [];
+    return items.some((m) => String(m.localPart || '').toLowerCase() === localPart.toLowerCase() && m.status === 'active');
+  } catch {
+    return null; // 网络异常同样不阻塞
+  }
 }
