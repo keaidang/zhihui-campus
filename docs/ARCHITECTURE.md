@@ -17,10 +17,10 @@
 全部跑在 EdgeOne Pages 上：
   ├─ Vue 3 管理端        → Pages 静态托管（全球 CDN，桌面端专用地址）
   ├─ uni-app 小程序/H5端  → 独立地址静态托管（不做网页自适应，移动端体验独立设计）
-  ├─ Edge Functions      → 登录态校验（KV Session）、限流、计数
-  ├─ Node Functions      → 核心业务 API（连 MySQL）
-  ├─ KV                  → Session、功能开关、热数据计数
-  ├─ Blob                → 图片、附件
+  ├─ Edge Functions      → 边缘原生轻端点（KV 访问统计/诊断）、静态内容边缘缓存
+  ├─ Node Functions      → 核心业务 API（连 MySQL）+ 入口限流（登录/注册/找回等）
+  ├─ KV                  → 访问统计计数、功能开关、热数据计数
+  ├─ Blob                → 图片、附件（M3 起为 sys_blob 表暂存，见 ADR-4）
   └─ TiDB Cloud Serverless → 结构化业务数据（MySQL 兼容）
 ```
 
@@ -53,8 +53,7 @@
 | 存储 | 放什么 | 不放什么 |
 |---|---|---|
 | MySQL(TiDB) | 用户、课程、选课、成绩、审批流、请假、报修、公告、借阅、社团、论坛等结构化数据；**M3 起图片存 sys_blob 表（LONGBLOB，token 外链）** | 文件二进制的大规模存储（图床接入后迁出） |
-| KV | session:token、config:*、count:*、限流窗口 | 需要强一致的业务计数（选课名额！走数据库） |
-| Blob/图床 | 规划中的图片对象存储（sys_blob 暂存，切换点在 blob.js 与 ImgUploader 的 URL 生成处） | 小键值状态 |
+| KV | 访问统计计数、config:*、限流窗口规划位（当前限流在 Node 内存，见 2.5） | 需要强一致的业务计数（选课名额！走数据库） |
 
 **重要**：KV 是 60 秒最终一致，所有"不能错的计数"（选课名额、库存）必须走数据库事务，KV 只放可容忍延迟的计数。
 
@@ -90,7 +89,12 @@
 | WebSocket | ❌ | ✅ |
 | CPU/时长 | 200ms | 120s 墙钟 |
 
-**分工铁律：离 KV 近的轻活给 Edge（登录态/限流/计数），碰数据库的重活给 Node（业务 API/事务）。** 两边路由同处 `/api` 命名空间，规划路径避免撞车。
+**分工铁律：离 KV 近的轻活给 Edge（限流/计数/统计），碰数据库的重活给 Node（业务 API/事务）。** 两边路由同处 `/api` 命名空间，规划路径避免撞车。
+
+**★ 平台关键行为（2026-09-20 实测踩坑，架构选型依据）**：边缘函数内 `fetch` 发起的子请求**不进入函数路由**——同域子请求走"节点缓存→静态源站"（拿到的是静态资源/SPA 回退），跨域子请求行为未文档化。**结论：Edge Functions 无法代理转发到 Node Functions，"边缘网关全量代理"架构在本平台不可行**（曾实现后实测 /api/gw 代理返回 SPA，已回滚）。因此：
+- **接口限流落在 Node 侧**（lib/auth.js rateLimit，实例内存固定窗口：登录 IP+账号 5/min + IP 30/min、刷新 30/min、忘记密码 3/hour，均为市面常见频率）；KV 60s 最终一致也不适合做精确限流计数
+- **边缘侧真实承担**（零额外跳数）：静态资源 CDN 分发、图片等静态内容边缘缓存（immutable）、**边缘原生端点**——`/api/edge/stats`（KV 访问统计，无 DB 依赖，边缘毫秒级响应）、`/api/kv-check`（KV 诊断）
+- 论文口径：边缘=CDN 分发 + 边缘缓存 + KV 轻计算；云端=事务与强一致；限流在应用入口（Node）以内存窗口实现——三层各司其职，不为了"像云边协同"而强行加代理层
 
 **KV 实例信息（定稿）**：命名空间 `zhihuicampus`，绑定到项目的变量名同为 `zhihuicampus` —— Edge Functions 内通过 `zhihuicampus.get()/put()` 访问（key 前缀规范见 DATABASE.md：session: / config: / counter: / ratelimit:）。
 

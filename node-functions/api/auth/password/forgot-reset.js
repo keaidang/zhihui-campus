@@ -4,7 +4,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { opLog } from '../../../lib/guard.js';
-import { edgeBlacklist } from '../../../lib/edgegw.js';
+import { rateLimit } from '../../../lib/auth.js';
 import bcrypt from 'bcryptjs';
 
 export { preflight as onRequestOptions };
@@ -22,6 +22,11 @@ export async function onRequestPost(context) {
     if (!username || !email) return fail(43501, '请输入账号与绑定邮箱');
     if (!/^\d{6}$/.test(code)) return fail(43501, '请输入 6 位验证码');
     if (!PWD_OK(newPassword)) return fail(43507, '新密码至少 8 位');
+
+    // 接口限流：3/hour/IP（防验证码爆破）
+    if (!rateLimit('forgot_reset', String(ip).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64), 3, 3600)) {
+      return fail(42900, '操作过于频繁，请 1 小时后再试', 429);
+    }
 
     const users = await query('SELECT id, status FROM sys_user WHERE username = ? AND email = ?', [username, email]);
     if (users.length === 0) return fail(43502, '账号与绑定邮箱不匹配');
@@ -53,8 +58,6 @@ export async function onRequestPost(context) {
     } catch {
       /* 表可能无该用户记录，忽略 */
     }
-    // 用户级访问令牌吊销（边缘黑名单）：重置前签发的在途令牌全部失效
-    await edgeBlacklist(context.request, { userId: user.id });
     await opLog(user.id, 'password.forgotReset', `user:${user.id}`, '通过邮箱验证码自助重置密码', ip);
     return ok({ reset: true }, '密码已重置，请使用新密码登录');
   } catch (e) {

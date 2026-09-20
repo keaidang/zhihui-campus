@@ -2,10 +2,12 @@
 import bcrypt from 'bcryptjs';
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
-import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
+import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail, rateLimit } from '../../lib/auth.js';
 import { preflight } from '../../lib/http.js';
 
 export { preflight as onRequestOptions };
+
+const safeRlKey = (s) => String(s || '').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64);
 
 export async function onRequestPost(context) {
   try {
@@ -19,6 +21,15 @@ export async function onRequestPost(context) {
     if (!username || !password) return fail(41001, '请输入用户名和密码');
     if (isLocked(lockKey)) {
       return fail(42900, '失败次数过多，请 10 分钟后再试', 429);
+    }
+
+    // 接口限流（市面常见频率）：IP+账号 5/min 防撞库，IP 全局 30/min 防爆破且容忍 NAT/机房场景
+    const ipKey = safeRlKey(ip);
+    if (!rateLimit('login_name', `${ipKey}_${safeRlKey(username)}`, 5, 60)) {
+      return fail(42900, '该账号登录尝试过于频繁，请 1 分钟后再试', 429);
+    }
+    if (!rateLimit('login_ip', ipKey, 30, 60)) {
+      return fail(42900, '请求过于频繁，请稍后再试', 429);
     }
 
     const users = await query(

@@ -80,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ArrowRight } from '@element-plus/icons-vue';
@@ -90,16 +90,19 @@ const router = useRouter();
 const auth = useAuthStore();
 const modulesRef = ref(null);
 
+// 边缘访问统计：KV 计数在边缘节点毫秒级完成，不回源、不碰数据库（云边协同样板，fire-and-forget）
+onMounted(() => { fetch('/api/edge/stats').catch(() => {}); });
+
 const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', ready: true, path: '/edu/elect', roles: ['student'] },
   { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', ready: true, path: '/edu/scores', roles: ['student'] },
   { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', ready: true, path: '/af/leave', roles: ['student'] },
   { title: '校园邮箱', desc: '专属 @keaidang.com 邮箱，收发外部邮件', icon: 'Promotion', ready: true, path: '/mail' },
   { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', ready: true, path: '/af/repair', roles: ['student'] },
-  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', ready: false },
-  { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', ready: false },
-  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', ready: false },
-  { title: '社团活动', desc: '社团风采、活动报名、精彩回顾', icon: 'Flag', ready: false },
+  { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', ready: true, path: '/library' },
+  { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', ready: true, path: '/lost-found' },
+  { title: '社团活动', desc: '社团申请、招募预约，精彩校园', icon: 'Flag', ready: true, path: '/club' },
+  { title: '校园论坛', desc: '六大板块交流分享，交易有保障', icon: 'ChatDotRound', ready: true, path: '/forum' },
 ];
 
 /**

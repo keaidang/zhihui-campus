@@ -146,3 +146,27 @@ export function registerRecord(ip) {
     rec.count += 1;
   }
 }
+
+/** 通用接口限流（实例级内存版，固定窗口计数；多实例下为尽力而为）
+ *  频率取市面常见值：登录防撞库按 IP+账号 5/min、IP 全局 30/min；
+ *  刷新 30/min；注册/发码 5/hour；忘记密码 3/hour。
+ *  返回 true=放行，false=超限。内存超 1 万键自动清窗，防泄漏。 */
+const rlMap = new Map(); // bucket -> Map(ident -> { win, count })
+const RL_MAP_MAX = 10000;
+
+export function rateLimit(bucket, ident, limit, windowSec) {
+  const now = Date.now();
+  const win = Math.floor(now / (windowSec * 1000));
+  let m = rlMap.get(bucket);
+  if (!m) { m = new Map(); rlMap.set(bucket, m); }
+  const key = `${ident}_${win}`;
+  const rec = m.get(key);
+  if (!rec) {
+    if (m.size > RL_MAP_MAX) rlMap.set(bucket, new Map()); // 旧窗口整批丢弃
+    m.set(key, { count: 1 });
+    return true;
+  }
+  if (rec.count >= limit) return false;
+  rec.count += 1;
+  return true;
+}

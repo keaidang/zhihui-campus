@@ -127,6 +127,8 @@
 20. **M3 图片一律走 /api/blob**：POST base64≤3MB 存 sys_blob，GET ?token= 公共只读；URL 必须匹配 `/^\/api\/blob\?token=[a-z0-9]{16}$/`（存量数据已从此前的路径式迁移）
 21. **v-html 必须过 DOMPurify**：用户/外部内容（邮件正文等）渲染前消毒（MailView.vue 先例）；全站其余内容一律纯文本渲染，新增 v-html 前先想安全
 22. **运维清理**：login.js 登录成功 5% 概率顺带清过期刷新令牌；blob/登录日志用 `node scripts/cleanup.mjs`（默认 dry-run，--yes 执行，参数 --blob-days/--log-days）
+23. **接口限流在 Node 侧**（lib/auth.js `rateLimit(bucket, ident, limit, windowSec)`，实例内存固定窗口）：登录 IP+账号 5/min + IP 全局 30/min、刷新 30/min、忘记密码发码/重置 3/hour/IP（市面常见频率）；注册/发码另有 DB 层频控。多实例下尽力而为，与登录锁同边界
+24. **★ EdgeOne 边缘函数 fetch 子请求不进函数路由**：同域子请求走"节点缓存→静态源站"（返回静态资源/SPA 回退），跨域行为未文档化——**Edge Functions 无法代理转发到 Node Functions**，"边缘网关代理"架构在本平台不可行（2026-09-20 实测后回滚）。边缘侧只放无 DB 依赖的原生轻端点（/api/edge/stats、/api/kv-check）；需要业务数据的能力一律落 Node
 
 ## 6. 交付与验证流程
 
