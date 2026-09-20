@@ -290,11 +290,10 @@ const scopeLabel = computed(() => {
   return '本人';
 });
 
-function fmt(v) {
-  return v ? String(v).slice(0, 19).replace('T', ' ') : '—';
-}
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime as fmt } from '../../utils/time';
 
-const fmtDate = (v) => (v ? String(v).slice(0, 10) : '');
+const fmtDate = (v) => (v ? fmt(v, { dateOnly: true }) : '');
 const isExpired = (row) => row.valid_until && new Date(row.valid_until).getTime() < Date.now();
 
 /* ---- 导出 ---- */

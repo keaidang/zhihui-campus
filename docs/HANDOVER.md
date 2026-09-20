@@ -138,6 +138,14 @@
 22. **运维清理**：login.js 登录成功 5% 概率顺带清过期刷新令牌；blob/登录日志用 `node scripts/cleanup.mjs`（默认 dry-run，--yes 执行，参数 --blob-days/--log-days）
 23. **★ EdgeOne Node Functions 多实例内存不共享——内存计数限流/锁定无效**（2026-09-20 实测 30 连发零触发，登录锁定同病）。有效限流一律走 DB 流水计数。**且 Node 侧 x-forwarded-for 是 EdgeOne 出口代理池 IP（会在多个代理 IP 间交替），不是真实客户端 IP**——按 IP 计数会被代理池稀释，防撞库必须按"账号"维度：登录=sys_login_log 失败流水（**账号 5 失败/min 防撞库**、出口 IP 60 失败/min 辅助）、忘记密码发码=sys_email_code（3 次/hour/IP）、注册=既有 DB 频控；刷新端点不做频控（一次性轮换+重放检测已足够）。内存锁（isLocked/registerAllowed）仅作纵深防御保留
 24. **★ EdgeOne 边缘函数 fetch 子请求不进函数路由**：同域子请求走"节点缓存→静态源站"（返回静态资源/SPA 回退），跨域行为未文档化——**Edge Functions 无法代理转发到 Node Functions**，"边缘网关代理"架构在本平台不可行（2026-09-20 实测后回滚）。边缘侧只放无 DB 依赖的原生轻端点（/api/edge/stats、/api/kv-check）；需要业务数据的能力一律落 Node
+25. **★★ 时间口径铁律（2026-09-20 实测确认，改时间相关代码前必读）**
+   - **库内一切时间都是 UTC 墙钟**：TiDB 会话时区 `@@system_time_zone='UTC'`，业务写库全用 `NOW()` → 落库即 UTC。核对方法：`SELECT DATE_FORMAT(NOW(),'%Y-%m-%d %H:%i:%s')` 比北京时间**早 8 小时**即正常。
+   - **Node Functions 的 mysql2 连接 `timezone` 必须是 `'Z'`**（lib/db.js）。曾误配 `'+08:00'`：mysql2 把 UTC 墙钟按北京墙钟解读，Date 对象整体**早 8 小时**，连带 JSON 输出、Node 侧过期比较、60s 频控全部偏移（那时 60s 频控实际失效、刷新令牌多活 8 小时）。
+   - **展示层唯一入口 `src/utils/time.js` 的 `fmtTime()` / `fmtAgo()`**：把真实瞬时转成浏览器本地时区。**禁止**再写 `String(x).replace('T',' ').slice(0,16)`（那是 UTC 墙钟直显，早 8 小时，且字段名驼峰/蛇形不一致时直接 undefined——驾驶舱"时间乱了"就是这么来的）。
+   - **Node 侧导出/格式化**（CSV 等）手写格式化时必须带 `{ timeZone: 'Asia/Shanghai' }`，否则在 UTC 运行环境里输出 UTC 时间。
+   - **库内比较一律放 SQL 侧**（`expires_at > NOW()`、`due_at < NOW()`），两边同为 UTC 才成立；别在 Node 里 `new Date(row.x)` 再比。
+   - **用户输入的墙钟时间**（日期选择器，如请假起止）落库前显式 `-8h` 转 UTC（见 af/leave.js `toUtc()`），存量数据已迁移；展示端统一 `fmtTime()` 还原。
+26. **sys_op_log 既放业务审计也放 error.500**：诊断用 `scripts/ops-check.mjs` 按 detail 分组看近 24h；**表里有历史噪音是正常的**（已修 bug 的旧 500 会永久留痕），管理端列表必须 `WHERE action <> 'error.500'` 过滤，判断"是否仍在发生"看 `MAX(created_at)` 距今多久。
 
 ## 6. 交付与验证流程
 

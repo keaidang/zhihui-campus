@@ -18,7 +18,11 @@ export function getPool() {
     connectionLimit: Number(process.env.DB_POOL_MAX || 5),
     queueLimit: 0,
     enableKeepAlive: true,
-    timezone: '+08:00',
+    // ★ 必须 'Z'（UTC）：TiDB 会话时区就是 UTC（@@system_time_zone='UTC'），所有 DATETIME 存 UTC 墙钟。
+    //   曾误配 '+08:00' → mysql2 把 UTC 墙钟当北京墙钟解读，Date 对象整体早 8 小时，
+    //   连带 JSON 输出、Node 侧过期比较、60s 频控全部偏移（2026-09-20 实测确认后修正）。
+    //   展示层一律交前端 src/utils/time.js fmtTime() 转本地时区；库内时间比较一律放 SQL 侧。
+    timezone: 'Z',
     ssl: { rejectUnauthorized: true },
   };
   if (process.env.DB_CA_CERT) {

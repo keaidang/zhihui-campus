@@ -164,10 +164,8 @@ const greeting = computed(() => {
   return '晚上好';
 });
 
-function fmtTime(t) {
-  if (!t) return '';
-  return String(t).replace('T', ' ').slice(0, 16);
-}
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime } from '../utils/time';
 
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
 const BY_ROLE = {

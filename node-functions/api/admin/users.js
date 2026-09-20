@@ -21,17 +21,21 @@ const csvCell = (v) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-/** 有效期入参 → Date（'YYYY-MM-DD' 视为当天 23:59:59）或 null */
+/** 有效期入参 → 'YYYY-MM-DD HH:mm:ss' 字符串（'YYYY-MM-DD' 视为北京当天 23:59:59）或 null
+ *  ★ 库内时间统一存 UTC（时区 = UTC），用户输入的是北京日历日：
+ *    北京 23:59:59 = UTC 15:59:59，直接返回字符串避免 Date 对象二次时区解读 */
 function parseValidUntil(v) {
   if (!v) return null;
   const s = String(v).trim();
   if (!/^\d{4}-\d{2}-\d{2}/.test(s)) throw new Error('VALID_FORMAT');
-  const d = new Date(`${s.slice(0, 10)} 23:59:59`);
-  return isNaN(d.getTime()) ? null : d;
+  const d = new Date(`${s.slice(0, 10)}T23:59:59Z`);
+  if (isNaN(d.getTime())) return null;
+  return `${s.slice(0, 10)} 15:59:59`;
 }
 
-/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss'（sv-SE locale 恰好是这个格式） */
-const fmtDT = (v) => (v ? new Date(v).toLocaleString('sv-SE').replace('T', ' ').slice(0, 19) : '');
+/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss'（北京时间展示，导出 CSV 用） */
+const fmtDT = (v) =>
+  v ? new Date(v).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ').slice(0, 19) : '';
 const fmtD = (v) => (v ? fmtDT(v).slice(0, 10) : '');
 
 export async function onRequestGet(context) {

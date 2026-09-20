@@ -54,14 +54,14 @@ export async function onRequestGet(context) {
       query("SELECT (SELECT COUNT(*) FROM forum_thread WHERE status = 1) threads, (SELECT COUNT(*) FROM forum_reply WHERE status = 1) replies, (SELECT COUNT(*) FROM forum_thread WHERE status = 1 AND created_at > NOW() - INTERVAL 24 HOUR) new24h"),
       query('SELECT COUNT(*) n FROM lf_item WHERE status = 1'),
       query(
-        `SELECT DATE(created_at) d, COUNT(*) n FROM sys_login_log
+        // 趋势按「北京日期」分桶：库内 created_at 是 UTC 墙钟，直接 DATE() 会把 00:00-08:00 算进前一天
+        `SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) d, COUNT(*) n FROM sys_login_log
           WHERE success = 1 AND created_at > NOW() - INTERVAL 7 DAY
-          GROUP BY DATE(created_at) ORDER BY d`,
+          GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) ORDER BY d`,
       ),
       query(
-        `SELECT o.action, o.target, o.detail,
-                DATE_FORMAT(o.created_at, '%Y-%m-%d %H:%i') AS createdAt,
-                u.real_name AS operator
+        // createdAt 原样返回真实瞬时（ISO 带 Z），前端 fmtTime() 转北京时间显示
+        `SELECT o.action, o.target, o.detail, o.created_at AS createdAt, u.real_name AS operator
            FROM sys_op_log o LEFT JOIN sys_user u ON u.id = o.operator_id
           WHERE o.action <> 'error.500'
           ORDER BY o.id DESC LIMIT 10`,

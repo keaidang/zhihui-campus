@@ -93,7 +93,7 @@
         <h2>最近管理动态</h2>
         <el-table :data="data.recentOps" size="small" stripe>
           <el-table-column prop="createdAt" label="时间" width="150">
-            <template #default="{ row }">{{ row.createdAt || '—' }}</template>
+            <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
           </el-table-column>
           <el-table-column prop="operator" label="操作人" width="110" />
           <el-table-column prop="action" label="动作" width="180" />
@@ -109,6 +109,8 @@
 import { computed, onMounted, ref } from 'vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示
+import { fmtTime } from '../../utils/time';
 
 const loading = ref(false);
 const data = ref({

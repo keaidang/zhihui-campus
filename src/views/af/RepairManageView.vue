@@ -66,7 +66,8 @@ const remark = ref('');
 const saving = ref(false);
 
 const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success' }[s] || 'info');
-const fmt = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—');
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime as fmt } from '../../utils/time';
 
 async function load() {
   loading.value = true;

@@ -193,7 +193,8 @@ const publishDlg = ref(false);
 const publishTarget = ref(null);
 const publishForm = reactive({ title: '', content: '', quota: 20, images: [] });
 
-const day = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '');
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime as day } from '../../utils/time';
 
 async function loadRecruits() {
   const res = await api('/api/club/recruit');

@@ -86,7 +86,8 @@ const pubVisible = ref(false);
 const pubLoading = ref(false);
 const pub = reactive({ title: '', content: '', pinned: false, global: true, deptId: null });
 
-const fmt = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—');
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime as fmt } from '../../utils/time';
 const canManage = (n) => isAdmin.value || n.publisher_name === auth.user?.realName;
 
 async function load() {

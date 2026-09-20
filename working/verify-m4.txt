@@ -1,0 +1,18 @@
+1 登录: admin ✓ student004 ✓
+2 驾驶舱(admin): code=0 学生=403 课程=27 床位=403/1728 在借=0
+2b 驾驶舱(学生越权): code=40301（期望 40301）
+3 我的宿舍: code=0 宿舍=1栋 101 3号床 室友=3人
+3b 宿舍总览(学生越权): code=40301（期望 40301）
+3c 宿舍总览(admin): code=50000 楼栋=undefined 房间=undefined
+3d 未住宿学生: code=0 数量=0
+4 admin 发站内信: code=0 msg=已发送
+4b student004 未读: code=0 unread=1 收到验证消息=是
+4c 已读+删除: read=0 del=0
+4d 学生发广播越权: code=40301（期望 40301）
+5 学生提交报修: code=0 id=2000001
+5b admin 受理: code=0 msg=已受理
+5c 报修通知自动送达: 是 ✓ unread=1
+6 学生请假: code=0 id=2030001
+6b admin 批准: code=0 请假通知送达: 是 ✓
+
+== M4 线上验证完成 ==

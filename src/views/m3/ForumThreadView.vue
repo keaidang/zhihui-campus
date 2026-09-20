@@ -90,7 +90,8 @@ const replies = ref([]);
 const replyText = ref('');
 const replying = ref(false);
 
-const day = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '');
+// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
+import { fmtTime as day } from '../../utils/time';
 
 async function load() {
   const res = await api(`/api/forum/threads?id=${route.params.id}`);

@@ -37,7 +37,8 @@ export async function onRequestGet(context) {
         const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
         lines.push([
           esc(r.campus_email), esc(r.real_name), esc(r.username), esc(r.user_no), esc(r.dept_name),
-          r.mail_enabled ? '已开通' : '未开通', esc(r.mail_enabled ? r.mail_password : ''), esc(r.mail_created_at ? new Date(r.mail_created_at).toLocaleString('sv-SE') : ''),
+          r.mail_enabled ? '已开通' : '未开通', esc(r.mail_enabled ? r.mail_password : ''),
+          esc(r.mail_created_at ? new Date(r.mail_created_at).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }) : ''),
         ].join(','));
       }
       return new Response('\ufeff' + lines.join('\r\n'), {

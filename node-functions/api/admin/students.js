@@ -21,8 +21,9 @@ const csvCell = (v) => {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss' */
-const fmtDT = (v) => (v ? new Date(v).toLocaleString('sv-SE').replace('T', ' ').slice(0, 19) : '');
+/** Date/字符串 → 'YYYY-MM-DD HH:mm:ss'（北京时间展示，导出 CSV 用；库内存 UTC） */
+const fmtDT = (v) =>
+  v ? new Date(v).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ').slice(0, 19) : '';
 const fmtD = (v) => (v ? fmtDT(v).slice(0, 10) : '');
 
 /** 辅导员数据范围：本人带班 id 列表；admin 返回 null（不过滤） */

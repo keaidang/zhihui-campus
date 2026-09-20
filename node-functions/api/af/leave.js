@@ -69,18 +69,27 @@ export async function onRequestPost(context) {
       const startAt = String(body.startAt || '').slice(0, 19);
       const endAt = String(body.endAt || '').slice(0, 19);
       if (!reason) return fail(43001, '请填写请假事由');
-      const start = new Date(startAt.replace(' ', 'T'));
-      const end = new Date(endAt.replace(' ', 'T'));
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      // 日期选择器给的是北京墙钟（无时区），库内统一存 UTC → 落库前显式 -8h，展示端统一 fmtTime() 还原
+      const toUtc = (s) => {
+        const d = new Date(`${s.replace(' ', 'T')}Z`);
+        if (Number.isNaN(d.getTime())) return null;
+        d.setTime(d.getTime() - 8 * 3600 * 1000);
+        return d;
+      };
+      const start = toUtc(startAt);
+      const end = toUtc(endAt);
+      if (!start || !end || end <= start) {
         return fail(43001, '请假时间不合法（结束须晚于开始）');
       }
       if (end - start > 30 * 24 * 3600 * 1000) return fail(43001, '单次请假不能超过 30 天');
+      const startUtc = start.toISOString().slice(0, 19).replace('T', ' ');
+      const endUtc = end.toISOString().slice(0, 19).replace('T', ' ');
 
       let leaveId = null;
       await withTransaction(async (conn) => {
         const [ins] = await conn.query(
           'INSERT INTO af_leave (student_id, dept_id, type, reason, start_at, end_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [userId, deptId, type, reason, startAt, endAt],
+          [userId, deptId, type, reason, startUtc, endUtc],
         );
         leaveId = ins.insertId;
         const [fi] = await conn.query(
