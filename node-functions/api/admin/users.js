@@ -52,9 +52,9 @@ export async function onRequestGet(context) {
       params.push(scope.deptId);
     }
     if (keyword) {
-      where.push('(u.username LIKE ? OR u.real_name LIKE ? OR u.user_no LIKE ?)');
+      where.push('(u.username LIKE ? OR u.real_name LIKE ? OR u.user_no LIKE ? OR u.campus_email LIKE ?)');
       const like = `%${keyword}%`;
-      params.push(like, like, like);
+      params.push(like, like, like, like);
     }
     if (status === '0' || status === '1') {
       where.push('u.status = ?');
