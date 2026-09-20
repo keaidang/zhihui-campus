@@ -57,7 +57,8 @@ export async function onRequestGet(context) {
         WHERE r.code = 'teacher' AND u.status = 1
         ORDER BY u.user_no`,
     );
-    const depts = await query('SELECT id, name FROM sys_department ORDER BY id');
+    // 开课院系下拉：仅教学院系（行政部门不开课）
+    const depts = await query("SELECT id, name FROM sys_department WHERE dept_type = 'college' ORDER BY id");
     return ok({ courses, classes, teachers, depts });
   } catch (e) {
     return jsonError(e);

@@ -12,7 +12,9 @@ const WEEK_CN = ['', '周一', '周二', '周三', '周四', '周五', '周六',
 export async function onRequestGet(context) {
   try {
     const { userId, roles } = await requireRoles(context); // 任一登录角色
-    if (roles.includes('student') && !roles.some((r) => ['teacher', 'admin', 'counselor', 'leader'].includes(r))) {
+    // 学生课表优先：账号同时具备 student 与其他角色（如 admin+student）时，
+    // 课表页/导出只反映本人实际所选课程，而不是全校课表
+    if (roles.includes('student')) {
       const rows = await query(
         `SELECT e.id AS elect_id, e.class_id, e.status AS elect_status,
                 c.name AS course_name, c.code AS course_code, c.credit,

@@ -10,7 +10,7 @@ export async function onRequestGet(context) {
   try {
     await requireRoles(context, MANAGER_ROLES);
     const rows = await query(
-      `SELECT d.id, d.code, d.name, d.sort, d.status,
+      `SELECT d.id, d.code, d.name, d.sort, d.status, d.dept_type,
               (SELECT COUNT(*) FROM sys_user u WHERE u.dept_id = d.id) AS user_count,
               (SELECT COUNT(*) FROM sys_class c WHERE c.dept_id = d.id) AS class_count
          FROM sys_department d
@@ -34,14 +34,16 @@ export async function onRequestPost(context) {
       const code = String(body.code || '').trim().toUpperCase().slice(0, 32);
       const name = String(body.name || '').trim().slice(0, 64);
       const sort = Number(body.sort || 0);
+      const deptType = body.type === 'admin' ? 'admin' : 'college';
       if (!/^[A-Z0-9_]{2,32}$/.test(code)) return fail(41001, '院系编码须为 2~32 位大写字母/数字/下划线');
       if (!name) return fail(41001, '请填写院系名称');
       const exists = await query('SELECT id FROM sys_department WHERE code = ?', [code]);
       if (exists.length > 0) return fail(41002, '院系编码已存在');
-      const r = await query('INSERT INTO sys_department (code, name, sort) VALUES (?, ?, ?)', [
+      const r = await query('INSERT INTO sys_department (code, name, sort, dept_type) VALUES (?, ?, ?, ?)', [
         code,
         name,
         sort,
+        deptType,
       ]);
       await opLog(operatorId, 'dept.create', `dept:${code}`, name, ip);
       return ok({ id: r.insertId, code, name }, '院系已创建');

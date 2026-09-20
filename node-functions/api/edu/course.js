@@ -60,6 +60,29 @@ export async function onRequestPost(context) {
       // 已退课(status=0)则重激活为修读中(affectedRows=2)；已选/已出分(status=1/2)则无变化(affectedRows=0)→DUPLICATE
       try {
         await withTransaction(async (conn) => {
+          // 时段冲突校验：同一学期，同一天且节次区间重叠的课程只能选一门
+          const [mine] = await conn.query(
+            `SELECT c.name, x.week_day, x.section
+               FROM edu_elect e
+               JOIN edu_class x ON x.id = e.class_id
+               JOIN edu_course c ON c.id = x.course_id
+              WHERE e.student_id = ? AND e.term = ? AND e.status = 1 AND e.class_id != ?`,
+            [userId, TERM, classId],
+          );
+          const [target] = await conn.query('SELECT week_day, section FROM edu_class WHERE id = ?', [classId]);
+          const parseSec = (s) => {
+            const m = /^(\d+)\s*-\s*(\d+)节?$/.exec(String(s || '').trim());
+            return m ? [Number(m[1]), Number(m[2])] : null;
+          };
+          const hit = mine.find((r) => {
+            if (Number(r.week_day) !== Number(target[0].week_day)) return false;
+            const a = parseSec(target[0].section);
+            const b = parseSec(r.section);
+            if (a && b) return a[0] <= b[1] && b[0] <= a[1]; // 区间重叠
+            return String(r.section).trim() === String(target[0].section).trim(); // 非标准节次按同串冲突
+          });
+          if (hit) throw new Error(`CONFLICT|${hit.name}|${hit.section}`);
+
           const [ups] = await conn.query(
             `INSERT INTO edu_elect (class_id, student_id, term, status) VALUES (?, ?, ?, 1)
                ON DUPLICATE KEY UPDATE status = IF(status = 2, status, 1)`,
@@ -73,6 +96,10 @@ export async function onRequestPost(context) {
           if (upd.affectedRows === 0) throw new Error('FULL');
         });
       } catch (e) {
+        if (String(e.message || '').startsWith('CONFLICT|')) {
+          const [, courseName, sec] = e.message.split('|');
+          return fail(42007, `时段冲突：与已选的「${courseName}」（${sec}）时间重叠，不能同时选`);
+        }
         if (e.message === 'DUPLICATE') return fail(42003, '本学期已选过该教学班，请刷新查看');
         if (e.message === 'FULL') return fail(42005, '手慢了，名额已满');
         throw e;

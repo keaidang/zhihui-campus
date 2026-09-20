@@ -17,7 +17,8 @@ const counselors = ref([]); // 辅导员名单（下拉）
 
 // ---- 系部编辑 ----
 const deptDlg = ref(false);
-const deptForm = ref({ id: null, code: '', name: '', sort: 0 });
+const deptForm = ref({ id: null, code: '', name: '', sort: 0, type: 'college' });
+const deptTypeLabel = (t) => (t === 'admin' ? '行政部门' : '教学院系');
 
 // ---- 班级编辑 ----
 const classDlg = ref(false);
@@ -42,11 +43,11 @@ const counselorName = (id) => counselors.value.find((u) => u.id === id)?.real_na
 
 /* ---------- 系部管理 ---------- */
 function openDeptCreate() {
-  deptForm.value = { id: null, code: '', name: '', sort: depts.value.length + 1 };
+  deptForm.value = { id: null, code: '', name: '', sort: depts.value.length + 1, type: 'college' };
   deptDlg.value = true;
 }
 function openDeptEdit(row) {
-  deptForm.value = { id: row.id, code: row.code, name: row.name, sort: row.sort };
+  deptForm.value = { id: row.id, code: row.code, name: row.name, sort: row.sort, type: row.dept_type || 'college' };
   deptDlg.value = true;
 }
 async function saveDept() {
@@ -55,7 +56,9 @@ async function saveDept() {
   if (!f.name) return ElMessage.warning('院系名称必填');
   const res = await api('/api/admin/departments', {
     method: 'POST',
-    body: f.id ? { action: 'update', id: f.id, name: f.name, sort: f.sort } : { action: 'create', code: f.code, name: f.name, sort: f.sort },
+    body: f.id
+      ? { action: 'update', id: f.id, name: f.name, sort: f.sort }
+      : { action: 'create', code: f.code, name: f.name, sort: f.sort, type: f.type },
   });
   if (res.code !== 0) return ElMessage.error(res.message || '保存失败');
   ElMessage.success(f.id ? '院系已更新' : '院系已创建');
@@ -140,8 +143,13 @@ onMounted(load);
           <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openDeptCreate">新增院系</el-button>
         </div>
         <el-table :data="depts" v-loading="loading" stripe>
-          <el-table-column prop="code" label="编码" width="140" />
-          <el-table-column prop="name" label="院系名称" min-width="200" />
+          <el-table-column prop="code" label="编码" width="110" />
+          <el-table-column prop="name" label="名称" min-width="200" />
+          <el-table-column label="类型" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.dept_type === 'admin' ? 'warning' : 'success'" size="small">{{ deptTypeLabel(row.dept_type) }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="sort" label="排序" width="70" align="center" />
           <el-table-column prop="user_count" label="人员数" width="90" align="center" />
           <el-table-column prop="class_count" label="班级数" width="90" align="center" />
@@ -187,12 +195,18 @@ onMounted(load);
     </el-tabs>
 
     <!-- 院系编辑 -->
-    <el-dialog v-model="deptDlg" :title="deptForm.id ? '编辑院系' : '新增院系'" width="420px">
+    <el-dialog v-model="deptDlg" :title="deptForm.id ? '编辑院系' : '新增部门'" width="420px">
       <el-form label-width="80px">
-        <el-form-item label="编码">
-          <el-input v-model="deptForm.code" :disabled="!!deptForm.id" placeholder="如 CS（大写字母/数字）" />
+        <el-form-item label="类型" v-if="!deptForm.id">
+          <el-radio-group v-model="deptForm.type">
+            <el-radio value="college">教学院系</el-radio>
+            <el-radio value="admin">行政部门</el-radio>
+          </el-radio-group>
         </el-form-item>
-        <el-form-item label="名称"><el-input v-model="deptForm.name" placeholder="如 计算机科学与技术学院" /></el-form-item>
+        <el-form-item label="编码">
+          <el-input v-model="deptForm.code" :disabled="!!deptForm.id" placeholder="如 CS 或 JWC（大写字母/数字）" />
+        </el-form-item>
+        <el-form-item label="名称"><el-input v-model="deptForm.name" placeholder="如 计算机学院 / 教务处" /></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="deptForm.sort" :min="0" :max="99" /></el-form-item>
       </el-form>
       <template #footer>
