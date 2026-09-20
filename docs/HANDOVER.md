@@ -127,7 +127,7 @@
 20. **M3 图片一律走 /api/blob**：POST base64≤3MB 存 sys_blob，GET ?token= 公共只读；URL 必须匹配 `/^\/api\/blob\?token=[a-z0-9]{16}$/`（存量数据已从此前的路径式迁移）
 21. **v-html 必须过 DOMPurify**：用户/外部内容（邮件正文等）渲染前消毒（MailView.vue 先例）；全站其余内容一律纯文本渲染，新增 v-html 前先想安全
 22. **运维清理**：login.js 登录成功 5% 概率顺带清过期刷新令牌；blob/登录日志用 `node scripts/cleanup.mjs`（默认 dry-run，--yes 执行，参数 --blob-days/--log-days）
-23. **★ EdgeOne Node Functions 多实例内存不共享——内存计数限流/锁定无效**（2026-09-20 实测 30 连发零触发，登录锁定同病）。有效限流一律走 DB 流水计数：登录=sys_login_log 失败流水（IP+账号 5 失败/min 防撞库、IP 30 失败/min 防爆破）、忘记密码发码=sys_email_code（3 次/hour/IP）、注册=既有 DB 频控；刷新端点不做频控（一次性轮换+重放检测已足够）。内存锁（isLocked/registerAllowed）仅作纵深防御保留
+23. **★ EdgeOne Node Functions 多实例内存不共享——内存计数限流/锁定无效**（2026-09-20 实测 30 连发零触发，登录锁定同病）。有效限流一律走 DB 流水计数。**且 Node 侧 x-forwarded-for 是 EdgeOne 出口代理池 IP（会在多个代理 IP 间交替），不是真实客户端 IP**——按 IP 计数会被代理池稀释，防撞库必须按"账号"维度：登录=sys_login_log 失败流水（**账号 5 失败/min 防撞库**、出口 IP 60 失败/min 辅助）、忘记密码发码=sys_email_code（3 次/hour/IP）、注册=既有 DB 频控；刷新端点不做频控（一次性轮换+重放检测已足够）。内存锁（isLocked/registerAllowed）仅作纵深防御保留
 24. **★ EdgeOne 边缘函数 fetch 子请求不进函数路由**：同域子请求走"节点缓存→静态源站"（返回静态资源/SPA 回退），跨域行为未文档化——**Edge Functions 无法代理转发到 Node Functions**，"边缘网关代理"架构在本平台不可行（2026-09-20 实测后回滚）。边缘侧只放无 DB 依赖的原生轻端点（/api/edge/stats、/api/kv-check）；需要业务数据的能力一律落 Node
 
 ## 6. 交付与验证流程
