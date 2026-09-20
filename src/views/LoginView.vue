@@ -128,12 +128,24 @@ const auth = useAuthStore();
 const mode = ref('login');
 const loading = ref(false);
 const loginForm = reactive({ username: '', password: '' });
-const regForm = reactive({ realName: '', username: '', password: '', confirm: '', email: '', code: '', prefix: '' });
+const regForm = reactive({ realName: '', username: '', password: '', confirm: '', email: '', code: '', prefix: '', domain: 'keaidang.com' });
 const sending = ref(false);
 const codeCooldown = ref(0);
 const prefixAvailable = ref(null);
 const prefixHint = ref('');
 let cooldownTimer = null;
+
+// 校园邮箱可选后缀（邮件服务器实时返回，失败时回退默认）
+const domains = ref(['keaidang.com']);
+(async () => {
+  try {
+    const res = await api('/api/auth/register/domains', { auth: false });
+    if (res.code === 0 && res.data.items?.length) {
+      domains.value = res.data.items;
+      if (!domains.value.includes(regForm.domain)) regForm.domain = domains.value[0];
+    }
+  } catch { /* 保持默认 */ }
+})();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -194,7 +206,7 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const { realName, username, password, confirm, email, code, prefix } = regForm;
+  const { realName, username, password, confirm, email, code, prefix, domain } = regForm;
   if (!realName || !username || !password) {
     ElMessage.warning('请完整填写注册信息');
     return;
@@ -217,6 +229,7 @@ async function doRegister() {
       realName, username, password,
       email, code,
       prefix: prefix.trim().toLowerCase() || undefined,
+      domain,
     });
     if (res.code === 0) {
       ElMessage.success(res.message || '注册成功，请登录');

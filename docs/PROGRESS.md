@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-**阶段：一期（M1 教务线 + M2 学工线）全量上线并验证 ✅**
+**阶段：一期（M1 教务线 + M2 学工线）全量上线 ✅ + 校园邮箱体系（注册验证码/收发件/多域名）上线 ✅**
 
-- 线上：https://campus.keaidang.com/ （EdgeOne Pages，git push 即部署）
-- 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务（选课防超卖/课表/成绩）、M2 学工（请销假审批流/报修/公告）、门户 SSO 联动 + 角色主题工作台
-- 质量基线：安全审计完成（docs/AUDIT-2026-09-17.md）；M1+M2 线上 16 步全链路验证通过
+- 线上：https://c.9o.pw/ （EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可访问）
+- 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务、M2 学工、门户 SSO、**校园邮箱（注册邮箱验证码 + 管理员开通对外收发 + /mail 收发件页 + 已发送 + 多域名后缀）**
+- 质量基线：安全审计完成；M1+M2 线上 16 步全链路验证通过；邮箱收发/验证码全链路生产验证通过
 - 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
@@ -76,6 +76,11 @@
 - **多端独立域名部署时必须配 CORS_ORIGIN 环境变量**（Node Functions 已内置 CORS 响应头与 OPTIONS 预检，未配 CORS_ORIGIN 时默认放行）
 - sys_refresh_token 过期/吊销记录暂无清理任务，量大后需定期清理（低优先级）
 - 登录失败锁定为实例级内存版，多实例下尽力而为，后续可迁 KV
+- **db.js query() 直接返回 rows**（项目封装过），不能按 mysql2 原生 `[rows]` 解构——解构会把首行当数组用，随机 500
+- **DATETIME 过期判断放 SQL 侧**（`WHERE expires_at > NOW()`）：TiDB NOW() 是服务器时区、Node 是 UTC，JS 里 new Date() 比较会误判"已过期"
+- **LanQin Email POST /mailboxes 必须带 userId=主用户**（LANQIN_OWNER_USER_ID env），否则邮箱挂到自动新建的独立用户下 → /send 报 404 "mailbox not found"（实为归属校验失败）
+- **LanQin GET /send 发送历史列表接口在本机常超时**——发信成功即本地写 sys_mail_sent 表，列表读库；状态用 GET /send/{id} 单封回查（60s 节流）
+- EdgeOne env set 接口常超时需重试 2-3 次；env 改后必须重新部署；部署未完成时新旧函数混跑出"诡异 500"，先等满 3 分钟再测
 
 ## 变更记录
 
@@ -85,12 +90,17 @@
 - 2026-09-17（晚）：基础部分落地（schema-002 五角色/院系/班级、guard.js、管理端 API、PortalShell/工作台/用户管理）；安全审计修复（P1 归属越权 + sys_op_log 审计 + 保留用户名 + 仓库卫生）；db.js 瞬时错误重试根治随机 500（15/15 压测零 500）
 - 2026-09-17（深夜）：**M1 教务线 + M2 学工线全量上线**（schema-003/004、7 个业务 API、9 个业务页面）；主页 SSO 联动；工作台五角色主题改版（--role-accent）+ 校园实景背景 + 资源链接；16 步线上验证全过；修复公告 LEFT JOIN/出分课程课表消失/选课返回体三个 bug
 - 2026-09-18：admin 密码按用户要求重置为 `admin`（弱密码，演示专用）；**文档全面更新 + 新增 HANDOVER.md 交接文档**
+- 2026-09-19：**演示数据批量生成**（402 学生/40 教师/8 辅导员/10 校领导/14 班/27 课程/59 教学班/约 2006 选课，scripts/seed-demo.mjs 幂等）；系部与班级管理补全（/admin/org 双 Tab，删除保护、辅导员越权 403）；选课超员修复（seed 数据绕过 API 所致，跨班共享容量重灌，核实超员 0）；课表导出根治（固定网格 周一~周日 × 6 大节次）+ 选课时段冲突校验（42007）+ 行政部门 10 个/29 名行政人员（schema-006 dept_type，seed-admin-staff.mjs）
+- 2026-09-20（上午）：备案号新增鲁ICP备2025186072号（三处页脚与苏ICP并列）；**校园邮箱体系上线**：注册邮箱验证码（6 位/10 分钟/频控）、校园邮箱前缀分配（学号/工号）、管理员开通对外收发（LanQin 真实邮箱，密码可见可导出）、工作台邮箱卡；发件归属 404 根治（POST /mailboxes 带 userId）；7 项体验优化（僵尸用户筛选/管理员邮箱管理/域名后缀等）
+- 2026-09-20（午后）：**/mail 收发件页面**（收件箱/已发送/详情/写邮件，未开通显示引导）；sys_mail_sent 本地发件表（GET /send 列表接口超时弃用）；多域名后缀（LanQin 实时 6 域名，注册/管理员可选，后端白名单校验）；邮件页去彩色 emoji 改色点；已发送状态实时回查（60s 节流）；**登录态 F5 丢失修复**（auth store 单飞 Promise 治并发恢复/刷新竞态）；首屏提速（4 张 PNG→WebP，7MB→476KB + preload）；邮箱页换 lucide 图标
+- 2026-09-20（晚）：**修复注册页邮箱后缀下拉"无数据"**——LoginView.vue 模板引用了 domains/regForm.domain 但脚本从未定义/加载；补上 domains ref + 页面加载时拉 /api/auth/register/domains + 注册提交携带 domain（后端本就支持，纯前端缺陷）
 
 ## 下一步
 
-- [ ] 院系班级管理页（API 已就绪，前端待做）
 - [ ] M3 图书借阅（schema-005）
 - [ ] M3 二手/失物/社团
 - [ ] M4 驾驶舱
+- [ ] 邮箱增强：附件上传发信、管理员邮箱用量统计
 - [ ] 已知优化项：Element Plus 按需引入 + manualChunks 分包（主 chunk 偏大）
+- [ ] 测试账号 zhreg2871（zhnewuser94@keaidang.com / RegTest@2026，已开通对外收发）确认无用后删除
 

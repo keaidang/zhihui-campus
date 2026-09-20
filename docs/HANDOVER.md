@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
-> 最后更新：2026-09-18。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://campus.keaidang.com/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线全量可用，线上 16 步全链路验证通过。
+> 最后更新：2026-09-20。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + **校园邮箱体系（注册验证码/管理员开通收发/邮件页/多域名）** 全量可用，演示数据齐全。
 
 ## 1. 项目快照
 
@@ -9,11 +9,11 @@
 |---|---|
 | 项目 | 智汇校园 —— 一站式智慧校园服务平台（毕业设计） |
 | 论文标题（定稿） | 《基于云边协同与 Serverless 架构的"智汇校园"一站式服务平台设计与实现》 |
-| 线上地址 | https://campus.keaidang.com/ （EdgeOne Pages，git push 后约 1 分钟自动构建上线） |
+| 线上地址 | **https://c.9o.pw/**（EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可用） |
 | 仓库 | github.com/keaidang/zhihui-campus（main 分支） |
-| 技术栈 | Vue3 + Element Plus + Pinia（前端）/ EdgeOne Node Functions（业务 API）/ TiDB Cloud Serverless（MySQL 8.0 兼容） |
-| 虚拟学校 | 清北大学（校徽 public/logo.png、书法校名 public/name.png）；页脚备案 苏ICP备2026056678号 |
-| 本地路径 | `C:\Users\keaidang\Desktop\毕设\智汇校园一站式服务平台` |
+| 技术栈 | Vue3 + Element Plus + Pinia（前端）/ EdgeOne Node Functions（业务 API）/ TiDB Cloud Serverless（MySQL 8.0 兼容）/ LanQin Email 开放 API（邮件） |
+| 虚拟学校 | 清北大学（校徽 public/logo.webp、书法校名 public/name.webp）；页脚备案 苏ICP备2026056678号 · 鲁ICP备2025186072号 并列 |
+| 本地路径 | `C:\Users\Administrator\Desktop\zhihui-campus` |
 
 ## 2. 演示账号（TiDB 里真实存在）
 
@@ -28,34 +28,46 @@
 - 建号/授权/重置密码：`& node.exe scripts/grant-role.mjs <user> <role> [--create] [--reset] [--name=姓名] [--no=学号]`
 - SQL 迁移：`& node.exe scripts/migrate.mjs database/schema-NNN-*.sql`（幂等，可重复跑）
 - **当前学期口径 `TERM='2026-2027-1'`** 硬编码在 edu 相关 API，换学期需统一修改
+- 邮箱测试账号：zhreg2871（RegTest@2026，校园邮箱 zhnewuser94@keaidang.com，已开通对外收发）——确认无用后可删除
 
 ## 3. 代码地图
 
 ```
 ├─ docs/                      # 文档（单一事实来源，先改文档再改代码）
-├─ database/                  # schema-001-auth / 002-base / 003-edu / 004-affair
+├─ database/                  # schema-001-auth / 002-base / 003-edu / 004-affair / 005 / 006-部门类型 / 007-校园邮箱 / 008-发件表
 ├─ node-functions/
-│  ├─ lib/                    # db.js(连接池+瞬时错误重试) http.js(统一响应) guard.js(鉴权/数据范围/审计) auth.js(JWT)
+│  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装)
 │  └─ api/
-│     ├─ auth/                # register login refresh logout me
-│     ├─ admin/               # meta users departments
+│     ├─ auth/                # register(+send-code/prefix-check/domains) login refresh logout me
+│     ├─ admin/               # meta users departments classes courses mailbox(开通/停用/改密/改地址)
+│     ├─ mail/                # index(收件列表/发信/已发送) detail
+│     ├─ me/                  # mail-password(用户自助改邮箱密码)
 │     ├─ edu/                 # course timetable score teach   ← M1 教务线
 │     └─ af/                  # leave repair notice             ← M2 学工线
 ├─ edge-functions/            # KV 诊断位（kv-check 等）
 ├─ src/
 │  ├─ api/request.js          # 统一请求封装（Bearer + 401 自动刷新重放）
-│  ├─ stores/auth.js          # Pinia：双令牌，accessToken 仅内存
+│  ├─ stores/auth.js          # Pinia：双令牌，accessToken 仅内存；restoreSession/tryRefresh 单飞 Promise（防 F5 竞态）
 │  ├─ router/index.js         # 路由 + 登录/角色守卫（redirect 回跳）
-│  ├─ components/PortalShell.vue  # 门户骨架：--role-accent 角色主题色 + 校园实景背景 + 按角色菜单
+│  ├─ components/PortalShell.vue  # 门户骨架 + 校园实景背景 + 按角色菜单
 │  └─ views/
-│     ├─ HomeView.vue         # 门户首页（SSO 联动：卡片点击→登录带 redirect→原路跳回）
-│     ├─ LoginView.vue        # 统一身份认证（读取 ?redirect= 登录后回跳）
-│     ├─ WorkbenchView.vue    # 工作台：角色配色账号卡 + 功能矩阵 + 常用资源(学信网/共青团/南通市图书馆/国图)
-│     ├─ admin/               # UserManageView
+│     ├─ HomeView.vue         # 门户首页（SSO 联动）
+│     ├─ LoginView.vue        # 登录/注册一体：注册带邮箱验证码 + 校园邮箱前缀 + 域名后缀下拉
+│     ├─ WorkbenchView.vue    # 工作台：账号卡 + 功能矩阵 + 校园邮箱卡 + 常用资源横排
+│     ├─ MailView.vue         # /mail 收发件页（收件箱/已发送/详情/写邮件，lucide 图标）
+│     ├─ admin/               # UserManageView（含邮箱管理/僵尸筛选/CSV 导出） StudentManageView OrgManageView CourseManageView
 │     ├─ edu/                 # ElectView ScoresView TeachView ScoreEntryView
 │     └─ af/                  # LeaveView ApproveView RepairView RepairManageView NoticeView
-└─ scripts/                   # migrate.mjs grant-role.mjs smoke-auth.mjs（白名单制，其余临时脚本不入库）
+└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs（白名单制）
 ```
+
+### 校园邮箱体系（2026-09-20 上线，关键口径）
+
+- **注册**：外部邮箱收 6 位验证码（10 分钟有效，SQL 侧 `expires_at > NOW()` 判过期；60s 重发/每邮箱日 10 封/每 IP 日 20 封）。可选填校园邮箱前缀（默认学号/工号），域名后缀下拉从 `/api/auth/register/domains` 实时拉取（LanQin 6 个 active 域名，后端白名单校验），默认角色学生
+- **开通**：管理员在账号管理页"开通对外收发"才调 LanQin 创建真实邮箱（`createMailbox` 带 `userId=LANQIN_OWNER_USER_ID` 归属主用户），随机密码管理员可见/可导出 CSV，用户在工作台自助改密
+- **收发**：/mail 页收件箱（LanQin messages，cursor 分页）+ 已发送（本地 `sys_mail_sent` 表）+ 写邮件（每日 50 封限额）；发信统一用 system@keaidang.com；已发送状态对 queued/sending 记录用 GET /send/{id} 实时回查（模块级 Map 60s 节流、单次最多 8 封）
+- **发件归属铁律**：LanQin POST /mailboxes 不传 userId 会把邮箱挂到自动新建的独立用户 → /send 404 "mailbox not found"。归属修复前开通的旧邮箱连 messages 也 404，需删旧邮箱 + 重置 mail_mailbox_id 重新 enable
+- LanQin GET /send 历史列表接口常超时，已弃用；验证发件最可靠的方式是直接发真实邮箱看原文
 
 ## 4. 五角色与页面权限（已定稿，勿动摇）
 
@@ -83,12 +95,15 @@
 8. **DATETIME 一律传 Date 对象或 'YYYY-MM-DD HH:mm:ss' 字符串**，禁止 toISOString()（UTC 8 小时偏移坑）
 9. KV 60 秒最终一致 → 选课名额等强一致计数一律走数据库
 10. **gitignore 白名单制**：根目录 `/*.txt` 与 `node-functions/*.txt` 全忽略，scripts 只保留白名单——调试产物严禁入库
+11. **db.js query() 直接返回 rows**，不能按 mysql2 原生 `[rows]` 解构
+12. **DATETIME 过期判断放 SQL 侧**（`expires_at > NOW()`）：TiDB 服务器时区 vs Node UTC，JS 里比较会误判
+13. **LanQin POST /mailboxes 必须带 userId**（LANQIN_OWNER_USER_ID env），否则发件 404 归属失败；LANQIN_* 密钥在 .env 与 EdgeOne env，严禁入库
 
 ## 6. 交付与验证流程
 
 1. 改代码 → `npm.cmd run build`（前端构建必须过）
 2. `git add -A && git commit` → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）
-3. 等 ~95 秒部署 → 线上验证
+3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
 4. **推荐验证方式**：写一次性 Node 22 脚本（原生 fetch）直打线上 API 全链路（登录拿 token → 逐接口断言 → 结果落盘），跑完即删。参考已删除的 verify-m1m2.mjs 模式：学生选课→防重→辅导员审批→销假→报修→教师录成绩→学生查成绩→越权回归 40301
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
 
@@ -98,21 +113,23 @@
 |---|---|
 | 统一认证（双令牌/轮换/重放检测/锁定/审计） | ✅ 上线 |
 | 五角色 RBAC + 组织架构（院系/班级）+ 用户管理 | ✅ 上线 |
-| M1 教务：选课（防超卖）/课表/成绩单/教师录入 | ✅ 上线（16 步验证） |
-| M2 学工：请销假审批流闭环/报修工单/公告 | ✅ 上线（16 步验证） |
-| 门户：SSO 联动 + 角色主题工作台 + 资源链接 | ✅ 上线 |
+| M1 教务：选课（防超卖+时段冲突）/课表（固定网格导出打印）/成绩单/教师录入 + 课程排课管理 | ✅ 上线 |
+| M2 学工：请销假审批流闭环/报修工单/公告 | ✅ 上线 |
+| 门户：SSO 联动 + 工作台 + 校园邮箱卡 + 资源链接 | ✅ 上线 |
+| **校园邮箱**：注册验证码/管理员开通收发//mail 收发件页/已发送/多域名 | ✅ 上线（生产全链路验证） |
+| 演示数据（402 学生/40 教师/8 辅导员/10 校领导 + 29 行政人员） | ✅ 已入生产库 |
 | 安全审计（docs/AUDIT-2026-09-17.md） | ✅ 1P1+3P2 已修复 |
 | M3 生活服务（图书/二手/失物/社团） | ❌ 未开始（PRD 有规划） |
 | M4 校领导驾驶舱 | ❌ 未开始（leader 菜单有占位） |
-| 院系班级管理页前端 | ❌ API 已就绪，仅差页面 |
+| 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
 | uni-app 小程序端 | ❌ 未开始 |
 
 ## 8. 下一步建议（优先级序）
 
-1. 院系班级管理页（`/api/admin/departments` 已就绪）
-2. M3 图书借阅（schema-005，lib_ 前缀，参考 DATABASE.md 草案）
-3. M3 二手/失物/社团（标准 CRUD）
-4. M4 驾驶舱（`requireRoles(['admin','leader'])` + scope=all + 聚合统计）
+1. M3 图书借阅（schema-005，lib_ 前缀，参考 DATABASE.md 草案）
+2. M3 二手/失物/社团（标准 CRUD）
+3. M4 驾驶舱（`requireRoles(['admin','leader'])` + scope=all + 聚合统计）
+4. 邮箱增强：附件上传发信、管理员邮箱用量统计
 5. 论文素材沉淀：选课并发控制（db.js 防超卖范式）、审批流两表引擎、云边协同架构（ARCHITECTURE.md 已有口径）
 
 ## 9. 新会话开场白（复制即用）
