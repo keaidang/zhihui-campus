@@ -31,6 +31,12 @@
         <el-option label="正常" value="1" />
         <el-option label="已禁用" value="0" />
       </el-select>
+      <el-select v-model="query.lastLogin" placeholder="活跃度" clearable style="width: 150px" title="僵尸用户筛选">
+        <el-option label="🧟 从未登录" value="never" />
+        <el-option label="30 天未登录" value="30" />
+        <el-option label="60 天未登录" value="60" />
+        <el-option label="90 天未登录" value="90" />
+      </el-select>
       <el-button type="primary" @click="load(1)">查询</el-button>
       <el-button @click="reset">重置</el-button>
       <div class="um-spacer"></div>
@@ -91,7 +97,7 @@
         <el-table-column prop="created_at" label="注册时间" width="170">
           <template #default="{ row }">{{ fmt(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="390" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openProfile(row)">归属</el-button>
             <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
@@ -110,6 +116,15 @@
               @click="viewMailPwd(row)"
             >
               密码
+            </el-button>
+            <el-button
+              v-if="auth.isAdmin"
+              size="small"
+              :disabled="!!row.mail_mailbox_id"
+              :title="row.mail_mailbox_id ? '已开通真实邮箱，请先关闭对外收发' : '设置该用户的校园邮箱地址'"
+              @click="openAddr(row)"
+            >
+              邮箱
             </el-button>
             <el-button
               size="small"
@@ -226,6 +241,24 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 设置用户校园邮箱 -->
+    <el-dialog v-model="addrDlg" title="设置校园邮箱" width="460px">
+      <p class="um-muted" style="margin-top:0">
+        用户：{{ addrRow?.real_name || addrRow?.username }}（{{ addrRow?.username }}）
+        <template v-if="addrRow?.campus_email">· 当前：{{ addrRow.campus_email }}</template>
+      </p>
+      <el-input v-model="addrPrefix" placeholder="邮箱前缀（字母或数字开头，3~30 位小写字母/数字/._-）" clearable>
+        <template #append>@keaidang.com</template>
+      </el-input>
+      <p class="um-muted" style="margin:8px 0 0">
+        保存后用户即可在系统内使用该地址；如需对外收发，请再点“开邮箱”创建真实邮箱。
+      </p>
+      <template #footer>
+        <el-button @click="addrDlg = false">取消</el-button>
+        <el-button type="primary" :loading="addrSaving" @click="submitAddr">保存</el-button>
+      </template>
+    </el-dialog>
   </PortalShell>
 </template>
 
@@ -245,7 +278,7 @@ const rows = ref([]);
 const total = ref(0);
 const meta = reactive({ roles: [], departments: [], classes: [], roleNames: {}, scope: {} });
 
-const query = reactive({ keyword: '', role: '', deptId: '', status: '', page: 1, pageSize: 20 });
+const query = reactive({ keyword: '', role: '', deptId: '', status: '', lastLogin: '', page: 1, pageSize: 20 });
 
 const scopeLabel = computed(() => {
   const t = meta.scope?.type;
@@ -280,6 +313,38 @@ async function toggleMail(row) {
     ElMessage.success('对外收发已关闭');
   }
   load();
+}
+// 设置/修改用户校园邮箱地址
+const addrDlg = ref(false);
+const addrRow = ref(null);
+const addrPrefix = ref('');
+const addrSaving = ref(false);
+function openAddr(row) {
+  addrRow.value = row;
+  addrPrefix.value = row.campus_email ? String(row.campus_email).split('@')[0] : '';
+  addrDlg.value = true;
+}
+async function submitAddr() {
+  const prefix = addrPrefix.value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(prefix)) {
+    return ElMessage.warning('前缀格式：字母或数字开头，3~30 位小写字母/数字/._-');
+  }
+  addrSaving.value = true;
+  try {
+    const res = await api('/api/admin/mailbox', {
+      method: 'POST',
+      body: { action: 'updateAddress', userId: addrRow.value.id, prefix },
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '已更新');
+      addrDlg.value = false;
+      load();
+    } else {
+      ElMessage.error(res.message || '更新失败');
+    }
+  } finally {
+    addrSaving.value = false;
+  }
 }
 async function viewMailPwd(row) {
   const res = await api('/api/admin/mailbox');
@@ -416,6 +481,7 @@ async function load(page = query.page) {
     if (query.keyword) qs.set('keyword', query.keyword);
     if (query.role) qs.set('role', query.role);
     if (query.status) qs.set('status', query.status);
+    if (query.lastLogin) qs.set('lastLogin', query.lastLogin);
     if (query.deptId && meta.scope?.type === 'all') qs.set('deptId', query.deptId);
     qs.set('page', query.page);
     qs.set('pageSize', query.pageSize);

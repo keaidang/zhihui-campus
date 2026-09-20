@@ -37,7 +37,6 @@ export async function sendVerificationCode(to, code, purpose = '注册') {
     <p style="margin:0 0 14px;font-size:14px">您好！您正在进行<b>${purpose}</b>操作，验证码为：</p>
     <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#17325c;background:#f0f4f9;border-radius:8px;padding:14px 0;text-align:center">${code}</div>
     <p style="margin:16px 0 4px;font-size:13px;color:#475569">验证码 <b>10 分钟</b>内有效，请勿泄露给他人。</p>
-    <p style="margin:0 0 12px;font-size:13px;color:#b45309">📩 若未收到，请检查 <b>垃圾邮件 / 广告邮件</b> 文件夹。</p>
     <p style="margin:0;font-size:12px;color:#94a3b8">如非本人操作，请忽略本邮件。系统发件邮箱：${SYSTEM_ADDRESS}</p>
   </div>
 </div>`;

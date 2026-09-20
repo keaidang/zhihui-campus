@@ -64,6 +64,13 @@ export async function onRequestGet(context) {
       where.push('EXISTS (SELECT 1 FROM sys_user_role x JOIN sys_role r2 ON r2.id = x.role_id WHERE x.user_id = u.id AND r2.code = ?)');
       params.push(role);
     }
+    // 僵尸用户筛选：never=从未登录；30/60/90=N 天未登录（含从未登录）
+    const lastLogin = (url.searchParams.get('lastLogin') || '').trim();
+    if (lastLogin === 'never') {
+      where.push('u.last_login_at IS NULL');
+    } else if (['30', '60', '90'].includes(lastLogin)) {
+      where.push(`(u.last_login_at IS NULL OR u.last_login_at < NOW() - INTERVAL ${Number(lastLogin)} DAY)`);
+    }
     const whereSql = where.join(' AND ');
 
     const selectSql = `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, u.class_id,

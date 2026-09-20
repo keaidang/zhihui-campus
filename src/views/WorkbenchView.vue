@@ -33,17 +33,6 @@
           </ul>
         </section>
 
-        <!-- 校园资源（外部链接） -->
-        <section class="wb-res wb-panel">
-          <h4><el-icon><Link /></el-icon> 常用资源</h4>
-          <a v-for="r in RESOURCES" :key="r.name" :href="r.url" target="_blank" rel="noopener noreferrer" class="res-item">
-            <span class="res-dot" :style="{ background: r.color }"></span>
-            <span class="res-name">{{ r.name }}</span>
-            <span class="res-desc">{{ r.desc }}</span>
-            <el-icon class="res-go"><TopRight /></el-icon>
-          </a>
-        </section>
-
         <!-- 校园邮箱 -->
         <section class="wb-res wb-panel mail-card">
           <h4><el-icon><Promotion /></el-icon> 校园邮箱</h4>
@@ -85,6 +74,20 @@
         </div>
       </div>
     </div>
+
+    <!-- 常用资源（横向铺底） -->
+    <section class="wb-resrow">
+      <h4 class="wb-resrow-title"><el-icon><Link /></el-icon> 常用资源</h4>
+      <div class="wb-resrow-grid">
+        <a v-for="r in RESOURCES" :key="r.name" :href="r.url" target="_blank" rel="noopener noreferrer" class="resx-card">
+          <span class="res-dot" :style="{ background: r.color }"></span>
+          <span class="resx-name">{{ r.name }}</span>
+          <span class="resx-desc">{{ r.desc }}</span>
+          <el-icon class="res-go"><TopRight /></el-icon>
+        </a>
+      </div>
+    </section>
+
     <!-- 修改校园邮箱密码 -->
     <el-dialog v-model="mailPwdDlg" title="修改校园邮箱密码" width="420px">
       <p class="mail-dlg-tip">邮箱：{{ auth.user?.campusEmail }}</p>
@@ -333,6 +336,40 @@ function onOpen(m) {
 
 /* 资源链接卡 */
 .wb-res { padding: 16px 18px; }
+
+/* 常用资源横向铺底 */
+.wb-resrow { margin-top: 18px; }
+.wb-resrow-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--zc-navy);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 1px;
+}
+.wb-resrow-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+.resx-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  background: var(--zc-glass, rgba(255,255,255,.72));
+  border: 1px solid rgba(23,50,92,.08);
+  border-radius: 12px;
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.resx-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(23,50,92,.1); }
+.resx-card .res-dot { width: 8px; height: 8px; border-radius: 50%; margin-bottom: 4px; }
+.resx-name { font-size: 13.5px; font-weight: 600; color: var(--zc-navy, #17325c); }
+.resx-desc { font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.5; padding-right: 18px; }
+.resx-card .res-go { position: absolute; right: 12px; top: 14px; color: var(--zc-text-sub, #94a3b8); font-size: 13px; }
 .wb-res h4 {
   margin: 0 0 10px;
   font-size: 14px;
@@ -427,9 +464,11 @@ function onOpen(m) {
 @media (max-width: 1024px) {
   .wb-cols { grid-template-columns: 1fr; }
   .wb-grid { grid-template-columns: repeat(2, 1fr); }
+  .wb-resrow-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 560px) {
   .wb-grid { grid-template-columns: 1fr; }
   .wb-hero { flex-direction: column; align-items: flex-start; }
+  .wb-resrow-grid { grid-template-columns: 1fr; }
 }
 </style>

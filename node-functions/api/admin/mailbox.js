@@ -8,7 +8,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
-import { createMailbox, resetMailboxPassword, lanqinConfigured } from '../../lib/lanqin.js';
+import { createMailbox, resetMailboxPassword, lanqinConfigured, isLocalPartTaken } from '../../lib/lanqin.js';
 
 export { preflight as onRequestOptions };
 
@@ -105,6 +105,23 @@ export async function onRequestPost(context) {
       await query('UPDATE sys_user SET mail_password = ? WHERE id = ?', [pwd, userId]);
       await opLog(operatorId, 'mailbox.resetPassword', `user:${userId}`, '', ip);
       return ok({ password: pwd }, '邮箱密码已重置');
+    }
+
+    // 修改校园邮箱地址（仅系统内地址；已开通真实邮箱的需先关闭对外收发）
+    if (action === 'updateAddress') {
+      const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
+      const prefix = String(body.prefix || '').trim().toLowerCase();
+      if (!PREFIX_RE.test(prefix)) return fail(43210, '前缀格式：字母或数字开头，3~30 位小写字母/数字/._-');
+      const newEmail = `${prefix}@keaidang.com`;
+      if (newEmail === u.campus_email) return ok({ campusEmail: newEmail }, '地址未变化');
+      if (u.mail_mailbox_id) return fail(43211, '该用户已开通真实邮箱，请先关闭对外收发再修改地址');
+      const dup = await query('SELECT id FROM sys_user WHERE campus_email = ?', [newEmail]);
+      if (dup.length) return fail(43212, '该前缀已被占用');
+      const taken = await isLocalPartTaken(prefix);
+      if (taken) return fail(43213, '该前缀在邮件服务器已被占用');
+      await query('UPDATE sys_user SET campus_email = ? WHERE id = ?', [newEmail, userId]);
+      await opLog(operatorId, 'mailbox.updateAddress', `user:${userId}`, `${u.campus_email} -> ${newEmail}`, ip);
+      return ok({ campusEmail: newEmail }, `校园邮箱已更新为 ${newEmail}`);
     }
 
     return fail(43200, `未知操作：${action}`);
