@@ -102,3 +102,36 @@ export async function isLocalPartTaken(localPart) {
     return null; // 网络异常同样不阻塞
   }
 }
+
+// ---- 用户校园邮箱收发（/api/mail/* 使用）----
+
+/** 读收件箱列表（分页 cursor） */
+export async function listMessages(mailboxId, { limit = 20, cursor = '' } = {}) {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (cursor) qs.set('cursor', cursor);
+  const r = await call('GET', `/mailboxes/${encodeURIComponent(mailboxId)}/messages?${qs.toString()}`);
+  if (!r.ok) return { ok: false, error: r.data?.error || r.data?.message || `HTTP ${r.status}` };
+  return { ok: true, items: r.data?.items || [], nextCursor: r.data?.nextCursor || '' };
+}
+
+/** 读邮件详情（含正文） */
+export async function getMessage(messageId) {
+  const r = await call('GET', `/messages/${encodeURIComponent(messageId)}`);
+  if (!r.ok) return { ok: false, error: r.data?.error || r.data?.message || `HTTP ${r.status}` };
+  return { ok: true, message: r.data };
+}
+
+/** 以用户自己的校园邮箱发信（开通对外收发后可用） */
+export async function sendUserMail(mailboxId, to, subject, html, text) {
+  const r = await call('POST', '/send', {
+    mailboxId,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    html: html || undefined,
+    text: text || undefined,
+  });
+  if (!r.ok) {
+    return { ok: false, error: r.data?.error || r.data?.message || `HTTP ${r.status}` };
+  }
+  return { ok: true, id: r.data?.id, status: r.data?.status };
+}

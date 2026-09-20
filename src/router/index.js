@@ -93,6 +93,13 @@ const router = createRouter({
       component: () => import('../views/af/NoticeView.vue'),
       meta: { requiresAuth: true },
     },
+    // ---- 校园邮箱 ----
+    {
+      path: '/mail',
+      name: 'mail',
+      component: () => import('../views/MailView.vue'),
+      meta: { requiresAuth: true },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

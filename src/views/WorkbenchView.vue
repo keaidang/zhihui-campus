@@ -44,12 +44,10 @@
               </el-tag>
             </div>
             <p class="mail-note" v-if="!auth.user.mailEnabled">开通对外收发后即可收发外部邮件，请联系管理员开通</p>
-            <el-button
-              v-if="auth.user.mailEnabled"
-              size="small"
-              plain
-              @click="mailPwdDlg = true"
-            >修改邮箱密码</el-button>
+            <div class="mail-btns" v-if="auth.user.mailEnabled">
+              <el-button type="primary" size="small" @click="router.push('/mail')">进入邮箱</el-button>
+              <el-button size="small" plain @click="mailPwdDlg = true">修改密码</el-button>
+            </div>
           </template>
           <p v-else class="mail-note">校园邮箱尚未分配，请联系管理员</p>
         </section>
@@ -274,6 +272,7 @@ function onOpen(m) {
 .mail-card .mail-addr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .mail-card .mail-addr-text { font-weight: 600; color: var(--zc-navy, #17325c); word-break: break-all; }
 .mail-card .mail-note { margin: 0 0 8px; font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.6; }
+.mail-card .mail-btns { display: flex; gap: 8px; }
 .mail-dlg-tip { margin: 0 0 10px; font-size: 13px; color: var(--zc-navy, #17325c); font-weight: 600; }
 
 .wb-cols {

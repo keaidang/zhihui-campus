@@ -94,7 +94,7 @@ const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', ready: true, path: '/edu/elect', roles: ['student'] },
   { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', ready: true, path: '/edu/scores', roles: ['student'] },
   { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', ready: true, path: '/af/leave', roles: ['student'] },
-  { title: '校园邮箱', desc: '专属 @keaidang.com 邮箱，可开通对外收发', icon: 'Promotion', ready: true, path: '/workbench' },
+  { title: '校园邮箱', desc: '专属 @keaidang.com 邮箱，收发外部邮件', icon: 'Promotion', ready: true, path: '/mail' },
   { title: '宿舍生活', desc: '宿舍报修、进度跟踪，后勤快响应', icon: 'House', ready: true, path: '/af/repair', roles: ['student'] },
   { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', ready: false },
   { title: '二手集市', desc: '闲置好物流通，校园内放心交易', icon: 'ShoppingCart', ready: false },
