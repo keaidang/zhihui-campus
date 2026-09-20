@@ -6,6 +6,7 @@
 import bcrypt from 'bcryptjs';
 import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
 import { requireRoles, MANAGER_ROLES, dataScope, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
+import { edgeBlacklist } from '../../lib/edgegw.js';
 import { query, withTransaction } from '../../lib/db.js';
 
 export { preflight as onRequestOptions };
@@ -267,6 +268,8 @@ export async function onRequestPost(context) {
       const next = Number(value) === 1 ? 1 : 0;
       if (targetId === operatorId) return fail(41005, '不能修改自己的账号状态');
       await query('UPDATE sys_user SET status = ? WHERE id = ?', [next, targetId]);
+      // 禁用即用户级吊销：该用户在途访问令牌立即失效（边缘黑名单，需 EDGE_GW_SECRET）
+      if (next === 0) await edgeBlacklist(context.request, { userId: targetId });
       await opLog(operatorId, 'user.setStatus', `user:${targetId}`, String(next), ip);
       return ok({ userId: targetId, status: next }, next === 1 ? '账号已启用' : '账号已禁用');
     }
@@ -319,6 +322,8 @@ export async function onRequestPost(context) {
       const hash = await bcrypt.hash(pwd, 10);
       await query('UPDATE sys_user SET password_hash = ? WHERE id = ?', [hash, targetId]);
       await query('DELETE FROM sys_refresh_token WHERE user_id = ?', [targetId]);
+      // 重置密码即用户级吊销：被重置账号的旧会话立即失效
+      await edgeBlacklist(context.request, { userId: targetId });
       await opLog(operatorId, 'user.resetPassword', `user:${targetId}`, target.username, ip);
       return ok({ userId: targetId, password: pwd }, `密码已重置：${pwd}（请立即告知用户）`);
     }
@@ -337,6 +342,7 @@ export async function onRequestPost(context) {
         await conn.query('DELETE FROM sys_refresh_token WHERE user_id = ?', [targetId]);
         await conn.query('DELETE FROM sys_user WHERE id = ?', [targetId]);
       });
+      await edgeBlacklist(context.request, { userId: targetId });
       await opLog(operatorId, 'user.delete', `user:${targetId}`, target.username, ip);
       return ok({ userId: targetId }, `已删除账号 ${target.username}`);
     }

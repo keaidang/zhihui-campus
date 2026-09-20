@@ -4,6 +4,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { opLog } from '../../../lib/guard.js';
+import { edgeBlacklist } from '../../../lib/edgegw.js';
 import bcrypt from 'bcryptjs';
 
 export { preflight as onRequestOptions };
@@ -52,6 +53,8 @@ export async function onRequestPost(context) {
     } catch {
       /* 表可能无该用户记录，忽略 */
     }
+    // 用户级访问令牌吊销（边缘黑名单）：重置前签发的在途令牌全部失效
+    await edgeBlacklist(context.request, { userId: user.id });
     await opLog(user.id, 'password.forgotReset', `user:${user.id}`, '通过邮箱验证码自助重置密码', ip);
     return ok({ reset: true }, '密码已重置，请使用新密码登录');
   } catch (e) {
