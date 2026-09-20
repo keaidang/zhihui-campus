@@ -72,7 +72,7 @@
 
     <footer class="site-footer">
       清北大学 · 智汇校园一站式服务平台 © 2026 ·
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">鲁ICP备2025186072号</a>
     </footer>
   </div>
 </template>
