@@ -126,11 +126,15 @@
 
 - 2026-09-20（移动端适配·深夜）：**「不做小程序」决策落地 + 移动端 H5 适配上线**——① **决策**：微信小程序砍掉（个人主体无 web-view 权限、纯套壳易被拒审、小程序自身亦须 ICP 备案），替代为「响应式 H5 + App 壳封装」，PRD §4 不做清单与 ARCHITECTURE **ADR-8** 记录依据；② **实现**：新增 `src/mobile.css`（媒体查询适配层，文件内禁止全局裸规则 → PC 零回归）+ `src/utils/device.js`（`useIsMobile`），PortalShell 加汉堡按钮与抽屉菜单（`v-if="isMobile"`，PC 下 DOM 不渲染），全局表单/对话框/表格/分页窄屏适配，网格单列化与溢出修复；③ **踩坑**：组件 scoped 样式因路由懒加载的 `<link>` 晚于全局样式插入而反超，双类名不够、**须三倍类名**；窄屏溢出根因是 grid `1fr`（=`minmax(auto,1fr)`）与 flex column 交叉轴被内容撑开（须在 `.shell-body` 层阻断传导链）；④ **附带修复**：驾驶舱"在校学生"卡显示 `[object Object]`（`genderText` 是 computed ref，在 JS 模板字符串里漏 `.value`，PC 端同样错）；⑤ **验收**（Playwright + 系统 Edge，`/api/*` 转发至线上）：PC 视口下 `.shell-burger`/`.shell-drawer` 数量 **0**、侧栏仍 196px、无溢出；手机视口（390×844）汉堡存在、侧栏隐藏、抽屉 19 项、workbench/dorm/library/forum/dashboard **五页 `scrollWidth === innerWidth` 全等（零横向溢出）**；⑥ 提交范围可证：`src/styles.css` **零改动**，PortalShell 仅删 4 行（全在原 820px 移动端断点内）
 
+- 2026-09-21（项目体检）：**全面体检 + 修复 3 项机制缺陷**（11972a9），报告见 **docs/AUDIT-2026-09-21.md**——体检范围：线上环境 + 全量源码（数据一致性 18 类 SQL 核对 / 22 路由自动化遍历 / 依赖审计 / 静态扫描）。① **修复静态层零安全头**：API 头在 `http.js` 早已加齐，但 `edgeone.json` 无 `headers` 配置 → 用户实际访问的 HTML/JS/CSS **一个安全头都没有**（防护全加在看不见的 API、真正暴露的页面层裸奔）；补 CSP/HSTS/X-Frame-Options/nosniff/Referrer-Policy/Permissions-Policy，并补 assets 长缓存 + index.html no-cache；线上 11 项验证通过，且 **CSP 未打断任何功能**（21 路由零违规、零 JS 错误）。② **修前端无全局错误处理**：未捕获组件异常会中断渲染（此前"页面空白"现象即源于此），补 `app.config.errorHandler` + `unhandledrejection`（只记录不弹窗，避免与 request.js 的提示重复）。③ **修懒加载 chunk 失效白屏**：22/26 路由懒加载 + 部署频繁，用户停在旧页面再点新路由会请求**已被替换的旧 chunk** → 404 白屏，补 `router.onError` 自动硬刷新一次（标志位防刷新循环）。④ **确认健康**：数据一致性 18 类全 0 不一致、SQL 全参数化且动态 SET 为字段白名单、写端点 100% 鉴权、`npm audit` 0 漏洞、移动端 22 路由零横向溢出、线上零新增错误、无 TODO/遗留 log/`<script setup>` 漏 `.value`。⑤ **新增 `scripts/integrity-check.mjs`**（只读数据体检，已入白名单）。⑥ 遗留 14 项技术债已按 P0~P2 分级（P0=演示弱密码对外前必改；P1=无测试无 lint / 报修双路径口径 / EP 全量引入 / 图床；P2=封面、学期硬编码、监控告警等）
+
 ## 下一步
 
-> 详细剩余项已统一收敛到上方「阶段 5 · 收尾」，此处不再重复维护（避免两处漂移）。
+> 详细剩余项与整改建议已收敛到 **docs/AUDIT-2026-09-21.md**（2026-09-21 全面体检报告，含 P0~P2 分级与工作量估计），此处不再重复维护（避免漂移）。
 
-- **当前唯一需要决策的事**：uni-app 小程序端做不做（做 → 工程量最大项，可复用现有 Node API；不做 → 论文口径调整，PRD 5 节已注明）
-- 其余剩余项按性价比排序：图书封面补齐 → 邮箱增强 → 图床接入 → EP 按需引入 → 演示彩排 + 论文正文
-- 测试账号 zhreg2871（id 12209012，注册邮箱 ddy@vip.qq.com）确认无用后删除
+- **[x] 移动端 H5 适配**（2026-09-20 完成）；小程序已决策不做（PRD §4 + ARCHITECTURE ADR-8）
+- **[ ] P0（对外前必做）**：演示账号 `admin/admin` 改强密码，并从文档移除明文（见 AUDIT P0-1）
+- **[ ] P1（工程护栏，最值得先做）**：把已有冒烟脚本固化成一条 `npm run check`；再逐步补 ESLint 与关键路径单测（见 AUDIT P1-1）
+- **[ ] P1**：统一报修口径（纯文档，20 分钟，见 AUDIT P1-2）/ EP 按需引入 / 图片图床
+- **[ ] P2**：图书封面、邮箱附件、学期口径、监控告警、备份演练、删测试账号 zhreg2871、App 壳打包
 

@@ -160,6 +160,15 @@
     - ② **flex column 容器的交叉轴会被内容 min-content 撑开**，而子元素是 stretch 跟随父宽 —— 所以只在 `.shell-main` 上写 `overflow-x: hidden` **无效**，必须在 `.shell-body` 这一层就阻断传导链（实测 library 页 `.shell-main` 被撑到 526px、dashboard 到 726px）；
     - 另：元素**内联固定宽度**（`style="width:260px"`）必须 `!important` 才能覆盖；**宽表格不必强行卡片化** —— `.tt-wrap`、el-table 自身都有横向滚动容器，保留"表内左右滑动"比改写 DOM 更省事；
     - 自检命令：Playwright 取 `document.documentElement.scrollWidth` 与 `window.innerWidth`，两者相等即无溢出。
+29. **★ 安全响应头有两处，改一处必须想着另一处**：
+    - ① **API 响应头**在 `node-functions/lib/http.js` 的 `SECURITY_HEADERS`；
+    - ② **静态资源头**（用户真正访问的 HTML/JS/CSS）在根目录 **`edgeone.json` 的 `headers` 字段** —— 此处 2026-09-21 前**完全为空**，等于"防护全加在看不见的 API 上、真正暴露的页面层裸奔"；
+    - **改 CSP 后必须重跑全站回归**：`node .shots/verify-security.mjs`（遍历 21 路由，断言零 CSP 违规 + 零 JS 运行时错误）。CSP 是最容易"修了安全问题、顺手搞坏功能"的头，本地 `npm run build` 通过**不代表**浏览器里没被拦；
+    - 缓存策略：`/assets/*` → `public, max-age=31536000, immutable`（Vite 产物带 hash，可长缓存）；`/index.html` → **必须 no-cache**（否则用户拿到旧壳去加载已删除的 chunk）。
+30. **前端错误兜底三件套**（2026-09-21 补，此前全都缺）：
+    - `main.js` 的 `app.config.errorHandler` + `window.unhandledrejection` —— 只记录不弹窗（业务错误已由 `api/request.js` 统一提示，重复弹窗只会打扰用户）；
+    - `router.onError` 处理**懒加载 chunk 失效**：本项目 26 路由中 22 个懒加载 + 部署极频繁，用户停在旧页面再点新路由会请求到**已被替换的旧 chunk** → 404 → 此前直接整页白屏，现自动硬刷新一次（`chunkReloaded` 标志位防刷新循环）；
+    - 排查"页面空白"类问题时，先看 console 的 `[vue-error]` / `[unhandled-rejection]`，再看 `sys_op_log` 的 `error.500`。
 
 ## 6. 交付与验证流程
 
@@ -189,6 +198,8 @@
 | 限流（登录/发码 DB 流水计数）| ✅ 上线（内存版多实例失效，已改 DB） |
 | Edge 原生轻端点 /api/edge/stats（KV 访问统计） | ✅ 上线 |
 | 全站时间口径归一（UTC 库内 + 统一展示工具） | ✅ 上线（2026-09-20 深夜，见铁律 #25） |
+| 一键体检：`gap-check` / `integrity-check` / `audit-mobile` / `verify-security` | ✅ 就绪（2026-09-21，命令见 docs/AUDIT-2026-09-21.md 第五节） |
+| 安全响应头（静态层 CSP/HSTS/nosniff 等）+ 前端全局错误兜底 | ✅ 上线（2026-09-21 体检修复，见铁律 #29/#30） |
 | 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
 | 图片图床接入（当前 /api/blob LONGBLOB 暂存，32 条 1.15MB） | ❌ 待接（只换 ImgUploader/blob.js 的 URL 生成） |
 | 图书封面（420 本**全部**无封面，显示首字占位） | ❌ 未处理 |
