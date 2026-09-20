@@ -18,11 +18,13 @@ export async function onRequestGet(context) {
     const scope = url.searchParams.get('scope') || 'list';
 
     if (scope === 'mine') {
+      // ★ location/activity_time 在 club_application（club_recruit 无此字段，此前误引用 r.activity_time 导致 500）
       const rows = await query(
         `SELECT bk.id, bk.recruit_id AS recruitId, bk.canceled_at AS canceledAt, bk.created_at AS bookedAt,
-                r.title, r.activity_time AS activityTime, r.location, r.status
+                r.title, r.status, a.location, a.activity_time AS activityTime
            FROM club_booking bk
            JOIN club_recruit r ON r.id = bk.recruit_id
+           JOIN club_application a ON a.id = r.application_id
           WHERE bk.user_id = ?
           ORDER BY bk.id DESC
           LIMIT 50`,
