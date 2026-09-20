@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
 > 最后更新：2026-09-20。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + **校园邮箱体系（注册验证码/管理员开通收发/邮件页/多域名）** 全量可用，演示数据齐全。
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + **M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）** 全量可用，演示数据齐全。
 
 ## 1. 项目快照
 
@@ -24,6 +24,7 @@
 | counselor01 | Zhihui@2026 | counselor | 刘慧敏，计算机学院（本院数据范围） |
 | student01 | Zhihui@2026 | student | 陈晓东 20261001，**已有选课+92 分成绩数据，勿清库** |
 | student02 / student03 | Zhihui@2026 | student | 林小雨 / 赵子墨 |
+| student004 | Zhihui@2026 | student | **M3 主测试号**：有借阅记录、AI 兴趣社 1 条预约、论坛发帖；社团预约数据已打散，其余社团可直接预约 |
 
 - 建号/授权/重置密码：`& node.exe scripts/grant-role.mjs <user> <role> [--create] [--reset] [--name=姓名] [--no=学号]`
 - SQL 迁移：`& node.exe scripts/migrate.mjs database/schema-NNN-*.sql`（幂等，可重复跑）
@@ -34,31 +35,38 @@
 
 ```
 ├─ docs/                      # 文档（单一事实来源，先改文档再改代码）
-├─ database/                  # schema-001-auth / 002-base / 003-edu / 004-affair / 005 / 006-部门类型 / 007-校园邮箱 / 008-发件表
+├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ schema-009-m3-modules（M3 十一张表）
 ├─ node-functions/
 │  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装)
 │  └─ api/
-│     ├─ auth/                # register(+send-code/prefix-check/domains) login refresh logout me
-│     ├─ admin/               # meta users departments classes courses mailbox(开通/停用/改密/改地址)
+│     ├─ auth/                # register(+send-code/prefix-check/domains) login refresh logout me + password/(forgot-send-code/forgot-reset 忘记密码)
+│     ├─ admin/               # meta users(+resetPassword) departments classes courses mailbox(开通/停用/改密/改地址)
 │     ├─ mail/                # index(收件列表/发信/已发送) detail
 │     ├─ me/                  # mail-password(用户自助改邮箱密码)
+│     ├─ blob.js              # 图片 blob：POST base64≤3MB → sys_blob；GET ?token= 公共只读 ← M3
 │     ├─ edu/                 # course timetable score teach   ← M1 教务线
-│     └─ af/                  # leave repair notice             ← M2 学工线
+│     ├─ af/                  # leave repair notice             ← M2 学工线
+│     ├─ lib/                 # books(检索/管理/批量导入) loans(借/还/我的借阅)   ← M3
+│     ├─ lf/                  # items(失物招领发布/浏览/关闭)                     ← M3
+│     ├─ club/                # apply(申请/审批) recruit(发布/预约/取消)          ← M3
+│     └─ forum/               # boards threads(发帖/回复/置顶/锁定) moderate(封禁) ← M3
 ├─ edge-functions/            # KV 诊断位（kv-check 等）
 ├─ src/
 │  ├─ api/request.js          # 统一请求封装（Bearer + 401 自动刷新重放）
 │  ├─ stores/auth.js          # Pinia：双令牌，accessToken 仅内存；restoreSession/tryRefresh 单飞 Promise（防 F5 竞态）
-│  ├─ router/index.js         # 路由 + 登录/角色守卫（redirect 回跳）
+│  ├─ router/index.js         # 路由 + 登录/角色守卫（redirect 回跳；M3 五路由均 requiresAuth）
 │  ├─ components/PortalShell.vue  # 门户骨架 + 校园实景背景 + 按角色菜单
+│  ├─ components/ImgUploader.vue  # 图片上传：canvas 压缩 1280px/JPEG 0.85 → POST /api/blob，v-model 数组
 │  └─ views/
 │     ├─ HomeView.vue         # 门户首页（SSO 联动）
 │     ├─ LoginView.vue        # 登录/注册一体：注册带邮箱验证码 + 校园邮箱前缀 + 域名后缀下拉
 │     ├─ WorkbenchView.vue    # 工作台：账号卡 + 功能矩阵 + 校园邮箱卡 + 常用资源横排
 │     ├─ MailView.vue         # /mail 收发件页（收件箱/已发送/详情/写邮件，lucide 图标）
+│     ├─ m3/                  # LibraryView LostFoundView ClubView ForumView ForumThreadView ← M3
 │     ├─ admin/               # UserManageView（含邮箱管理/僵尸筛选/CSV 导出） StudentManageView OrgManageView CourseManageView
 │     ├─ edu/                 # ElectView ScoresView TeachView ScoreEntryView
 │     └─ af/                  # LeaveView ApproveView RepairView RepairManageView NoticeView
-└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs（白名单制）
+└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs seed-m3.mjs（白名单制）
 ```
 
 ### 校园邮箱体系（2026-09-20 上线，关键口径）
@@ -74,6 +82,8 @@
 - **角色映射**：图书馆管理员=admin（/library 管理后台 Tab）；学工处=counselor（失物招领发布）；教务处=teacher（社团审批）；论坛管理员=admin（置顶/锁定/删帖/禁言）
 - **图书**：借期 30 天、在借≤5 本、同书不可重复借；库存扣减一律条件更新 `available_copies > 0`；批量导入 CSV/JSON（ISBN 去重）；`lib_book.ext_source/ext_id` 预留外部图书馆系统对接
 - **社团预约**：`club_booking` 唯一键 `(recruit_id,user_id)`，预约=激活占位+名额条件更新，取消=释放；quota=0 不限名额
+- **⚠️ club_recruit 表没有 location/activity_time 字段**（在 club_application）：join club_recruit 取地点/时间必须再 join club_application——曾致 scope=mine 恒 500（c8341f8 已修）
+- **社团测试数据已打散**：seed 早期把预约都给了 students.slice(0,taken0) 同批前排学生，已用 fix-club-bookings.mjs 随机分到全体 400 学生（student004 仅 AI 兴趣社 1 条）；勿再重跑旧版 seed 的预约段
 - **论坛**：所有 /api/forum/* 需登录（合规要求）；交易板块发帖 item_name/price/contact 必填；封禁走 `forum_ban`，发帖/回复前校验
 - **图片**：`/api/blob`（POST base64≤3MB → LONGBLOB 暂存，GET 公共只读带 immutable 缓存）；前端统一 `ImgUploader` 组件（canvas 压缩到 1280px/JPEG 0.85）；接图床时只改 blob.js 与 ImgUploader 的 URL 生成
 - **忘记密码**：登录页对话框 → `POST /api/auth/password/forgot-send-code`（账号+绑定邮箱匹配才发码，purpose='reset'）→ `forgot-reset`（校验后重置 + 删 sys_refresh_token 吊销全部会话）
@@ -111,6 +121,10 @@
 14. **窄卡片里禁止用 `el-input` 的 `#append`/`#prepend` 插槽**：Element Plus 会渲染成 `display:table` 的 `.el-input-group`，在 ~340px 内容区里追加按钮会把输入区挤到只剩几十像素。统一用「输入框与按钮/下拉做兄弟节点」的 flex 行布局（见 LoginView.vue `.field-row`），并覆盖 `.gate-card .el-button` 的全局 6px 字距
 15. **前缀校验接口耗时 4~10s**（后端要查 LanQin 邮箱列表），前端不做逐字自动校验，仅"检查可用性"按钮显式触发 + 前端 14s 超时兜底；注册提交本身不依赖该校验结果（后端注册时会再校验）
 16. **验证线上部署别只比 bundle hash**：EdgeOne 构建环境与本地不同，同一份代码 hash 可能不一致。可靠做法是取线上对应懒加载 chunk（路由组件是独立文件，不在 index 主包），grep 新版代码的特征类名/字符串（注意构建产物中中文会被转义成 \uXXXX，用 ASCII 类名如 field-row 最稳）
+17. **EdgeOne node functions 不支持路径参数**：`/api/xx/<id>` 落回 SPA 返回 index.html——动态参数一律用查询串（`/api/blob?token=xxx`）
+18. **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
+19. **写 SQL 前对照真实 DDL 引用字段**（尤其跨表 join）——club_recruit 无 location/activity_time 曾致 scope=mine 恒 500；新 GET 分支冒烟要覆盖每一条查询路径，不能只测写操作
+20. **M3 图片一律走 /api/blob**：POST base64≤3MB 存 sys_blob，GET ?token= 公共只读；URL 必须匹配 `/^\/api\/blob\?token=[a-z0-9]{16}$/`（存量数据已从此前的路径式迁移）
 
 ## 6. 交付与验证流程
 

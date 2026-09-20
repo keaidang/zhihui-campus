@@ -30,6 +30,12 @@
 | 43001~43004 | 学工线：请假参数/不在审批中/不可销假/不存在 |
 | 44001~44004 | 报修：参数/已受理/不可完成/不存在 |
 | 45001/45004 | 公告：参数/不存在 |
+| 43501~43508 | 忘记密码：参数/账号邮箱不匹配/验证码错误过期/重置失败 |
+| 45005 | 失物招领（lf）：权限/状态类 |
+| 46001~46015 | 图书借阅（lib）：参数/库存/在借上限/重复借/不存在/导入校验 |
+| 47001~47004 | 图片 blob：参数/大小/类型/token 无效 |
+| 48001~48019 | 社团（club）：参数/未过审/无权发布/停止/名额满/重复预约/未预约 |
+| 49001~49102 | 论坛（forum）：参数/封禁/交易必填/板块不存在/权限 |
 | 50000 | 服务器内部错误（同步落库 sys_op_log 供远程诊断） |
 | 50001 | KV 不可用 |
 
@@ -53,6 +59,8 @@
 | POST | /api/auth/refresh | 公开 | 刷新令牌轮换（重放检测） |
 | POST | /api/auth/logout | 登录 | 吊销刷新令牌 |
 | GET | /api/auth/me | 登录 | 当前用户（含 user_no / dept / class / campus_email / mail_enabled + 数据库实时角色） |
+| POST | /api/auth/password/forgot-send-code | 公开 | 忘记密码发码：`{username, email}` 账号+绑定邮箱匹配才发（purpose='reset'） |
+| POST | /api/auth/password/forgot-reset | 公开 | `{username, email, code, newPassword}` 校验后重置 + 删 sys_refresh_token 吊销全部会话 |
 | GET | /api/health | 公开 | 健康检查（db / jwtConfigured / protocol 诊断位） |
 
 ### 5.2 管理端基础（阶段 1 基础部分）
@@ -61,7 +69,7 @@
 |---|---|---|---|
 | GET | /api/admin/meta | admin / counselor | 角色列表 + 院系列表（含 dept_type）+ 班级列表 + 当前数据范围 |
 | GET | /api/admin/users | admin / counselor | 分页用户列表，支持 keyword(含 campus_email) / role / deptId / status / lastLogin(never/30/60/90 僵尸筛选) 过滤（counselor 仅本院） |
-| POST | /api/admin/users | admin / counselor | `{userId, action, value}`；action=`setStatus`(改启停) / `setRoles`(仅 admin) / `setProfile`(学号工号+院系班级) |
+| POST | /api/admin/users | admin / counselor | `{userId, action, value}`；action=`setStatus`(改启停) / `setRoles`(仅 admin) / `setProfile`(学号工号+院系班级) / `resetPassword`(仅 admin，随机密码+吊销会话) |
 | GET | /api/admin/departments | admin / counselor | 院系列表（含用户数/班级数/dept_type） |
 | POST | /api/admin/departments | admin | `{action: create \| setStatus \| update \| delete}`（下有人员或班级禁删） |
 | GET/POST | /api/admin/classes | counselor(读)/admin(写) | 班级 CRUD（`create/update/delete`，有在读学生禁删；GET 返回辅导员名单） |
@@ -119,16 +127,54 @@
 - 审批通过 → instance status=2；驳回 → 3；销假 → 4。后续奖助/调宿等审批复用同一套两表引擎
 - 审批人权限校验：handler_role + 申请人 dept_id 与辅导员 deptId 匹配（admin 豁免）
 
+### 5.7 图片 Blob（M3）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | /api/blob | 登录 | `{mime, data(base64≤3MB)}` 存 sys_blob，返回 `{url:"/api/blob?token=<16位>"}` |
+| GET | /api/blob?token= | 公开 | 图片只读（immutable 缓存）；**EdgeOne 函数不支持路径参数，必须查询串** |
+
+### 5.8 图书借阅（M3，/api/lib）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/lib/books?keyword=&category=&page= | 登录 | 藏书检索/分页；admin 返回含管理字段 |
+| POST | /api/lib/books | admin | action=`add`(单本) / `import`(CSV/JSON 批量，ISBN 去重，单批≤500) / `update` / `delete`；写操作审计 |
+| POST | /api/lib/loans | 登录 | action=`borrow`（在借≤5、同书防重借、条件更新扣库存防超借）/ `return`（逾期标 status=2，admin 可代还） |
+| GET | /api/lib/loans?scope=mine | 登录 | 我的借阅（含到期时间、逾期标记） |
+
+### 5.9 失物招领（M3，/api/lf）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/lf/items?status= | 登录 | 全员浏览（含联系电话） |
+| POST | /api/lf/items | counselor/admin | action=`create`（标题/描述/图片/联系方式）/ `close`（标记已认领，发布人或 admin） |
+
+### 5.10 社团活动（M3，/api/club）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/club/apply?scope=mine | student | 我的申请；无 scope 时 teacher/admin 审批列表（?status=0 待审） |
+| POST | /api/club/apply | student/teacher/admin | action=`create`（名称/开课位置/内容/大纲/时间必填）/ `review`（pass+opinion，teacher/admin） |
+| GET | /api/club/recruit | 登录 | 招募列表（含剩余名额 + booked 我是否已预约）；**scope=mine 我的预约（join club_application 取地点/时间）** |
+| POST | /api/club/recruit | 登录 | action=`publish`（审批通过后，teacher/admin 或开课人）/ `stop` / `book`（事务：占位+名额条件更新，唯一键防重）/ `cancel`（释放名额，可再预约） |
+
+### 5.11 校园论坛（M3，/api/forum，全部需登录）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/forum/boards | 登录 | 板块列表（6 板块，含 is_trade 标记与帖子数） |
+| GET | /api/forum/threads?boardId=&page= / ?id= | 登录 | 帖子列表（置顶优先）/ 详情（含回复）；封禁用户被拒 |
+| POST | /api/forum/threads | 登录 | action=`create`（交易板块 item_name/price/contact 必填）/ `reply` / `edit` / `delete`（作者或 admin）/ `pin` `lock`（admin） |
+| POST | /api/forum/moderate | admin | action=`ban`（禁言 user_id+until_at+reason）/ `unban` |
+
 
 ## 6. 未实现模块端点（规划，实现后在此补充）
 
-### library（图书，M3）
-- `GET /api/library/books?keyword=` 检索；`POST /api/library/borrow` 借书；`POST /api/library/return/:recordId` 还书；`GET /api/library/my` 我的借阅
-
-### market / lost / club（M3）
-- 各模块标准 CRUD，开发时在此补充
-
 ### dashboard（M4 驾驶舱）
 - `GET /api/admin/dashboard` 聚合统计（leader 只读，scope=all）
+
+### 外部图书馆系统对接（预留）
+- `lib_book.ext_source/ext_id` 已预留；对接时在 lib/books.js 增加同步入口即可
 
 <!-- TODO: 每完成一个模块，把实际实现的端点补充到这里 -->

@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-**阶段：一期（M1 教务线 + M2 学工线）全量上线 ✅ + 校园邮箱体系（注册验证码/收发件/多域名）上线 ✅**
+**阶段：M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务（图书/失物/社团/论坛/忘记密码）全量上线 ✅**
 
 - 线上：https://c.9o.pw/ （EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可访问）
-- 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务、M2 学工、门户 SSO、**校园邮箱（注册邮箱验证码 + 管理员开通对外收发 + /mail 收发件页 + 已发送 + 多域名后缀）**
-- 质量基线：安全审计完成；M1+M2 线上 16 步全链路验证通过；邮箱收发/验证码全链路生产验证通过
+- 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务、M2 学工、门户 SSO、**校园邮箱（注册验证码 + 管理员开通收发 + /mail 收发件 + 多域名）**、**M3 生活服务五模块（schema-009 + 12 API + 5 页面）**
+- 质量基线：安全审计完成；M1+M2 线上 16 步、M3 线上 21 步全链路验证通过；邮箱收发/验证码生产验证通过
 - 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
@@ -53,9 +53,13 @@
 - [x] 门户：主页 4 张服务卡 SSO 联动（未登录带 redirect 去登录→原路跳回）、工作台五角色主题色 + 账号信息卡 + 常用资源链接
 - [x] 线上 16 步全链路验证（选课→审批→销假→报修→录成绩→查成绩→越权回归 40301）
 
-### 阶段 3 · M3 生活服务（未开始）
-- [ ] 图书借阅（schema-005）
-- [ ] 二手交易 / 失物招领 / 社团活动
+### 阶段 3 · M3 生活服务（2026-09-20 深夜完成，原二手集市决策改为校园论坛）
+- [x] **图书借阅** `/library`（schema-009 lib_book/lib_loan）：检索/详情/借阅（在借≤5、同书防重借、借期 30 天、条件更新防超借）/我的借阅；admin 批量添加 + CSV/JSON 导入；`ext_source/ext_id` 预留外部图书馆对接
+- [x] **失物招领** `/lost-found`（lf_item）：counselor/admin 发布（blob 图 + 电话），全员浏览
+- [x] **社团活动** `/club`（club_application/recruit/booking）：申请→teacher 审批→发布招聘→预约占名额/取消释放（唯一键+条件更新）
+- [x] **校园论坛** `/forum`（替代二手集市，forum_board/thread/reply/ban）：6 板块仅登录可访问，交易帖物品/价格/联系方式必填，admin 置顶/锁定/删帖/禁言
+- [x] **忘记密码**：管理员后台重置 + 邮箱验证码自助找回（purpose='reset'，重置吊销全部会话）
+- [x] 测试数据 seed-m3.mjs：420 本书 / 失物 8 条 / 社团 6 通过+2 待审 / 论坛 30+ 帖；线上 21 步冒烟全过；预约数据已打散（fix-club-bookings.mjs）
 
 ### 阶段 4 · 收尾（未开始）
 - [ ] M4 校领导驾驶舱（只读大屏）
@@ -81,6 +85,9 @@
 - **LanQin Email POST /mailboxes 必须带 userId=主用户**（LANQIN_OWNER_USER_ID env），否则邮箱挂到自动新建的独立用户下 → /send 报 404 "mailbox not found"（实为归属校验失败）
 - **LanQin GET /send 发送历史列表接口在本机常超时**——发信成功即本地写 sys_mail_sent 表，列表读库；状态用 GET /send/{id} 单封回查（60s 节流）
 - EdgeOne env set 接口常超时需重试 2-3 次；env 改后必须重新部署；部署未完成时新旧函数混跑出"诡异 500"，先等满 3 分钟再测
+- **EdgeOne node functions 不支持路径参数**：`/api/xx/<id>` 会落到 SPA 返回 index.html——动态参数一律用查询串（如 `/api/blob?token=xxx`）
+- **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
+- **写 SQL 引用字段前对照真实 DDL**：club_recruit 没有 location/activity_time（在 club_application），曾致 scope=mine 恒 500（c8341f8 已修）
 
 ## 变更记录
 
@@ -103,11 +110,11 @@
 
 ## 下一步
 
-- [ ] M3 图书借阅（schema-005）
-- [ ] M3 二手/失物/社团
-- [ ] M4 驾驶舱
+- [ ] M4 驾驶舱（leader 只读大屏，requireRoles(['admin','leader']) + 聚合统计）
+- [ ] 图片图床接入（sys_blob → 对象存储，只换 blob.js 与 ImgUploader 的 URL 生成）
 - [ ] 论文正文撰写与测试数据整理（开题报告已定稿，其文献综述 / 技术路线 / 创新点章节可复用）
 - [ ] 邮箱增强：附件上传发信、管理员邮箱用量统计
 - [ ] 已知优化项：Element Plus 按需引入 + manualChunks 分包（主 chunk 偏大）
+- [ ] 图书封面上批量补图（当前多数书无封面，显示首字占位）
 - [ ] 测试账号 zhreg2871（zhnewuser94@keaidang.com / RegTest@2026，已开通对外收发）确认无用后删除
 
