@@ -6,12 +6,13 @@ import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp, preflight } from '../../lib/http.js';
 import { registerAllowed, registerRecord } from '../../lib/auth.js';
+import { isDomainAllowed } from '../../lib/lanqin.js';
 
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/; // 字母开头, 4~32 位
 const PASSWORD_MIN = 8;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
-const CAMPUS_DOMAIN = '@keaidang.com';
+const DEFAULT_DOMAIN = 'keaidang.com';
 // 保留用户名：防止仿冒管理/系统账号做钓鱼
 const RESERVED_NAMES = ['admin', 'root', 'administrator', 'system', 'sysop', 'operator', 'support', 'master'];
 
@@ -24,6 +25,7 @@ export async function onRequestPost(context) {
     const email = String(body.email || '').trim().toLowerCase();
     const code = String(body.code || '').trim();
     const prefix = String(body.prefix || '').trim().toLowerCase();
+    const domain = String(body.domain || DEFAULT_DOMAIN).trim().toLowerCase();
     const ip = clientIp(context.request);
 
     if (!USERNAME_RE.test(username)) {
@@ -68,8 +70,12 @@ export async function onRequestPost(context) {
     }
 
     // 校园邮箱前缀占用（系统内）
-    const campusEmail = prefix ? `${prefix}${CAMPUS_DOMAIN}` : null;
+    const campusEmail = prefix ? `${prefix}@${domain}` : null;
     if (prefix) {
+      if (domain !== DEFAULT_DOMAIN) {
+        const domOk = await isDomainAllowed(domain);
+        if (!domOk) return fail(43112, '该邮箱域名不可用，请重新选择');
+      }
       const dupCampus = await query('SELECT id FROM sys_user WHERE campus_email = ?', [campusEmail]);
       if (dupCampus.length > 0) return fail(43112, '校园邮箱前缀已被占用，请换一个');
     }

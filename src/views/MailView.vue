@@ -27,9 +27,15 @@
       <div class="ml-body">
         <!-- 左：邮件列表 -->
         <section class="ml-list">
+          <div class="ml-tabs">
+            <button :class="{ on: box === 'inbox' }" @click="switchBox('inbox')">📥 收件箱</button>
+            <button :class="{ on: box === 'sent' }" @click="switchBox('sent')">📤 已发送</button>
+          </div>
           <div v-if="loading && !items.length" class="ml-loading" v-loading="true" element-loading-text="加载中…" />
           <template v-else>
-            <p v-if="!items.length" class="ml-empty">收件箱是空的，快给别人写封信吧 ✉️</p>
+            <p v-if="!items.length" class="ml-empty">
+              {{ box === 'inbox' ? '收件箱是空的，快给别人写封信吧 ✉️' : '还没有发过邮件' }}
+            </p>
             <div
               v-for="m in items"
               :key="m.id"
@@ -38,8 +44,8 @@
               @click="openMail(m)"
             >
               <div class="ml-item-top">
-                <span class="ml-item-from">{{ senderName(m.from) }}</span>
-                <span class="ml-item-time">{{ shortTime(m.receivedAt) }}</span>
+                <span class="ml-item-from">{{ box === 'inbox' ? senderName(m.from) : m.to }}</span>
+                <span class="ml-item-time">{{ shortTime(m.receivedAt || m.sentAt) }}</span>
               </div>
               <p class="ml-item-subj">{{ m.subject || '(无主题)' }}</p>
               <p class="ml-item-snip">{{ m.snippet || '' }}</p>
@@ -55,10 +61,12 @@
           <template v-if="detail">
             <h3 class="ml-d-subj">{{ detail.subject || '(无主题)' }}</h3>
             <div class="ml-d-meta">
-              <span><b>发件人：</b>{{ senderName(detail.from) }}</span>
-              <span><b>时间：</b>{{ fmtTime(detail.receivedAt) }}</span>
+              <span v-if="box === 'sent'"><b>收件人：</b>{{ detail.to }}</span>
+              <span v-else><b>发件人：</b>{{ senderName(detail.from) }}</span>
+              <span v-if="box === 'sent'"><b>状态：</b>{{ statusLabel(detail.status) }}</span>
+              <span><b>时间：</b>{{ fmtTime(detail.receivedAt || detail.sentAt) }}</span>
             </div>
-            <div v-if="detail.attachments?.length" class="ml-d-atts">
+            <div v-if="box !== 'sent' && detail.attachments?.length" class="ml-d-atts">
               <el-tag v-for="(a, i) in detail.attachments" :key="i" size="small" type="info">
                 📎 {{ a.filename || a.name || '附件' }}
               </el-tag>
@@ -112,21 +120,38 @@ const detail = ref(null);
 const loading = ref(false);
 const loadingMore = ref(false);
 const detailLoading = ref(false);
+const box = ref('inbox'); // inbox | sent
+const sentStore = new Map(); // 已发邮件详情缓存（本地数据，无需再请求）
 
 const composeDlg = ref(false);
 const form = ref({ to: '', subject: '', text: '' });
 const sending = ref(false);
 
+function statusLabel(s) {
+  return { queued: '⏳ 排队中', sending: '⏳ 投递中', relayed: '✅ 已送达', delivered: '✅ 已送达', failed: '❌ 投递失败', bounced: '❌ 被拒收', rejected: '❌ 被拒收' }[s] || s || '';
+}
+
+async function switchBox(b) {
+  if (box.value === b) return;
+  box.value = b;
+  current.value = null;
+  detail.value = null;
+  nextCursor.value = '';
+  await load(true);
+}
+
 async function load(reset = false) {
   loading.value = true;
   try {
-    const res = await api('/api/mail?limit=20');
+    const url = box.value === 'sent' ? '/api/mail?action=sent&limit=20' : '/api/mail?limit=20';
+    const res = await api(url);
     if (res.code === 0) {
       items.value = res.data.items || [];
       nextCursor.value = res.data.nextCursor || '';
+      if (box.value === 'sent') items.value.forEach((m) => sentStore.set(m.id, m));
       if (reset && items.value.length) openMail(items.value[0]);
     } else {
-      ElMessage.error(res.message || '收件箱加载失败');
+      ElMessage.error(res.message || '邮件列表加载失败');
     }
   } finally {
     loading.value = false;
@@ -136,10 +161,14 @@ async function load(reset = false) {
 async function loadMore() {
   loadingMore.value = true;
   try {
-    const res = await api(`/api/mail?limit=20&cursor=${encodeURIComponent(nextCursor.value)}`);
+    const url = box.value === 'sent'
+      ? `/api/mail?action=sent&limit=20&before=${encodeURIComponent(nextCursor.value)}`
+      : `/api/mail?limit=20&cursor=${encodeURIComponent(nextCursor.value)}`;
+    const res = await api(url);
     if (res.code === 0) {
       items.value.push(...(res.data.items || []));
       nextCursor.value = res.data.nextCursor || '';
+      if (box.value === 'sent') res.data.items.forEach((m) => sentStore.set(m.id, m));
     } else {
       ElMessage.error(res.message || '加载失败');
     }
@@ -151,6 +180,11 @@ async function loadMore() {
 async function openMail(m) {
   current.value = m;
   detail.value = null;
+  // 已发邮件：详情就是列表数据本身
+  if (box.value === 'sent') {
+    detail.value = sentStore.get(m.id) || m;
+    return;
+  }
   detailLoading.value = true;
   try {
     const res = await api(`/api/mail/detail?id=${encodeURIComponent(m.id)}`);
@@ -235,6 +269,30 @@ onMounted(() => {
   padding: 8px;
   max-height: 620px;
   overflow-y: auto;
+}
+.ml-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid rgba(23, 50, 92, 0.08);
+  margin-bottom: 4px;
+}
+.ml-tabs button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 7px 0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--zc-text-sub, #64748b);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ml-tabs button:hover { background: rgba(23, 50, 92, 0.06); }
+.ml-tabs button.on {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--zc-navy, #17325c);
+  font-weight: 600;
 }
 .ml-loading { min-height: 200px; }
 .ml-empty { text-align: center; color: var(--zc-text-sub, #94a3b8); font-size: 13px; padding: 40px 0; }

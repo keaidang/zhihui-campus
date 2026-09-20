@@ -76,14 +76,19 @@
             <el-input v-model="regForm.code" placeholder="6 位邮箱验证码" :prefix-icon="Key" maxlength="6" @keyup.enter="doRegister" />
           </el-form-item>
           <el-form-item>
-            <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀（选填，如 20261004）" :prefix-icon="Promotion" clearable>
-              <template #append>
-                <el-button :disabled="!regForm.prefix" @click="checkPrefix">{{ prefixAvailable === true ? '✓ 可用' : '检查可用' }}</el-button>
-              </template>
-            </el-input>
+            <div class="prefix-row">
+              <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀（选填，如 20261004）" :prefix-icon="Promotion" clearable>
+                <template #append>
+                  <el-button :disabled="!regForm.prefix" @click="checkPrefix">{{ prefixAvailable === true ? '✓ 可用' : '检查可用' }}</el-button>
+                </template>
+              </el-input>
+              <el-select v-model="regForm.domain" class="domain-select" size="large" @change="prefixAvailable = null; prefixHint = ''">
+                <el-option v-for="d in domains" :key="d" :label="`@${d}`" :value="d" />
+              </el-select>
+            </div>
           </el-form-item>
           <p v-if="prefixHint" class="prefix-hint" :class="{ ok: prefixAvailable === true }">{{ prefixHint }}</p>
-          <p class="mail-tip">📮 验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
+          <p class="mail-tip">验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
           <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
             注 册
           </el-button>
@@ -158,10 +163,10 @@ async function sendCode() {
 async function checkPrefix() {
   const prefix = regForm.prefix.trim().toLowerCase();
   prefixHint.value = '';
-  const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}`, { auth: false });
+  const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}&domain=${encodeURIComponent(regForm.domain)}`, { auth: false });
   if (res.code === 0) {
     prefixAvailable.value = res.data.available;
-    prefixHint.value = res.data.available ? `✓ ${prefix}@keaidang.com 可用` : res.data.reason || '该前缀不可用';
+    prefixHint.value = res.data.available ? `✓ ${prefix}@${regForm.domain} 可用` : res.data.reason || '该前缀不可用';
   } else {
     prefixAvailable.value = null;
     prefixHint.value = '检查失败，可稍后再试';
@@ -233,6 +238,10 @@ function onForgot() {
 
 <style scoped>
 .w-full { width: 100%; }
+.prefix-row { display: flex; gap: 8px; width: 100%; }
+.prefix-row .el-input { flex: 1; min-width: 0; }
+.domain-select { width: 158px; flex-shrink: 0; }
+.domain-select :deep(.el-select__wrapper) { height: var(--el-component-size-large); }
 .prefix-hint { margin: -8px 0 4px; font-size: 12px; color: #b45309; }
 .prefix-hint.ok { color: #0d7a6c; }
 .mail-tip { margin: -4px 0 10px; font-size: 12px; color: #64748b; line-height: 1.6; }

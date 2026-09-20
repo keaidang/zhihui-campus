@@ -318,10 +318,21 @@ async function toggleMail(row) {
 const addrDlg = ref(false);
 const addrRow = ref(null);
 const addrPrefix = ref('');
+const addrDomain = ref('keaidang.com');
 const addrSaving = ref(false);
+const mailDomains = ref(['keaidang.com']);
+
+// 可选域名（邮件服务器实时返回）
+(async () => {
+  try {
+    const res = await api('/api/auth/register/domains', { auth: false });
+    if (res.code === 0 && res.data.items?.length) mailDomains.value = res.data.items;
+  } catch { /* 保持默认 */ }
+})();
 function openAddr(row) {
   addrRow.value = row;
   addrPrefix.value = row.campus_email ? String(row.campus_email).split('@')[0] : '';
+  addrDomain.value = row.campus_email ? String(row.campus_email).split('@')[1] || 'keaidang.com' : 'keaidang.com';
   addrDlg.value = true;
 }
 async function submitAddr() {

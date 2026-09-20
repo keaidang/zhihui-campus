@@ -8,7 +8,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
-import { createMailbox, resetMailboxPassword, lanqinConfigured, isLocalPartTaken } from '../../lib/lanqin.js';
+import { createMailbox, resetMailboxPassword, lanqinConfigured, isLocalPartTaken, isDomainAllowed } from '../../lib/lanqin.js';
 
 export { preflight as onRequestOptions };
 
@@ -80,8 +80,9 @@ export async function onRequestPost(context) {
         return ok({ campusEmail: u.campus_email, password: u.mail_password }, '对外收发已开启');
       }
       const localPart = String(u.campus_email).split('@')[0];
+      const userDomain = String(u.campus_email).split('@')[1] || 'keaidang.com';
       const pwd = u.mail_password || randomPwd();
-      const r = await createMailbox(localPart, pwd, u.real_name);
+      const r = await createMailbox(localPart, pwd, u.real_name, userDomain);
       if (!r.ok) return fail(43203, `邮件服务器创建失败：${r.error}`);
       await query(
         'UPDATE sys_user SET mail_enabled = 1, mail_mailbox_id = ?, mail_password = ?, mail_created_at = NOW() WHERE id = ?',
@@ -111,10 +112,13 @@ export async function onRequestPost(context) {
     if (action === 'updateAddress') {
       const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
       const prefix = String(body.prefix || '').trim().toLowerCase();
+      const domain = String(body.domain || 'keaidang.com').trim().toLowerCase();
       if (!PREFIX_RE.test(prefix)) return fail(43210, '前缀格式：字母或数字开头，3~30 位小写字母/数字/._-');
-      const newEmail = `${prefix}@keaidang.com`;
+      const newEmail = `${prefix}@${domain}`;
       if (newEmail === u.campus_email) return ok({ campusEmail: newEmail }, '地址未变化');
       if (u.mail_mailbox_id) return fail(43211, '该用户已开通真实邮箱，请先关闭对外收发再修改地址');
+      const domOk = await isDomainAllowed(domain);
+      if (!domOk) return fail(43214, '该邮箱域名不可用，请重新选择');
       const dup = await query('SELECT id FROM sys_user WHERE campus_email = ?', [newEmail]);
       if (dup.length) return fail(43212, '该前缀已被占用');
       const taken = await isLocalPartTaken(prefix);

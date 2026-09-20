@@ -1,5 +1,6 @@
 // /api/mail — 用户校园邮箱（仅开通对外收发的用户）
 // GET  /api/mail                收件箱列表 ?limit=&cursor=
+// GET  /api/mail?action=sent    已发邮件列表（本地 sys_mail_sent）
 // GET  /api/mail/detail?id=     邮件详情（见 detail.js）
 // POST /api/mail                发信 { to, subject, html, text }（每日 50 封）
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
@@ -33,13 +34,33 @@ export function requireMailbox(context) {
   });
 }
 
-/** 收件箱列表 */
+/** 收件箱 / 已发邮件列表 */
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
     const ctx = await requireMailbox(context);
     if (ctx.error) return ctx.error;
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') || 20)));
+
+    // 已发邮件：本地库分页（id 游标）
+    if (url.searchParams.get('action') === 'sent') {
+      const before = Number(url.searchParams.get('before') || 0);
+      const rows = await query(
+        `SELECT id, mail_id, to_addr, subject, snippet, status, created_at
+           FROM sys_mail_sent WHERE user_id = ? ${before ? 'AND id < ?' : ''}
+          ORDER BY id DESC LIMIT ${limit}`,
+        before ? [ctx.user.id, before] : [ctx.user.id],
+      );
+      return ok({
+        address: ctx.address,
+        items: rows.map((r) => ({
+          id: String(r.id), mailId: r.mail_id, to: r.to_addr, subject: r.subject,
+          snippet: r.snippet, status: r.status, sentAt: r.created_at,
+        })),
+        nextCursor: rows.length === limit ? String(rows[rows.length - 1].id) : '',
+      });
+    }
+
     const cursor = String(url.searchParams.get('cursor') || '');
     const r = await listMessages(ctx.mailboxId, { limit, cursor });
     if (!r.ok) return fail(43310, `读取收件箱失败：${r.error}`);
@@ -80,6 +101,13 @@ export async function onRequestPost(context) {
     const r = await sendUserMail(ctx.mailboxId, to, subject, html, text);
     if (!r.ok) return fail(43322, `发送失败：${r.error}`);
     await opLog(ctx.user.id, 'mail.send', to, subject, ip);
+    // 记入已发邮件（"已发送"页签数据源）
+    const snippet = String(text || html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    await query(
+      `INSERT INTO sys_mail_sent (user_id, mailbox_id, mail_id, to_addr, subject, snippet, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [ctx.user.id, ctx.mailboxId, r.id || null, to, subject, snippet, r.status || 'queued'],
+    );
     return ok({ id: r.id, status: r.status }, '已提交发送，稍后送达');
   } catch (e) {
     return jsonError(e);

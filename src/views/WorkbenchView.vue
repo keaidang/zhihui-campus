@@ -269,8 +269,17 @@ function onOpen(m) {
 
 /* 工作台整体放大 110%（用户浏览器 110% 缩放的默认观感） */
 .wb-zoom { zoom: 1.1; }
-.mail-card .mail-addr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.mail-card .mail-addr-text { font-weight: 600; color: var(--zc-navy, #17325c); word-break: break-all; }
+.mail-card .mail-addr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.mail-card .mail-addr-text {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--zc-navy, #17325c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
+}
 .mail-card .mail-note { margin: 0 0 8px; font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.6; }
 .mail-card .mail-btns { display: flex; gap: 8px; }
 .mail-dlg-tip { margin: 0 0 10px; font-size: 13px; color: var(--zc-navy, #17325c); font-weight: 600; }

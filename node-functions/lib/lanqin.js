@@ -57,14 +57,50 @@ export async function querySend(id) {
   return r.ok ? r.data : null;
 }
 
+/** 域名列表（active 状态，模块级缓存 10 分钟） */
+let DOMAIN_CACHE = { at: 0, items: [] };
+export async function listDomains({ force = false } = {}) {
+  if (!force && DOMAIN_CACHE.items.length && Date.now() - DOMAIN_CACHE.at < 10 * 60 * 1000) {
+    return { ok: true, items: DOMAIN_CACHE.items };
+  }
+  const r = await call('GET', '/domains?limit=50');
+  if (!r.ok) {
+    // 查询失败时回退缓存或默认域名，不阻塞注册流程
+    if (DOMAIN_CACHE.items.length) return { ok: true, items: DOMAIN_CACHE.items };
+    return { ok: false, error: r.data?.error || `HTTP ${r.status}` };
+  }
+  const items = (r.data?.items || [])
+    .filter((d) => d.status === 'active')
+    .map((d) => ({ id: d.id, name: d.name }));
+  if (items.length) DOMAIN_CACHE = { at: Date.now(), items };
+  return { ok: true, items };
+}
+
+/** 校验域名是否可用（active）；返回 boolean 或 null（查询失败未知） */
+export async function isDomainAllowed(domain) {
+  const d = String(domain || '').trim().toLowerCase();
+  if (!d) return null;
+  const r = await listDomains();
+  if (!r.ok) return null;
+  return r.items.some((x) => x.name.toLowerCase() === d);
+}
+
 /**
  * 创建真实邮箱（开通对外收发时调用）
+ * @param domainName 可选域名（如 '9o.pw'），缺省用 LANQIN_DOMAIN_ID 对应域名
  * @returns {ok, mailboxId, address, error}
  */
-export async function createMailbox(localPart, password, displayName) {
-  if (!KEY || !DOMAIN_ID) return { ok: false, error: '邮件服务未配置' };
+export async function createMailbox(localPart, password, displayName, domainName) {
+  let domainId = DOMAIN_ID;
+  if (domainName && domainName.toLowerCase() !== 'keaidang.com') {
+    const ds = await listDomains();
+    const hit = ds.items?.find((x) => x.name.toLowerCase() === String(domainName).toLowerCase());
+    if (!hit) return { ok: false, error: `域名 ${domainName} 不可用` };
+    domainId = hit.id;
+  }
+  if (!KEY || !domainId) return { ok: false, error: '邮件服务未配置' };
   const r = await call('POST', '/mailboxes', {
-    domainId: DOMAIN_ID,
+    domainId,
     localPart,
     password,
     displayName: displayName || undefined,
