@@ -7,6 +7,16 @@
     <!-- 顶栏 -->
     <header class="shell-top">
       <div class="shell-top-inner">
+        <!-- 移动端专属：汉堡按钮（PC 视口下 v-if 为假，DOM 不存在） -->
+        <button
+          v-if="isMobile"
+          class="shell-burger"
+          type="button"
+          aria-label="打开菜单"
+          @click="drawerOpen = true"
+        >
+          <el-icon :size="20"><Menu /></el-icon>
+        </button>
         <div class="shell-brand" @click="$router.push('/')">
           <img src="/logo.webp" alt="清北大学校徽" />
           <span class="shell-brand-text">智汇校园</span>
@@ -74,6 +84,32 @@
       </main>
     </div>
 
+    <!-- 移动端专属：抽屉菜单（PC 视口下 v-if 为假，DOM 与样式均不存在） -->
+    <div v-if="isMobile && drawerOpen" class="shell-mask" @click="drawerOpen = false">
+      <aside class="shell-drawer" @click.stop>
+        <div class="shell-drawer-head">
+          <img src="/logo.webp" alt="清北大学校徽" />
+          <div class="shell-drawer-id">
+            <div class="shell-drawer-title">智汇校园</div>
+            <div class="shell-drawer-sub">{{ roleLabel }} · {{ auth.user?.realName || auth.user?.username || '' }}</div>
+          </div>
+        </div>
+        <nav class="shell-drawer-nav">
+          <div
+            v-for="m in menus"
+            :key="m.key"
+            class="shell-drawer-item"
+            :class="{ active: m.key === active }"
+            @click="goDrawer(m.path)"
+          >
+            <el-icon :size="18"><component :is="m.icon" /></el-icon>
+            <span>{{ m.label }}</span>
+          </div>
+        </nav>
+        <div class="shell-drawer-foot">{{ auth.user?.deptName || '清北大学' }}</div>
+      </aside>
+    </div>
+
     <footer class="shell-foot">
       清北大学 · 智汇校园一站式服务平台 © 2026 ·
       <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
@@ -87,9 +123,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Bell } from '@element-plus/icons-vue';
+import { Bell, Menu } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../api/request';
+import { useIsMobile } from '../utils/device';
 
 const props = defineProps({
   active: { type: String, default: 'workbench' },
@@ -97,6 +134,15 @@ const props = defineProps({
 
 const router = useRouter();
 const auth = useAuthStore();
+
+// ---- 移动端布局开关：PC 全屏视口恒为 false，不渲染任何移动端 DOM ----
+const isMobile = useIsMobile();
+const drawerOpen = ref(false);
+
+function goDrawer(path) {
+  drawerOpen.value = false;
+  router.push(path);
+}
 
 const ROLE_LABEL = {
   admin: '超级管理员',
@@ -306,10 +352,73 @@ onUnmounted(() => clearInterval(unreadTimer));
 .shell-foot a { color: inherit; text-decoration: none; }
 .shell-foot a:hover { text-decoration: underline; }
 
+/* ============ 移动端（≤820px）============
+   本块仅作用于窄屏视口，PC 全屏布局完全不受影响 */
 @media (max-width: 820px) {
-  .shell-body { flex-direction: column; gap: 14px; padding: 16px; }
-  .shell-side { width: 100%; min-height: 0; }
-  .shell-side-foot { display: none; }
+  /* 侧边栏改由抽屉承载，不再堆叠在内容上方 */
+  .shell-body { flex-direction: column; gap: 14px; padding: 14px 12px 28px; }
+  .shell-side { display: none; }
   .shell-brand-sub { display: none; }
+
+  /* 顶栏精简：汉堡 + 品牌 + 铃铛 + 头像 */
+  .shell-top-inner { height: 54px; padding: 0 12px; gap: 8px; }
+  .shell-burger {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; flex: none; padding: 0;
+    border: none; border-radius: 9px; background: transparent;
+    color: var(--zc-navy); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .shell-burger:active { background: rgba(23, 50, 92, 0.08); }
+  .shell-brand { margin-right: auto; gap: 8px; }
+  .shell-brand img { width: 30px; height: 30px; }
+  .shell-brand-text { font-size: 16px; letter-spacing: 1px; }
+  .shell-role { display: none; }
+  .shell-username { display: none; }
+
+  /* 抽屉菜单 */
+  .shell-mask {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(12, 24, 44, 0.42);
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  }
+  .shell-drawer {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 76%; max-width: 300px;
+    display: flex; flex-direction: column;
+    background: #fff;
+    box-shadow: 6px 0 28px rgba(15, 35, 66, 0.22);
+    animation: shell-drawer-in 0.22s ease-out;
+  }
+  @keyframes shell-drawer-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  .shell-drawer-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 16px 14px;
+    border-bottom: 1px solid var(--zc-border);
+    background: linear-gradient(120deg, var(--zc-navy), #234a85);
+    color: #fff;
+  }
+  .shell-drawer-head img { width: 34px; height: 34px; object-fit: contain; }
+  .shell-drawer-title { font-size: 16px; font-weight: 700; letter-spacing: 1.5px; }
+  .shell-drawer-sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+  .shell-drawer-nav { flex: 1; overflow-y: auto; padding: 8px; -webkit-overflow-scrolling: touch; }
+  .shell-drawer-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 12px; border-radius: 9px;
+    font-size: 15px; color: var(--zc-text); cursor: pointer;
+  }
+  .shell-drawer-item:active { background: rgba(23, 50, 92, 0.07); }
+  .shell-drawer-item.active {
+    background: linear-gradient(120deg, var(--zc-navy), #234a85);
+    color: #fff;
+  }
+  .shell-drawer-foot {
+    padding: 12px 16px;
+    font-size: 12px; color: var(--zc-text-sub);
+    border-top: 1px solid var(--zc-border);
+  }
 }
 </style>

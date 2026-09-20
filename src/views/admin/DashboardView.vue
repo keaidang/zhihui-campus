@@ -125,7 +125,7 @@ const data = ref({
 });
 
 const kpis = computed(() => [
-  { label: '在校学生', value: data.value.users.students, sub: `${genderText} · ${data.value.edu.classes} 个班级` },
+  { label: '在校学生', value: data.value.users.students, sub: `${genderText.value} · ${data.value.edu.classes} 个班级` },
   { label: '教职工', value: data.value.users.teachers + data.value.users.counselors + data.value.users.leaders + data.value.users.admins, sub: `教师 ${data.value.users.teachers} · 辅导员 ${data.value.users.counselors}` },
   { label: '开设课程', value: data.value.edu.courses, sub: `累计选课 ${data.value.edu.electives} 人次` },
   { label: '平均成绩', value: data.value.edu.scoreAvg ?? '—', sub: `已录入 ${data.value.edu.scored} 门次` },

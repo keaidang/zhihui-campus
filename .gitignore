@@ -67,3 +67,6 @@ working/
 
 # 白名单补录：正式的 16 步全链路验证脚本
 !scripts/smoke-full.mjs
+
+# 移动端验收截图（本地产物，不入库）
+.shots/

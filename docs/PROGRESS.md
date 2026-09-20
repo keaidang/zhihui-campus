@@ -68,7 +68,8 @@
 - [x] 测试数据 seed-dorm.mjs（幂等）：403 名学生性别确定性补齐（男 201/女 202）+ 384 间房（8 栋×6 层×8 间，4 人间为主含 6 人间）+ 全体学生按性别入住（403/1728 床，留空房供演示分配）
 
 ### 阶段 5 · 收尾（未开始，全部剩余项集中在此）
-- [ ] **uni-app 小程序端**（PRD P2 唯一未完成项 + 验收标准唯一未勾选项；**需先决策做/不做**，不做须在论文中调整口径）
+- [x] **移动端 H5 适配**（2026-09-20 完成）——① 门户壳汉堡 + 抽屉菜单（移动端专属，用 `v-if="isMobile"`，PC 视口下 DOM 根本不存在）② 表单与对话框窄屏全宽化 ③ 网格改 `minmax(0,1fr)` + flex 传导链阻断，五个代表页横向溢出归零 ④ 新增 `src/mobile.css` 独立适配层（只含媒体查询，PC 零回归 —— 铁律 #27/#28）
+- [ ] **App 壳封装出 APK**（⚠ 本机无 Java / Android SDK / Gradle，须走云打包（PWABuilder / HBuilderX 云打包）或在有 Android Studio 的机器上做）
 - [ ] 全流程演示彩排（演示前须先预热 TiDB，见"已知坑"冷启动条）
 - [ ] 论文正文（开题报告 2026-09-20 已定稿约 6000 字；正文三章核心素材：选课并发控制 / 审批流引擎 / 云边协同）
 - [ ] 图书封面补齐（420 本**全部** `cover_url` 为空，当前显示首字占位）
@@ -88,6 +89,7 @@
 - Supabase 免费版 7 天不活跃休眠（当前未选用，仅备忘）
 - **DATETIME 传参写 'YYYY-MM-DD HH:mm:ss' 字符串最稳**（连接池 timezone='Z'，即 UTC 墙钟口径；见下方"时间口径"备忘）
 - **多端独立域名部署时必须配 CORS_ORIGIN 环境变量**（Node Functions 已内置 CORS 响应头与 OPTIONS 预检，未配 CORS_ORIGIN 时默认放行）
+- **★ 移动端适配（2026-09-20 深夜）**：`src/mobile.css` 只允许 `@media (max-width: 820px)` 块（PC 零回归保证）；断点须与 `utils/device.js` 的 `MOBILE_MAX_WIDTH` 同值；**覆盖组件 scoped 样式必须三倍类名**（组件 CSS 路由懒加载，`<link>` 运行时插入在本文件之后，双类名同权重会被反超）；窄屏横向溢出两大根因 = grid 的 `1fr`（实为 `minmax(auto,1fr)`，改 `minmax(0,1fr)`）+ flex column 交叉轴被内容 min-content 撑开（须在 `.shell-body` 层就 `overflow-x:hidden`，只在 `.shell-main` 写无效）；内联固定宽度需 `!important`。详见 HANDOVER 铁律 #27/#28
 - sys_refresh_token 过期/吊销记录清理：**已有 `scripts/cleanup.mjs`**（dry-run 默认，`--yes` 执行，覆盖 refresh_token / blob / login_log）；另 login.js 登录成功时 5% 概率顺带清理
 - 登录失败限流：**已由内存版改为 DB 流水计数**（sys_login_log 失败流水 + sys_email_code），多实例安全；细节见变更记录"边缘网关试错与回滚"条
 - **db.js query() 直接返回 rows**（项目封装过），不能按 mysql2 原生 `[rows]` 解构——解构会把首行当数组用，随机 500
@@ -121,6 +123,8 @@
 - 2026-09-20（体检修复）：**体检 P1/P2 全清**（219159f）——①邮件正文 XSS：MailView.vue v-html 直渲染外部来信 HTML 未消毒，引入 DOMPurify（FORBID style 标签，默认去 script/事件属性/javascript: 协议）；②分包：vite manualChunks 把 element-plus/vendor-vue/lucide/dompurify 拆独立 chunk，**index 主包 1219KB→18.7KB**（EP 1.09MB 长缓存，仅构建提示仍>500KB，属 EP 全量引入固有，按需引入为后续项）；③清理任务：login.js 登录成功 5% 概率顺带清过期/吊销刷新令牌 + 新增 scripts/cleanup.mjs（dry-run 默认，--yes 执行；refresh_token/blob/login_log 三表）；④文档口径：PRD 二期勾选完成、验收标准更新，ARCHITECTURE ADR-4 blob 目录旧口径改为 sys_blob 表暂存，blob.js 注释同步查询串口径
 - 2026-09-20（边缘网关试错与回滚）：**边缘限流网关实测不可行，方案 B 落地**（20b11ac/8026bd2/6b8472b 回滚 + d00a57f/897acb4/b0b5ce8）——曾实现 /api/gw 边缘网关（KV 限流 + 令牌黑名单 + 跨域回源代理），实测发现 **EdgeOne 边缘函数 fetch 子请求不进函数路由**（同域落静态层返回 SPA；blacklist 固定路径端点正常、catch-all 代理始终返回 SPA），代理架构不可行，回滚。限流改 Node 侧后又踩两个平台坑：①**Node 多实例内存不共享**（内存 rateLimit 30 连发零触发）；②**x-forwarded-for 是 EdgeOne 出口代理池 IP**（非真实客户端 IP，按 IP 计数被稀释）。最终口径：**限流走 DB 流水计数**——登录=sys_login_log 失败流水（账号 5 失败/min 防撞库 + 出口 IP 60 失败/min 辅助，实测 8 连发第 6 次起 429）、忘记密码发码=sys_email_code 3 次/hour/IP、注册沿用既有 DB 频控；刷新端点不做频控（轮换+重放检测已足够）。边缘价值改用原生轻端点体现：新增 /api/edge/stats（KV 访问统计，无 DB、边缘毫秒级），HomeView 挂 fire-and-forget 埋点；HomeView 模块卡更新至 M3 现状；架构文档同步（铁律 #23/#24、ARCHITECTURE 2.5 平台行为结论）
 - 2026-09-20（时间口径归一·深夜）：**全站时间显示错乱修复**（a04f4a6/b4dc948）——用户报"驾驶舱数据有问题、时间是乱的、undefined"。首因是字段名不一致（后端 `o.created_at` vs 前端 `row.createdAt`），深挖出**系统性时区 bug**：TiDB 会话时区即 UTC（`@@system_time_zone='UTC'`，`NOW()` 比北京早 8h 即正常），库内全存 UTC 墙钟，而 mysql2 连接误配 `timezone:'+08:00'` 把 UTC 墙钟当北京墙钟解读 → **所有 Date 对象整体早 8 小时**（判定锚点：sys_login_log 记 admin 登录 `14:37:41`，而用户正是北京 22:37 登录查看日志的）。连带真 bug：JSON 输出偏 8h、刷新令牌多活 8h、**60s 重发频控实际失效**、登录趋势日期整体早一天、CSV 导出显示 UTC。修复：①db.js `timezone:'Z'`；②新增 `src/utils/time.js`（fmtTime/fmtAgo）作为展示唯一入口，16 处前端手写字符串截断全部替换（af×5 / dorm / m3×4 / admin×3 / Message / Workbench）；③CSV 格式化加 `Asia/Shanghai`；④驾驶舱 recentOps 返回真实瞬时 + 过滤 error.500 历史噪音、登录趋势按北京日期分桶；⑤请假起止（日期选择器墙钟）落库前转 UTC + 存量 3 行迁移；⑥admin 有效期入参（北京日历日）改字符串 `15:59:59`。线上 11 项验收全过，前端 chunk 确认换新（padStart 特征在、旧截断写法消失）
+
+- 2026-09-20（移动端适配·深夜）：**「不做小程序」决策落地 + 移动端 H5 适配上线**——① **决策**：微信小程序砍掉（个人主体无 web-view 权限、纯套壳易被拒审、小程序自身亦须 ICP 备案），替代为「响应式 H5 + App 壳封装」，PRD §4 不做清单与 ARCHITECTURE **ADR-8** 记录依据；② **实现**：新增 `src/mobile.css`（媒体查询适配层，文件内禁止全局裸规则 → PC 零回归）+ `src/utils/device.js`（`useIsMobile`），PortalShell 加汉堡按钮与抽屉菜单（`v-if="isMobile"`，PC 下 DOM 不渲染），全局表单/对话框/表格/分页窄屏适配，网格单列化与溢出修复；③ **踩坑**：组件 scoped 样式因路由懒加载的 `<link>` 晚于全局样式插入而反超，双类名不够、**须三倍类名**；窄屏溢出根因是 grid `1fr`（=`minmax(auto,1fr)`）与 flex column 交叉轴被内容撑开（须在 `.shell-body` 层阻断传导链）；④ **附带修复**：驾驶舱"在校学生"卡显示 `[object Object]`（`genderText` 是 computed ref，在 JS 模板字符串里漏 `.value`，PC 端同样错）；⑤ **验收**（Playwright + 系统 Edge，`/api/*` 转发至线上）：PC 视口下 `.shell-burger`/`.shell-drawer` 数量 **0**、侧栏仍 196px、无溢出；手机视口（390×844）汉堡存在、侧栏隐藏、抽屉 19 项、workbench/dorm/library/forum/dashboard **五页 `scrollWidth === innerWidth` 全等（零横向溢出）**；⑥ 提交范围可证：`src/styles.css` **零改动**，PortalShell 仅删 4 行（全在原 820px 移动端断点内）
 
 ## 下一步
 

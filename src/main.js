@@ -9,6 +9,8 @@ import App from './App.vue';
 import router from './router';
 import { useAuthStore } from './stores/auth';
 import './styles.css';
+// 移动端适配层：只含窄屏媒体查询，PC 端零影响（详见文件头铁律）
+import './mobile.css';
 
 const app = createApp(App);
 
