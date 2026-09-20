@@ -68,6 +68,7 @@ export async function onRequestGet(context) {
 
     const selectSql = `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, u.class_id,
               u.valid_until, u.created_at, u.last_login_at,
+              u.campus_email, u.mail_enabled, u.mail_mailbox_id,
               d.name AS dept_name, c.name AS class_name,
               GROUP_CONCAT(r.code) AS role_codes
          FROM sys_user u

@@ -49,7 +49,7 @@ export async function onRequestPost(context) {
       [email, code, ip],
     );
     return ok(
-      { sent: true, expireMinutes: 10, debugCode: code },
+      { sent: true, expireMinutes: 10 },
       '验证码已发送，请查收邮件；若未收到请检查垃圾邮件/广告邮件文件夹',
     );
   } catch (e) {
