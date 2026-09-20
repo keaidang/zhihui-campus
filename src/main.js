@@ -23,6 +23,15 @@ app.use(pinia);
 app.use(router);
 app.use(ElementPlus, { locale: zhCn });
 
+// 全局错误兜底（2026-09-21 补）：此前未捕获的组件异常会中断渲染、表现为整页白屏。
+// 这里只做"兜住 + 记录"，不弹窗打扰用户（业务错误已由 api/request.js 统一提示）。
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('[vue-error]', info, err);
+};
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled-rejection]', e.reason);
+});
+
 // 挂载前静默恢复会话：F5 后用 refreshToken 换回 accessToken，避免"刷新页面就掉线"
 const auth = useAuthStore(pinia);
 auth.restoreSession().catch(() => {}).finally(() => app.mount('#app'));

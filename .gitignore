@@ -17,6 +17,7 @@ scripts/*
 !scripts/seed-dorm.mjs
 !scripts/sql-smoke-m4.mjs
 !scripts/gap-check.mjs
+!scripts/integrity-check.mjs
 !scripts/cleanup.mjs
 
 # 调试探针与本地验证产物（严禁入库）

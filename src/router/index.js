@@ -174,4 +174,18 @@ router.beforeEach(async (to) => {
   return true;
 });
 
+// 懒加载 chunk 失败兜底（2026-09-21 补）：本项目部署频繁，用户停留在旧页面时
+// 再点新路由，旧 chunk 已被新产物替换 → 动态 import 404 → 此前表现为整页白屏。
+// 这里自动硬刷新一次拿最新 index.html；用标志位防刷新循环（刷新后仍失败则不再重试）。
+let chunkReloaded = false;
+router.onError((err) => {
+  const msg = String(err?.message || '');
+  if (/Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|dynamically imported module/i.test(msg)) {
+    if (!chunkReloaded) {
+      chunkReloaded = true;
+      window.location.reload();
+    }
+  }
+});
+
 export default router;
