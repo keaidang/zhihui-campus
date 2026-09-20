@@ -1,8 +1,8 @@
 // POST /api/auth/refresh — 刷新访问令牌（轮换刷新令牌）
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody } from '../../lib/http.js';
-import { signAccessToken, rotateRefreshTokenAtomic, rateLimit } from '../../lib/auth.js';
-import { clientIp, preflight } from '../../lib/http.js';
+import { signAccessToken, rotateRefreshTokenAtomic } from '../../lib/auth.js';
+import { preflight } from '../../lib/http.js';
 
 export { preflight as onRequestOptions };
 
@@ -11,11 +11,8 @@ export async function onRequestPost(context) {
     const body = await readBody(context.request);
     const refreshToken = String(body.refreshToken || '');
     if (!refreshToken) return fail(40100, '缺少刷新令牌', 401);
-
-    // 接口限流：30/min/IP（正常用户分钟级刷新个位数次）
-    if (!rateLimit('refresh', String(clientIp(context.request)).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64), 30, 60)) {
-      return fail(42900, '请求过于频繁，请稍后再试', 429);
-    }
+    // 注：刷新端点不做频控——须持有有效刷新令牌（7 天一次性轮换 + 重放检测），
+    // 滥用面等于令牌本身；内存限流在多实例下无效（见 HANDOVER 铁律 #23/#24），不加假保障
 
     // 原子轮换（事务+瞬时重试）：失败即回滚，旧令牌仍有效，客户端可重试
     const result = await rotateRefreshTokenAtomic(refreshToken);

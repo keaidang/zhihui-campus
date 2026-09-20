@@ -4,7 +4,6 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { opLog } from '../../../lib/guard.js';
-import { rateLimit } from '../../../lib/auth.js';
 import bcrypt from 'bcryptjs';
 
 export { preflight as onRequestOptions };
@@ -23,10 +22,8 @@ export async function onRequestPost(context) {
     if (!/^\d{6}$/.test(code)) return fail(43501, '请输入 6 位验证码');
     if (!PWD_OK(newPassword)) return fail(43507, '新密码至少 8 位');
 
-    // 接口限流：3/hour/IP（防验证码爆破）
-    if (!rateLimit('forgot_reset', String(ip).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64), 3, 3600)) {
-      return fail(42900, '操作过于频繁，请 1 小时后再试', 429);
-    }
+    // 接口限流：重置动作依托发码侧 3 次/hour/IP 的 DB 限流（无码无法重置，验证码另有 5 次尝试上限）
+    // ——此处不再单独计数，避免同 IP 正常用户"发码+重置"两步被重复限制误伤
 
     const users = await query('SELECT id, status FROM sys_user WHERE username = ? AND email = ?', [username, email]);
     if (users.length === 0) return fail(43502, '账号与绑定邮箱不匹配');

@@ -147,26 +147,8 @@ export function registerRecord(ip) {
   }
 }
 
-/** 通用接口限流（实例级内存版，固定窗口计数；多实例下为尽力而为）
- *  频率取市面常见值：登录防撞库按 IP+账号 5/min、IP 全局 30/min；
- *  刷新 30/min；注册/发码 5/hour；忘记密码 3/hour。
- *  返回 true=放行，false=超限。内存超 1 万键自动清窗，防泄漏。 */
-const rlMap = new Map(); // bucket -> Map(ident -> { win, count })
-const RL_MAP_MAX = 10000;
-
-export function rateLimit(bucket, ident, limit, windowSec) {
-  const now = Date.now();
-  const win = Math.floor(now / (windowSec * 1000));
-  let m = rlMap.get(bucket);
-  if (!m) { m = new Map(); rlMap.set(bucket, m); }
-  const key = `${ident}_${win}`;
-  const rec = m.get(key);
-  if (!rec) {
-    if (m.size > RL_MAP_MAX) rlMap.set(bucket, new Map()); // 旧窗口整批丢弃
-    m.set(key, { count: 1 });
-    return true;
-  }
-  if (rec.count >= limit) return false;
-  rec.count += 1;
-  return true;
-}
+// ★ 限流口径（2026-09-20 定稿）：EdgeOne Node Functions 多实例下实例内存不共享，
+// 内存计数限流无效（实测 30 连发零触发）。有效限流一律走 DB 流水计数：
+//   登录 → sys_login_log 失败流水（IP+账号 5 失败/min、IP 30 失败/min）
+//   忘记密码发码 → sys_email_code（3 次/hour/IP）；注册/发码 → 既有 DB 频控
+// 详见 HANDOVER.md 铁律 #23/#24。

@@ -4,12 +4,10 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { sendVerificationCode } from '../../../lib/lanqin.js';
-import { rateLimit } from '../../../lib/auth.js';
 
 export { preflight as onRequestOptions };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const safeRlKey = (s) => String(s || '').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64);
 
 export async function onRequestPost(context) {
   try {
@@ -20,10 +18,12 @@ export async function onRequestPost(context) {
     if (!username) return fail(43501, '请输入账号');
     if (!EMAIL_RE.test(email)) return fail(43501, '邮箱格式不正确');
 
-    // 接口限流：3/hour/IP（防枚举账号+邮件轰炸）
-    if (!rateLimit('forgot', safeRlKey(ip), 3, 3600)) {
-      return fail(42900, '操作过于频繁，请 1 小时后再试', 429);
-    }
+    // 接口限流：3 次/hour/IP（DB 计数，防枚举账号+邮件轰炸；多实例安全）
+    const rlHour = await query(
+      "SELECT COUNT(*) n FROM sys_email_code WHERE ip = ? AND purpose = 'reset' AND created_at > NOW() - INTERVAL 1 HOUR",
+      [ip],
+    );
+    if (Number(rlHour[0].n) >= 3) return fail(42900, '操作过于频繁，请 1 小时后再试', 429);
 
     // 账号存在 + 绑定邮箱匹配（不泄露账号是否存在：统一成功文案）
     const users = await query(
