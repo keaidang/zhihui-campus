@@ -1,13 +1,14 @@
 // node-functions/lib/lanqin.js — LanQin Email 开放 API 封装
 // 用途：注册验证码发送、校园邮箱（真实邮箱）创建/改密
-// 环境变量：LANQIN_API_KEY / LANQIN_BASE_URL / LANQIN_DOMAIN_ID / LANQIN_SYSTEM_MAILBOX_ID / LANQIN_SYSTEM_ADDRESS
+// 环境变量：LANQIN_API_KEY / LANQIN_BASE_URL / LANQIN_DOMAIN_ID / LANQIN_SEND_MAILBOX_ID / LANQIN_SYSTEM_ADDRESS
 const BASE = process.env.LANQIN_BASE_URL || 'https://email.9o.pw';
 const KEY = process.env.LANQIN_API_KEY || '';
 const DOMAIN_ID = process.env.LANQIN_DOMAIN_ID || '';
-const SYSTEM_MAILBOX_ID = process.env.LANQIN_SYSTEM_MAILBOX_ID || '';
-const SYSTEM_ADDRESS = process.env.LANQIN_SYSTEM_ADDRESS || 'system@keaidang.com';
+// 发信专用邮箱（k@keaidang.com）；SYSTEM_MAILBOX_ID(system@) 作为回退
+const SEND_MAILBOX_ID = process.env.LANQIN_SEND_MAILBOX_ID || process.env.LANQIN_SYSTEM_MAILBOX_ID || '';
+const SYSTEM_ADDRESS = process.env.LANQIN_SYSTEM_ADDRESS || 'k@keaidang.com';
 
-export const lanqinConfigured = () => Boolean(KEY && SYSTEM_MAILBOX_ID);
+export const lanqinConfigured = () => Boolean(KEY && SEND_MAILBOX_ID);
 
 async function call(method, path, body) {
   const res = await fetch(`${BASE}/api/open/v1${path}`, {
@@ -39,7 +40,7 @@ export async function sendVerificationCode(to, code, purpose = '注册') {
   </div>
 </div>`;
   const r = await call('POST', '/send', {
-    mailboxId: SYSTEM_MAILBOX_ID,
+    mailboxId: SEND_MAILBOX_ID,
     to: [to],
     subject: `【智汇校园】${purpose}验证码：${code}（10 分钟内有效）`,
     html,
