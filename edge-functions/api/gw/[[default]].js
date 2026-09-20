@@ -154,6 +154,8 @@ export async function onRequest(context) {
   const upstream = await fetch(fwd);
   const res = new Response(upstream.body, upstream);
   res.headers.set('access-control-allow-origin', '*');
+  res.headers.set('x-gw-live', '1');
+  res.headers.set('x-gw-upstream', `${upstream.status} ${upstream.headers.get('content-type') || ''}`);
   if (kv) waitUntil(sweep(kv));
   return res;
 }
