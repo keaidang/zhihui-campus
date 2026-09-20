@@ -115,6 +115,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
+import DOMPurify from 'dompurify';
 import { Inbox, Send, RefreshCw, SquarePen, Paperclip, MailOpen, LockKeyhole } from 'lucide-vue-next';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
@@ -217,7 +218,10 @@ async function openMail(m) {
 
 const mailBody = computed(() => {
   if (!detail.value) return '';
-  if (detail.value.html) return detail.value.html;
+  if (detail.value.html) {
+    // ★ 外部来信 HTML 不可信：DOMPurify 消毒后再 v-html（默认去除 script/事件属性/javascript: 协议，外链自动补 rel=noopener）
+    return DOMPurify.sanitize(detail.value.html, { FORBID_TAGS: ['style'] });
+  }
   return `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(detail.value.text || detail.value.snippet || '')}</pre>`;
 });
 function escapeHtml(s) {

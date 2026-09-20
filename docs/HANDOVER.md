@@ -66,7 +66,7 @@
 │     ├─ admin/               # UserManageView（含邮箱管理/僵尸筛选/CSV 导出） StudentManageView OrgManageView CourseManageView
 │     ├─ edu/                 # ElectView ScoresView TeachView ScoreEntryView
 │     └─ af/                  # LeaveView ApproveView RepairView RepairManageView NoticeView
-└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs seed-m3.mjs（白名单制）
+└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs seed-m3.mjs cleanup.mjs（白名单制）
 ```
 
 ### 校园邮箱体系（2026-09-20 上线，关键口径）
@@ -125,6 +125,8 @@
 18. **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
 19. **写 SQL 前对照真实 DDL 引用字段**（尤其跨表 join）——club_recruit 无 location/activity_time 曾致 scope=mine 恒 500；新 GET 分支冒烟要覆盖每一条查询路径，不能只测写操作
 20. **M3 图片一律走 /api/blob**：POST base64≤3MB 存 sys_blob，GET ?token= 公共只读；URL 必须匹配 `/^\/api\/blob\?token=[a-z0-9]{16}$/`（存量数据已从此前的路径式迁移）
+21. **v-html 必须过 DOMPurify**：用户/外部内容（邮件正文等）渲染前消毒（MailView.vue 先例）；全站其余内容一律纯文本渲染，新增 v-html 前先想安全
+22. **运维清理**：login.js 登录成功 5% 概率顺带清过期刷新令牌；blob/登录日志用 `node scripts/cleanup.mjs`（默认 dry-run，--yes 执行，参数 --blob-days/--log-days）
 
 ## 6. 交付与验证流程
 

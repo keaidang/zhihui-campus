@@ -50,6 +50,17 @@ export async function onRequestPost(context) {
       [user.id],
     )).map((r) => r.code);
 
+    // ★ 顺带清理（5% 概率触发，自助维护表体积）：过期超 7 天的刷新令牌 + 吊销超 30 天的令牌
+    if (Math.random() < 0.05) {
+      try {
+        await query(
+          `DELETE FROM sys_refresh_token
+            WHERE (expires_at < NOW() - INTERVAL 7 DAY)
+               OR (revoked = 1 AND created_at < NOW() - INTERVAL 30 DAY)`,
+        );
+      } catch { /* 清理失败不影响登录 */ }
+    }
+
     const accessToken = signAccessToken(user, roles);
     const refreshToken = newRefreshToken();
     await saveRefreshToken(user.id, refreshToken);

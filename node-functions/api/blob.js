@@ -1,6 +1,6 @@
 // /api/blob — 图片 Blob 暂存（后续接图床只换本文件的 URL 生成）
-// POST { base64, mime } → { url: '/api/blob/<token>' }   需登录；单张 ≤ 3MB
-// GET  /api/blob/<token> → 图片二进制（公共可读：失物/社团/论坛页都要 <img> 直出）
+// ★ EdgeOne node functions 不支持路径参数：上传 POST { base64, mime }；读取 GET ?token=<16位>（公共可读）
+// 需登录上传；单张 ≤ 3MB
 import { ok, fail, jsonError, readBody } from '../lib/http.js';
 import { requireAuth } from '../lib/guard.js';
 import { query } from '../lib/db.js';

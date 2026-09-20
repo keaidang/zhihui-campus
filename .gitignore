@@ -14,6 +14,7 @@ scripts/*
 !scripts/seed-demo.mjs
 !scripts/seed-admin-staff.mjs
 !scripts/seed-m3.mjs
+!scripts/cleanup.mjs
 
 # 调试探针与本地验证产物（严禁入库）
 probe*

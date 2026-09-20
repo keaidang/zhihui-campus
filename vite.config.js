@@ -13,5 +13,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // 大依赖拆独立 chunk：业务代码变更不再打爆整包，三方库缓存命中率高
+        manualChunks: {
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          'lucide': ['lucide-vue-next'],
+          'dompurify': ['dompurify'],
+        },
+      },
+    },
   },
 });
