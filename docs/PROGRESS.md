@@ -81,7 +81,7 @@
 - KV 为 60 秒最终一致 → 选课名额/库存一律走数据库，KV 只放容忍延迟的计数
 - TiDB Serverless 有冷启动，演示前先预热一次请求
 - Supabase 免费版 7 天不活跃休眠（当前未选用，仅备忘）
-- **DATETIME 一律传 Date 对象或 'YYYY-MM-DD HH:mm:ss'**：toISOString() UTC 字符串 + 连接池 timezone('+08:00') 会造成 8 小时偏移（已踩坑修复）
+- **DATETIME 传参写 'YYYY-MM-DD HH:mm:ss' 字符串最稳**（连接池 timezone='Z'，即 UTC 墙钟口径；见下方"时间口径"备忘）
 - **多端独立域名部署时必须配 CORS_ORIGIN 环境变量**（Node Functions 已内置 CORS 响应头与 OPTIONS 预检，未配 CORS_ORIGIN 时默认放行）
 - sys_refresh_token 过期/吊销记录暂无清理任务，量大后需定期清理（低优先级）
 - 登录失败锁定为实例级内存版，多实例下尽力而为，后续可迁 KV
@@ -93,6 +93,7 @@
 - **EdgeOne node functions 不支持路径参数**：`/api/xx/<id>` 会落到 SPA 返回 index.html——动态参数一律用查询串（如 `/api/blob?token=xxx`）
 - **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
 - **写 SQL 引用字段前对照真实 DDL**：club_recruit 没有 location/activity_time（在 club_application），曾致 scope=mine 恒 500（c8341f8 已修）
+- **★ 时间口径（2026-09-20 深夜重定义）**：TiDB 会话时区 = UTC，**库内一切时间都是 UTC 墙钟**（业务全用 NOW()）；`lib/db.js` 的 mysql2 `timezone` 必须为 `'Z'`（曾误配 `'+08:00'` → Date 偏 8h，连带刷新令牌多活 8h、60s 频控失效、登录趋势早一天）；**前端展示唯一入口 `src/utils/time.js` 的 `fmtTime()/fmtAgo()`**，禁止手写 `String(x).replace('T',' ').slice(0,16)`；Node 侧导出格式化须带 `{ timeZone:'Asia/Shanghai' }`；用户日期选择器的墙钟落库前 -8h 转 UTC（af/leave.js）
 
 ## 变更记录
 
@@ -114,6 +115,7 @@
 - 2026-09-20（M3 修复）：**社团"我的预约"500 + 预约数据分布修复**（c8341f8）——①`/api/club/recruit?scope=mine` 的 SQL 误引用 `r.activity_time`/`r.location`（这两字段在 `club_application` 表，`club_recruit` 没有），ER_BAD_FIELD_ERROR 1054 导致所有用户"我的预约"恒 500（取消后重约成功也看不到，表象即"我的预约里没有"）；改为 join club_application 取地点/时间。②seed-m3 把每个招聘的预约都塞给 `students.slice(0, taken0)` 同一批前排学生，导致 student001~004 等测试号在几乎全部社团显示"已预约"（数据合法但演示观感差）；用 scripts/fix-club-bookings.mjs 把存量 34 条预约随机打散到 400 名学生（各招聘 taken 数不变），student004 仅保留 AI 兴趣社 1 条。线上复测：我的预约 code=0、预约→取消→再预约→再取消闭环全过
 - 2026-09-20（体检修复）：**体检 P1/P2 全清**（219159f）——①邮件正文 XSS：MailView.vue v-html 直渲染外部来信 HTML 未消毒，引入 DOMPurify（FORBID style 标签，默认去 script/事件属性/javascript: 协议）；②分包：vite manualChunks 把 element-plus/vendor-vue/lucide/dompurify 拆独立 chunk，**index 主包 1219KB→18.7KB**（EP 1.09MB 长缓存，仅构建提示仍>500KB，属 EP 全量引入固有，按需引入为后续项）；③清理任务：login.js 登录成功 5% 概率顺带清过期/吊销刷新令牌 + 新增 scripts/cleanup.mjs（dry-run 默认，--yes 执行；refresh_token/blob/login_log 三表）；④文档口径：PRD 二期勾选完成、验收标准更新，ARCHITECTURE ADR-4 blob 目录旧口径改为 sys_blob 表暂存，blob.js 注释同步查询串口径
 - 2026-09-20（边缘网关试错与回滚）：**边缘限流网关实测不可行，方案 B 落地**（20b11ac/8026bd2/6b8472b 回滚 + d00a57f/897acb4/b0b5ce8）——曾实现 /api/gw 边缘网关（KV 限流 + 令牌黑名单 + 跨域回源代理），实测发现 **EdgeOne 边缘函数 fetch 子请求不进函数路由**（同域落静态层返回 SPA；blacklist 固定路径端点正常、catch-all 代理始终返回 SPA），代理架构不可行，回滚。限流改 Node 侧后又踩两个平台坑：①**Node 多实例内存不共享**（内存 rateLimit 30 连发零触发）；②**x-forwarded-for 是 EdgeOne 出口代理池 IP**（非真实客户端 IP，按 IP 计数被稀释）。最终口径：**限流走 DB 流水计数**——登录=sys_login_log 失败流水（账号 5 失败/min 防撞库 + 出口 IP 60 失败/min 辅助，实测 8 连发第 6 次起 429）、忘记密码发码=sys_email_code 3 次/hour/IP、注册沿用既有 DB 频控；刷新端点不做频控（轮换+重放检测已足够）。边缘价值改用原生轻端点体现：新增 /api/edge/stats（KV 访问统计，无 DB、边缘毫秒级），HomeView 挂 fire-and-forget 埋点；HomeView 模块卡更新至 M3 现状；架构文档同步（铁律 #23/#24、ARCHITECTURE 2.5 平台行为结论）
+- 2026-09-20（时间口径归一·深夜）：**全站时间显示错乱修复**（a04f4a6/b4dc948）——用户报"驾驶舱数据有问题、时间是乱的、undefined"。首因是字段名不一致（后端 `o.created_at` vs 前端 `row.createdAt`），深挖出**系统性时区 bug**：TiDB 会话时区即 UTC（`@@system_time_zone='UTC'`，`NOW()` 比北京早 8h 即正常），库内全存 UTC 墙钟，而 mysql2 连接误配 `timezone:'+08:00'` 把 UTC 墙钟当北京墙钟解读 → **所有 Date 对象整体早 8 小时**（判定锚点：sys_login_log 记 admin 登录 `14:37:41`，而用户正是北京 22:37 登录查看日志的）。连带真 bug：JSON 输出偏 8h、刷新令牌多活 8h、**60s 重发频控实际失效**、登录趋势日期整体早一天、CSV 导出显示 UTC。修复：①db.js `timezone:'Z'`；②新增 `src/utils/time.js`（fmtTime/fmtAgo）作为展示唯一入口，16 处前端手写字符串截断全部替换（af×5 / dorm / m3×4 / admin×3 / Message / Workbench）；③CSV 格式化加 `Asia/Shanghai`；④驾驶舱 recentOps 返回真实瞬时 + 过滤 error.500 历史噪音、登录趋势按北京日期分桶；⑤请假起止（日期选择器墙钟）落库前转 UTC + 存量 3 行迁移；⑥admin 有效期入参（北京日历日）改字符串 `15:59:59`。线上 11 项验收全过，前端 chunk 确认换新（padStart 特征在、旧截断写法消失）
 
 ## 下一步
 
