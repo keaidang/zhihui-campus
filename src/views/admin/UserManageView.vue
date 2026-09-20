@@ -39,6 +39,7 @@
         <el-button :icon="Delete" type="danger" plain :disabled="!selected.length" @click="batchRemove">
           删除选中({{ selected.length }})
         </el-button>
+        <el-button :icon="Message" plain type="warning" @click="exportMailboxes">导出邮箱</el-button>
       </template>
       <el-button :icon="Download" plain @click="onExport">导出</el-button>
     </section>
@@ -64,6 +65,17 @@
             <span v-if="row.class_name" class="um-muted"> / {{ row.class_name }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="校园邮箱" min-width="230">
+          <template #default="{ row }">
+            <template v-if="row.campus_email">
+              <span class="um-mail">{{ row.campus_email }}</span>
+              <el-tag :type="row.mail_enabled ? 'success' : 'info'" size="small" style="margin-left: 4px">
+                {{ row.mail_enabled ? '已开通' : '未开通' }}
+              </el-tag>
+            </template>
+            <span v-else class="um-muted">未分配</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
@@ -79,11 +91,26 @@
         <el-table-column prop="created_at" label="注册时间" width="170">
           <template #default="{ row }">{{ fmt(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openProfile(row)">归属</el-button>
             <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
             <el-button v-if="auth.isAdmin" size="small" @click="openValid(row)">有效期</el-button>
+            <el-button
+              v-if="auth.isAdmin && row.campus_email"
+              size="small"
+              :type="row.mail_enabled ? 'warning' : 'success'"
+              @click="toggleMail(row)"
+            >
+              {{ row.mail_enabled ? '关邮箱' : '开邮箱' }}
+            </el-button>
+            <el-button
+              v-if="auth.isAdmin && row.mail_enabled"
+              size="small"
+              @click="viewMailPwd(row)"
+            >
+              密码
+            </el-button>
             <el-button
               size="small"
               :type="row.status === 1 ? 'danger' : 'success'"
@@ -205,7 +232,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Delete, Download } from '@element-plus/icons-vue';
+import { Plus, Delete, Download, Message } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api, download } from '../../api/request';
 import { useAuthStore } from '../../stores/auth';
@@ -235,8 +262,44 @@ const fmtDate = (v) => (v ? String(v).slice(0, 10) : '');
 const isExpired = (row) => row.valid_until && new Date(row.valid_until).getTime() < Date.now();
 
 /* ---- 导出 ---- */
-async function onExport() {
+// ---- 校园邮箱管理 ----
+async function toggleMail(row) {
+  const enabling = !row.mail_enabled;
+  const res = await api('/api/admin/mailbox', {
+    method: 'POST',
+    body: { action: enabling ? 'enable' : 'disable', userId: row.id },
+  });
+  if (res.code !== 0) return ElMessage.error(res.message || '操作失败');
+  if (enabling) {
+    await ElMessageBox.alert(
+      `<p>邮箱 <b>${res.data.campusEmail}</b> 已开通</p><p>初始密码：<b style="user-select:all">${res.data.password}</b></p><p style="color:#b45309">请妥善告知用户，该密码也可随时在此查看或导出</p>`,
+      '开通成功',
+      { dangerouslyUseHTMLString: true },
+    );
+  } else {
+    ElMessage.success('对外收发已关闭');
+  }
+  load();
+}
+async function viewMailPwd(row) {
+  const res = await api('/api/admin/mailbox');
+  if (res.code !== 0) return ElMessage.error(res.message || '加载失败');
+  const item = (res.data.list || []).find((x) => x.id === row.id);
+  if (!item) return ElMessage.error('未找到邮箱记录');
+  await ElMessageBox.alert(
+    `<p>${item.campus_email}</p><p>当前密码：<b style="user-select:all">${item.mail_password || '（无记录）'}</b></p>`,
+    `${row.real_name} 的邮箱密码`,
+    { dangerouslyUseHTMLString: true },
+  );
+}
+async function exportMailboxes() {
   try {
+    await ElMessageBox.confirm('导出内容包含所有校园邮箱的明文密码，仅限管理员使用，确定继续？', '导出邮箱密码', { type: 'warning' });
+  } catch { return; }
+  await download('/api/admin/mailbox?export=csv', `校园邮箱_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+async function onExport() {  try {
     const qs = new URLSearchParams({ export: 'csv' });
     if (query.keyword) qs.set('keyword', query.keyword);
     await download(`/api/admin/users?${qs.toString()}`, `账号列表-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -486,6 +549,7 @@ onMounted(async () => {
 .um-pager { display: flex; justify-content: flex-end; padding: 12px 10px 0; }
 .um-tag { margin-right: 6px; }
 .um-muted { color: var(--zc-text-sub); font-size: 12.5px; }
+.um-mail { font-size: 12.5px; color: var(--zc-navy); }
 .um-dlg-tip { margin: 0 0 14px; font-size: 13px; color: var(--zc-text-sub); }
 .um-spacer { flex: 1; }
 .um-expired { color: #b83232; font-weight: 600; }

@@ -61,9 +61,29 @@
               placeholder="确认密码"
               :prefix-icon="Lock"
               show-password
-              @keyup.enter="doRegister"
             />
           </el-form-item>
+          <el-form-item>
+            <el-input v-model="regForm.email" placeholder="邮箱（用于接收验证码）" :prefix-icon="Message" clearable>
+              <template #append>
+                <el-button :disabled="codeCooldown > 0 || sending" @click="sendCode">
+                  {{ sending ? '发送中…' : codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
+                </el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item>
+            <el-input v-model="regForm.code" placeholder="6 位邮箱验证码" :prefix-icon="Key" maxlength="6" @keyup.enter="doRegister" />
+          </el-form-item>
+          <el-form-item>
+            <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀（选填，如 20261004）" :prefix-icon="Promotion" clearable>
+              <template #append>
+                <el-button :disabled="!regForm.prefix" @click="checkPrefix">{{ prefixAvailable === true ? '✓ 可用' : '检查可用' }}</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <p v-if="prefixHint" class="prefix-hint" :class="{ ok: prefixAvailable === true }">{{ prefixHint }}</p>
+          <p class="mail-tip">📮 验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
           <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
             注 册
           </el-button>
@@ -93,8 +113,9 @@
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { User, Lock, Postcard } from '@element-plus/icons-vue';
+import { User, Lock, Postcard, Message, Key, Promotion } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
+import { api } from '../api/request';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -102,7 +123,50 @@ const auth = useAuthStore();
 const mode = ref('login');
 const loading = ref(false);
 const loginForm = reactive({ username: '', password: '' });
-const regForm = reactive({ realName: '', username: '', password: '', confirm: '' });
+const regForm = reactive({ realName: '', username: '', password: '', confirm: '', email: '', code: '', prefix: '' });
+const sending = ref(false);
+const codeCooldown = ref(0);
+const prefixAvailable = ref(null);
+const prefixHint = ref('');
+let cooldownTimer = null;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+async function sendCode() {
+  if (!EMAIL_RE.test(regForm.email)) {
+    ElMessage.warning('请先填写正确的邮箱地址');
+    return;
+  }
+  sending.value = true;
+  try {
+    const res = await api('/api/auth/register/send-code', { method: 'POST', body: { email: regForm.email }, auth: false });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '验证码已发送');
+      codeCooldown.value = 60;
+      cooldownTimer = setInterval(() => {
+        codeCooldown.value--;
+        if (codeCooldown.value <= 0) clearInterval(cooldownTimer);
+      }, 1000);
+    } else {
+      ElMessage.error(res.message || '发送失败');
+    }
+  } finally {
+    sending.value = false;
+  }
+}
+
+async function checkPrefix() {
+  const prefix = regForm.prefix.trim().toLowerCase();
+  prefixHint.value = '';
+  const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}`, { auth: false });
+  if (res.code === 0) {
+    prefixAvailable.value = res.data.available;
+    prefixHint.value = res.data.available ? `✓ ${prefix}@keaidang.com 可用` : res.data.reason || '该前缀不可用';
+  } else {
+    prefixAvailable.value = null;
+    prefixHint.value = '检查失败，可稍后再试';
+  }
+}
 
 async function doLogin() {
   if (!loginForm.username || !loginForm.password) {
@@ -125,7 +189,7 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const { realName, username, password, confirm } = regForm;
+  const { realName, username, password, confirm, email, code, prefix } = regForm;
   if (!realName || !username || !password) {
     ElMessage.warning('请完整填写注册信息');
     return;
@@ -134,11 +198,23 @@ async function doRegister() {
     ElMessage.warning('两次输入的密码不一致');
     return;
   }
+  if (!EMAIL_RE.test(email)) {
+    ElMessage.warning('请填写正确的邮箱地址');
+    return;
+  }
+  if (!/^\d{6}$/.test(code)) {
+    ElMessage.warning('请输入 6 位邮箱验证码');
+    return;
+  }
   loading.value = true;
   try {
-    const res = await auth.register({ realName, username, password });
+    const res = await auth.register({
+      realName, username, password,
+      email, code,
+      prefix: prefix.trim().toLowerCase() || undefined,
+    });
     if (res.code === 0) {
-      ElMessage.success('注册成功，请登录');
+      ElMessage.success(res.message || '注册成功，请登录');
       mode.value = 'login';
       loginForm.username = username;
       loginForm.password = '';
@@ -157,4 +233,8 @@ function onForgot() {
 
 <style scoped>
 .w-full { width: 100%; }
+.prefix-hint { margin: -8px 0 4px; font-size: 12px; color: #b45309; }
+.prefix-hint.ok { color: #0d7a6c; }
+.mail-tip { margin: -4px 0 10px; font-size: 12px; color: #64748b; line-height: 1.6; }
+.mail-tip b { color: #b45309; }
 </style>

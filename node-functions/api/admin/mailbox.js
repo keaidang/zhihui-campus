@@ -1,0 +1,114 @@
+// /api/admin/mailbox — 管理员：校园邮箱开通/关闭/查看密码/导出
+// GET            全量邮箱状态列表；?export=csv 导出含密码（仅 admin，敏感操作）
+// POST {action: 'enable'|'disable'|'resetPassword', userId}
+//   enable:  为用户在邮件服务器创建真实邮箱（localPart 取自 campus_email 前缀），
+//            随机密码存库（管理员可见可导出，用户可登录邮件系统后修改）
+//   disable: 关闭对外收发（保留服务器邮箱）
+//   resetPassword: 重置邮箱密码（随机生成，返回新密码）
+import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
+import { requireRoles, opLog } from '../../lib/guard.js';
+import { query } from '../../lib/db.js';
+import { createMailbox, resetMailboxPassword, lanqinConfigured } from '../../lib/lanqin.js';
+
+export { preflight as onRequestOptions };
+
+const randomPwd = () => {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$!';
+  let p = '';
+  for (let i = 0; i < 12; i++) p += chars[(Math.random() * chars.length) | 0];
+  return p;
+};
+
+export async function onRequestGet(context) {
+  try {
+    const { roles } = await requireRoles(context, ['admin']);
+    const url = new URL(context.request.url);
+    const rows = await query(
+      `SELECT u.id, u.username, u.real_name, u.user_no, u.email, u.campus_email,
+              u.mail_enabled, u.mail_password, u.mail_created_at, d.name AS dept_name
+         FROM sys_user u
+         LEFT JOIN sys_department d ON d.id = u.dept_id
+        WHERE u.campus_email IS NOT NULL
+        ORDER BY u.campus_email`,
+    );
+    if (url.searchParams.get('export') === 'csv') {
+      const lines = ['校园邮箱,姓名,账号,学工号,部门,对外收发,邮箱密码,创建时间'];
+      for (const r of rows) {
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        lines.push([
+          esc(r.campus_email), esc(r.real_name), esc(r.username), esc(r.user_no), esc(r.dept_name),
+          r.mail_enabled ? '已开通' : '未开通', esc(r.mail_enabled ? r.mail_password : ''), esc(r.mail_created_at ? new Date(r.mail_created_at).toLocaleString('sv-SE') : ''),
+        ].join(','));
+      }
+      return new Response('\ufeff' + lines.join('\r\n'), {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="campus-emails-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    }
+    if (!roles.includes('admin')) return ok({ list: rows.map((r) => ({ ...r, mail_password: undefined })) });
+    return ok({ list: rows });
+  } catch (e) {
+    return jsonError(e);
+  }
+}
+
+export async function onRequestPost(context) {
+  try {
+    const { roles, userId: operatorId } = await requireRoles(context, ['admin']);
+    if (!roles.includes('admin')) return fail(40301, '仅超级管理员可操作');
+    const ip = clientIp(context.request);
+    const body = await readBody(context.request);
+    const action = String(body.action || '');
+    const userId = Number(body.userId);
+    if (!userId) return fail(43200, '缺少 userId');
+
+    const [users] = await query(
+      'SELECT id, username, real_name, campus_email, mail_enabled, mail_mailbox_id, mail_password FROM sys_user WHERE id = ?',
+      [userId],
+    );
+    if (!users.length) return fail(43200, '用户不存在');
+    const u = users[0];
+
+    if (action === 'enable') {
+      if (!u.campus_email) return fail(43201, '该用户尚未分配校园邮箱地址');
+      if (!lanqinConfigured()) return fail(43202, '邮件服务未配置（缺少 LANQIN_* 环境变量）');
+      if (u.mail_mailbox_id) {
+        // 已有服务器邮箱，仅恢复开关
+        await query('UPDATE sys_user SET mail_enabled = 1 WHERE id = ?', [userId]);
+        return ok({ campusEmail: u.campus_email, password: u.mail_password }, '对外收发已开启');
+      }
+      const localPart = String(u.campus_email).split('@')[0];
+      const pwd = u.mail_password || randomPwd();
+      const r = await createMailbox(localPart, pwd, u.real_name);
+      if (!r.ok) return fail(43203, `邮件服务器创建失败：${r.error}`);
+      await query(
+        'UPDATE sys_user SET mail_enabled = 1, mail_mailbox_id = ?, mail_password = ?, mail_created_at = NOW() WHERE id = ?',
+        [r.mailboxId, pwd, userId],
+      );
+      await opLog(operatorId, 'mailbox.enable', `user:${userId}`, r.address, ip);
+      return ok({ campusEmail: r.address, password: pwd }, `邮箱已开通：${r.address}（初始密码见返回，请妥善告知用户）`);
+    }
+
+    if (action === 'disable') {
+      await query('UPDATE sys_user SET mail_enabled = 0 WHERE id = ?', [userId]);
+      await opLog(operatorId, 'mailbox.disable', `user:${userId}`, '', ip);
+      return ok(null, '对外收发已关闭');
+    }
+
+    if (action === 'resetPassword') {
+      if (!u.mail_mailbox_id) return fail(43204, '该用户未开通真实邮箱');
+      const pwd = randomPwd();
+      const r = await resetMailboxPassword(u.mail_mailbox_id, pwd);
+      if (!r.ok) return fail(43205, `密码重置失败：${r.error}`);
+      await query('UPDATE sys_user SET mail_password = ? WHERE id = ?', [pwd, userId]);
+      await opLog(operatorId, 'mailbox.resetPassword', `user:${userId}`, '', ip);
+      return ok({ password: pwd }, '邮箱密码已重置');
+    }
+
+    return fail(43200, `未知操作：${action}`);
+  } catch (e) {
+    return jsonError(e);
+  }
+}

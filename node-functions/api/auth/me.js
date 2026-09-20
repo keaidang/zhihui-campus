@@ -20,7 +20,8 @@ export async function onRequestGet(context) {
 
     const users = await query(
       `SELECT u.id, u.username, u.real_name, u.user_no, u.email, u.phone, u.avatar_url,
-              u.last_login_at, u.dept_id, u.class_id, d.name AS dept_name, c.name AS class_name
+              u.campus_email, u.mail_enabled, u.last_login_at, u.dept_id, u.class_id,
+              d.name AS dept_name, c.name AS class_name
          FROM sys_user u
          LEFT JOIN sys_department d ON d.id = u.dept_id
          LEFT JOIN sys_class c ON c.id = u.class_id
@@ -45,6 +46,8 @@ export async function onRequestGet(context) {
       email: user.email,
       phone: user.phone,
       avatarUrl: user.avatar_url,
+      campusEmail: user.campus_email,
+      mailEnabled: Number(user.mail_enabled) === 1,
       lastLoginAt: user.last_login_at,
       deptId: user.dept_id,
       deptName: user.dept_name,

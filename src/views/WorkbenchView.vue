@@ -43,6 +43,27 @@
             <el-icon class="res-go"><TopRight /></el-icon>
           </a>
         </section>
+
+        <!-- 校园邮箱 -->
+        <section class="wb-res wb-panel mail-card">
+          <h4><el-icon><Promotion /></el-icon> 校园邮箱</h4>
+          <template v-if="auth.user?.campusEmail">
+            <div class="mail-addr">
+              <span class="mail-addr-text">{{ auth.user.campusEmail }}</span>
+              <el-tag :type="auth.user.mailEnabled ? 'success' : 'info'" size="small">
+                {{ auth.user.mailEnabled ? '对外收发已开通' : '仅系统内' }}
+              </el-tag>
+            </div>
+            <p class="mail-note" v-if="!auth.user.mailEnabled">开通对外收发后即可收发外部邮件，请联系管理员开通</p>
+            <el-button
+              v-if="auth.user.mailEnabled"
+              size="small"
+              plain
+              @click="mailPwdDlg = true"
+            >修改邮箱密码</el-button>
+          </template>
+          <p v-else class="mail-note">校园邮箱尚未分配，请联系管理员</p>
+        </section>
       </div>
 
       <!-- 右列：我的功能（按角色） -->
@@ -64,19 +85,55 @@
         </div>
       </div>
     </div>
+    <!-- 修改校园邮箱密码 -->
+    <el-dialog v-model="mailPwdDlg" title="修改校园邮箱密码" width="420px">
+      <p class="mail-dlg-tip">邮箱：{{ auth.user?.campusEmail }}</p>
+      <el-input
+        v-model="mailPwd"
+        type="password"
+        placeholder="新密码（至少 8 位）"
+        show-password
+      />
+      <template #footer>
+        <el-button @click="mailPwdDlg = false">取消</el-button>
+        <el-button type="primary" :loading="mailPwdSaving" @click="changeMailPwd">确认修改</el-button>
+      </template>
+    </el-dialog>
     </div>
   </PortalShell>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
+import { api } from '../api/request';
 
 const router = useRouter();
 const auth = useAuthStore();
+
+// 校园邮箱改密
+const mailPwdDlg = ref(false);
+const mailPwd = ref('');
+const mailPwdSaving = ref(false);
+async function changeMailPwd() {
+  if (mailPwd.value.length < 8) return ElMessage.warning('密码至少 8 位');
+  mailPwdSaving.value = true;
+  try {
+    const res = await api('/api/me/mail-password', { method: 'POST', body: { newPassword: mailPwd.value } });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '密码已修改');
+      mailPwdDlg.value = false;
+      mailPwd.value = '';
+    } else {
+      ElMessage.error(res.message || '修改失败');
+    }
+  } finally {
+    mailPwdSaving.value = false;
+  }
+}
 
 const ROLE_LABEL = {
   admin: '超级管理员',
@@ -211,6 +268,10 @@ function onOpen(m) {
 
 /* 工作台整体放大 110%（用户浏览器 110% 缩放的默认观感） */
 .wb-zoom { zoom: 1.1; }
+.mail-card .mail-addr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mail-card .mail-addr-text { font-weight: 600; color: var(--zc-navy, #17325c); word-break: break-all; }
+.mail-card .mail-note { margin: 0 0 8px; font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.6; }
+.mail-dlg-tip { margin: 0 0 10px; font-size: 13px; color: var(--zc-navy, #17325c); font-weight: 600; }
 
 .wb-cols {
   display: grid;
