@@ -149,10 +149,11 @@
 
 ## 6. 交付与验证流程
 
-1. 改代码 → `npm.cmd run build`（前端构建必须过）
-2. `git add -A && git commit` → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）
+0. **开工前/交付前盘点**：`node scripts/gap-check.mjs`（只读）——规模、角色分布、封面/blob/令牌剩余项实测、演示账号残留、线上错误最后发生时间，对照 docs/PROGRESS.md 阶段 5 确认差距
+1. 改代码 → `npm run build`（前端构建必须过）
+2. **提交用显式 add，禁止 `git add -A`**：`git add <改动的具体文件>` → commit → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）。曾因 `git add -A` 把 `working/` 调试产物带进仓库（b4dc948 才清出）
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
-4. **推荐验证方式**：写一次性 Node 22 脚本（原生 fetch）直打线上 API 全链路（登录拿 token → 逐接口断言 → 结果落盘），跑完即删。参考已删除的 verify-m1m2.mjs 模式：学生选课→防重→辅导员审批→销假→报修→教师录成绩→学生查成绩→越权回归 40301
+4. **推荐验证方式**：写一次性 Node 22 脚本（原生 fetch）直打线上 API 全链路（登录拿 token → 逐接口断言 → 结果落盘），跑完即删。参考已删除的 verify-m1m2.mjs 模式：学生选课→防重→辅导员审批→销假→报修→教师录成绩→学生查成绩→越权回归 40301。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
 
 ## 7. 当前完成度
