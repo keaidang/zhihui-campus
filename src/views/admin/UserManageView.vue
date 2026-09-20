@@ -248,9 +248,12 @@
         用户：{{ addrRow?.real_name || addrRow?.username }}（{{ addrRow?.username }}）
         <template v-if="addrRow?.campus_email">· 当前：{{ addrRow.campus_email }}</template>
       </p>
-      <el-input v-model="addrPrefix" placeholder="邮箱前缀（字母或数字开头，3~30 位小写字母/数字/._-）" clearable>
-        <template #append>@keaidang.com</template>
-      </el-input>
+      <div class="um-field-row">
+        <el-input v-model="addrPrefix" placeholder="邮箱前缀（3~30 位小写字母/数字/._-）" clearable />
+        <el-select v-model="addrDomain" class="um-domain-select">
+          <el-option v-for="d in mailDomains" :key="d" :label="`@${d}`" :value="d" />
+        </el-select>
+      </div>
       <p class="um-muted" style="margin:8px 0 0">
         保存后用户即可在系统内使用该地址；如需对外收发，请再点“开邮箱”创建真实邮箱。
       </p>
@@ -344,7 +347,7 @@ async function submitAddr() {
   try {
     const res = await api('/api/admin/mailbox', {
       method: 'POST',
-      body: { action: 'updateAddress', userId: addrRow.value.id, prefix },
+      body: { action: 'updateAddress', userId: addrRow.value.id, prefix, domain: addrDomain.value },
     });
     if (res.code === 0) {
       ElMessage.success(res.message || '已更新');
@@ -630,4 +633,8 @@ onMounted(async () => {
 .um-dlg-tip { margin: 0 0 14px; font-size: 13px; color: var(--zc-text-sub); }
 .um-spacer { flex: 1; }
 .um-expired { color: #b83232; font-weight: 600; }
+/* 邮箱前缀 + 后缀下拉同行（按钮/下拉做成兄弟节点，避免 el-input 的 append 组挤压输入区） */
+.um-field-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.um-field-row .el-input { flex: 1; min-width: 0; }
+.um-field-row .um-domain-select { width: 148px; flex: 0 0 auto; }
 </style>

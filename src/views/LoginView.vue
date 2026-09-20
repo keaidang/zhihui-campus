@@ -64,31 +64,31 @@
             />
           </el-form-item>
           <el-form-item>
-            <el-input v-model="regForm.email" placeholder="邮箱（用于接收验证码）" :prefix-icon="Message" clearable>
-              <template #append>
-                <el-button :disabled="codeCooldown > 0 || sending" @click="sendCode">
-                  {{ sending ? '发送中…' : codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
-                </el-button>
-              </template>
-            </el-input>
+            <div class="field-row mail-row">
+              <el-input v-model="regForm.email" placeholder="邮箱（接收验证码）" :prefix-icon="Message" clearable />
+              <el-button class="side-btn" :disabled="codeCooldown > 0 || sending" @click="sendCode">
+                {{ sending ? '发送中…' : codeCooldown > 0 ? `${codeCooldown}s 重发` : '获取验证码' }}
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item>
             <el-input v-model="regForm.code" placeholder="6 位邮箱验证码" :prefix-icon="Key" maxlength="6" @keyup.enter="doRegister" />
           </el-form-item>
+          <p class="mail-tip">验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
           <el-form-item>
-            <div class="prefix-row">
-              <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀（选填，如 20261004）" :prefix-icon="Promotion" clearable>
-                <template #append>
-                  <el-button :disabled="!regForm.prefix" @click="checkPrefix">{{ prefixAvailable === true ? '✓ 可用' : '检查可用' }}</el-button>
-                </template>
-              </el-input>
-              <el-select v-model="regForm.domain" class="domain-select" size="large" @change="prefixAvailable = null; prefixHint = ''">
+            <div class="field-row">
+              <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀" :prefix-icon="Promotion" clearable @keyup.enter="checkPrefix" />
+              <el-select v-model="regForm.domain" class="domain-select" @change="resetPrefixHint">
                 <el-option v-for="d in domains" :key="d" :label="`@${d}`" :value="d" />
               </el-select>
             </div>
           </el-form-item>
-          <p v-if="prefixHint" class="prefix-hint" :class="{ ok: prefixAvailable === true }">{{ prefixHint }}</p>
-          <p class="mail-tip">验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
+          <div class="prefix-meta">
+            <span class="prefix-hint" :class="prefixState">{{ prefixHint }}</span>
+            <a v-if="prefixState !== 'checking'" class="prefix-check" :class="{ dim: !regForm.prefix.trim() }" @click="checkPrefix">
+              {{ prefixAvailable === null ? '检查可用性' : '重新检查' }}
+            </a>
+          </div>
           <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
             注 册
           </el-button>
@@ -132,8 +132,12 @@ const regForm = reactive({ realName: '', username: '', password: '', confirm: ''
 const sending = ref(false);
 const codeCooldown = ref(0);
 const prefixAvailable = ref(null);
-const prefixHint = ref('');
+const prefixState = ref('idle'); // idle | checking | ok | bad
+const PREFIX_RULE = '校园邮箱前缀选填 · 3~30 位小写字母 / 数字 / . _ -，须以字母或数字开头';
+const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
+const prefixHint = ref(PREFIX_RULE);
 let cooldownTimer = null;
+let prefixSeq = 0;
 
 // 校园邮箱可选后缀（邮件服务器实时返回，失败时回退默认）
 const domains = ref(['keaidang.com']);
@@ -172,16 +176,58 @@ async function sendCode() {
   }
 }
 
+function resetPrefixHint() {
+  prefixAvailable.value = null;
+  prefixState.value = 'idle';
+  prefixHint.value = PREFIX_RULE;
+}
+
+// 前缀可用性：显式点"检查可用性"触发（后端需查邮件服务器，约 4~10s，故不做逐字自动校验）
 async function checkPrefix() {
   const prefix = regForm.prefix.trim().toLowerCase();
-  prefixHint.value = '';
-  const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}&domain=${encodeURIComponent(regForm.domain)}`, { auth: false });
-  if (res.code === 0) {
-    prefixAvailable.value = res.data.available;
-    prefixHint.value = res.data.available ? `✓ ${prefix}@${regForm.domain} 可用` : res.data.reason || '该前缀不可用';
-  } else {
+  if (!prefix) {
+    resetPrefixHint();
+    return;
+  }
+  if (!PREFIX_RE.test(prefix)) {
+    prefixAvailable.value = false;
+    prefixState.value = 'bad';
+    prefixHint.value = '前缀格式不正确：需 3~30 位小写字母 / 数字 / . _ -，且以字母或数字开头';
+    return;
+  }
+  const seq = ++prefixSeq;
+  prefixState.value = 'checking';
+  prefixHint.value = '正在检查前缀可用性，请稍候…（不检查也可直接注册）';
+  // 后端最慢可能等邮件服务器约 20s，前端 14s 兜底，避免一直停在"检查中"
+  const guard = setTimeout(() => {
+    if (seq === prefixSeq && prefixState.value === 'checking') {
+      prefixState.value = 'bad';
+      prefixHint.value = '检查超时，可稍后重试（不影响注册，注册时仍会校验一次）';
+    }
+  }, 14000);
+  try {
+    const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}&domain=${encodeURIComponent(regForm.domain)}`, { auth: false });
+    if (seq !== prefixSeq) return; // 已有更新的请求，丢弃旧结果
+    if (res.code === 0 && res.data.available) {
+      prefixAvailable.value = true;
+      prefixState.value = 'ok';
+      prefixHint.value = `✓ ${prefix}@${regForm.domain} 可用，将作为你的校园邮箱`;
+    } else if (res.code === 0) {
+      prefixAvailable.value = false;
+      prefixState.value = 'bad';
+      prefixHint.value = res.data.reason || '该前缀不可用，可换一个';
+    } else {
+      prefixAvailable.value = null;
+      prefixState.value = 'bad';
+      prefixHint.value = '检查失败，可稍后再试（不影响注册）';
+    }
+  } catch {
+    if (seq !== prefixSeq) return;
     prefixAvailable.value = null;
-    prefixHint.value = '检查失败，可稍后再试';
+    prefixState.value = 'bad';
+    prefixHint.value = '检查失败，可稍后再试（不影响注册）';
+  } finally {
+    clearTimeout(guard);
   }
 }
 
@@ -251,12 +297,44 @@ function onForgot() {
 
 <style scoped>
 .w-full { width: 100%; }
-.prefix-row { display: flex; gap: 8px; width: 100%; }
-.prefix-row .el-input { flex: 1; min-width: 0; }
-.domain-select { width: 158px; flex-shrink: 0; }
-.domain-select :deep(.el-select__wrapper) { height: var(--el-component-size-large); }
-.prefix-hint { margin: -8px 0 4px; font-size: 12px; color: #b45309; }
-.prefix-hint.ok { color: #0d7a6c; }
-.mail-tip { margin: -4px 0 10px; font-size: 12px; color: #64748b; line-height: 1.6; }
-.mail-tip b { color: #b45309; }
+
+/* 输入框 + 操作按钮同行：按钮做成兄弟节点。
+   不要用 el-input 的 #append（Element Plus 会渲染成 display:table 的
+   .el-input-group），在 430px 卡片里追加按钮会把真正的输入区挤到只剩几十像素。 */
+.field-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.field-row .el-input { flex: 1; min-width: 0; }
+.field-row .el-select { flex: 0 0 auto; }
+/* 覆盖 .gate-card .el-button 的 6px 字距，否则右侧窄按钮过宽 */
+.gate-card .field-row .el-button { letter-spacing: 0.5px; padding: 0 12px; height: 40px; }
+/* 后缀下拉：@keaidang.com 需约 101px（14px 字号），收到 12.5px 后 164px 宽刚好不截断 */
+.domain-select { width: 164px; }
+.domain-select :deep(.el-select__wrapper) { font-size: 12.5px; }
+
+/* 前缀提示行：左侧说明占满，右侧"检查可用性"文字链（不挤占输入框宽度） */
+.prefix-meta { display: flex; align-items: flex-start; gap: 10px; margin: -10px 0 16px; }
+.prefix-hint { flex: 1; min-width: 0; font-size: 12px; line-height: 1.6; color: rgba(255, 255, 255, 0.5); }
+.prefix-hint.idle { color: rgba(255, 255, 255, 0.5); }
+.prefix-hint.checking { color: rgba(255, 255, 255, 0.62); }
+.prefix-hint.ok { color: #5eead4; }
+.prefix-hint.bad { color: #fcd34d; }
+.prefix-check {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #7dd3fc;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 1px dashed rgba(125, 211, 252, 0.5);
+}
+.prefix-check:hover { color: #bae6fd; }
+.prefix-check.dim { color: rgba(255, 255, 255, 0.35); border-bottom-color: rgba(255, 255, 255, 0.18); }
+.mail-tip { margin: -8px 0 14px; font-size: 12px; color: rgba(255, 255, 255, 0.5); line-height: 1.6; }
+.mail-tip b { color: #fcd34d; }
+
+/* 窄屏：把后缀下拉收紧，保证输入框仍有可读宽度 */
+@media (max-width: 640px) {
+  .domain-select { width: 152px; }
+  .domain-select :deep(.el-select__wrapper) { font-size: 12px; }
+  .gate-card .field-row .el-button { padding: 0 10px; }
+}
 </style>
