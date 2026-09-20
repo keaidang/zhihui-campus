@@ -17,7 +17,7 @@ export async function onRequestPost(context) {
     if (!EMAIL_RE.test(email)) return fail(43001, '邮箱格式不正确');
 
     // 同邮箱 60s 间隔
-    const [recent] = await query(
+    const recent = await query(
       `SELECT created_at FROM sys_email_code WHERE email = ? ORDER BY id DESC LIMIT 1`,
       [email],
     );
@@ -25,13 +25,13 @@ export async function onRequestPost(context) {
       return fail(43002, '发送太频繁，请 1 分钟后再试');
     }
     // 每邮箱每日 10 封
-    const [perEmail] = await query(
+    const perEmail = await query(
       `SELECT COUNT(*) n FROM sys_email_code WHERE email = ? AND created_at > NOW() - INTERVAL 1 DAY`,
       [email],
     );
     if (Number(perEmail[0].n) >= 10) return fail(43003, '该邮箱今日发送次数已达上限');
     // 每 IP 每日 20 封
-    const [perIp] = await query(
+    const perIp = await query(
       `SELECT COUNT(*) n FROM sys_email_code WHERE ip = ? AND created_at > NOW() - INTERVAL 1 DAY`,
       [ip],
     );

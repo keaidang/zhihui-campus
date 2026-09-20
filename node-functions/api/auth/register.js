@@ -47,11 +47,11 @@ export async function onRequestPost(context) {
     if (exists.length > 0) return fail(41002, '用户名已被注册');
 
     // 外部邮箱未被其他账号绑定
-    const [dupEmail] = await query('SELECT id FROM sys_user WHERE email = ? AND email != ""', [email]);
+    const dupEmail = await query('SELECT id FROM sys_user WHERE email = ? AND email != ""', [email]);
     if (dupEmail.length > 0) return fail(43114, '该邮箱已被其他账号绑定');
 
     // 校验验证码：取该邮箱最新一条未使用记录
-    const [codeRows] = await query(
+    const codeRows = await query(
       `SELECT id, code, attempts, expires_at FROM sys_email_code
         WHERE email = ? AND purpose = 'register' AND used = 0
         ORDER BY id DESC LIMIT 1`,
@@ -70,7 +70,7 @@ export async function onRequestPost(context) {
     // 校园邮箱前缀占用（系统内）
     const campusEmail = prefix ? `${prefix}${CAMPUS_DOMAIN}` : null;
     if (prefix) {
-      const [dupCampus] = await query('SELECT id FROM sys_user WHERE campus_email = ?', [campusEmail]);
+      const dupCampus = await query('SELECT id FROM sys_user WHERE campus_email = ?', [campusEmail]);
       if (dupCampus.length > 0) return fail(43112, '校园邮箱前缀已被占用，请换一个');
     }
 

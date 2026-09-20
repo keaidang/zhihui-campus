@@ -15,7 +15,7 @@ export async function onRequestPost(context) {
     const newPassword = String(body.newPassword || '');
     if (newPassword.length < 8 || newPassword.length > 64) return fail(43300, '密码长度须为 8~64 位');
 
-    const [users] = await query(
+    const users = await query(
       'SELECT id, campus_email, mail_enabled, mail_mailbox_id FROM sys_user WHERE id = ?',
       [userId],
     );

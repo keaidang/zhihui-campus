@@ -64,7 +64,7 @@ export async function onRequestPost(context) {
     const userId = Number(body.userId);
     if (!userId) return fail(43200, '缺少 userId');
 
-    const [users] = await query(
+    const users = await query(
       'SELECT id, username, real_name, campus_email, mail_enabled, mail_mailbox_id, mail_password FROM sys_user WHERE id = ?',
       [userId],
     );
