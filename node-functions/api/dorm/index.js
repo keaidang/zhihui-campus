@@ -78,7 +78,12 @@ export async function onRequestGet(context) {
                   WHERE da.room_id = r.id AND da.check_out_at IS NULL) AS residents
          FROM dorm_room r ORDER BY r.building_id, r.room_no`,
     );
-    return ok({ buildings, rooms: rooms.map((r) => ({ ...r, residents: r.residents ? JSON.parse(r.residents) : [] })) });
+    // mysql2 对 JSON 类型（含 JSON_ARRAYAGG）自动解析为对象：有人住=数组，空房=NULL
+    const normalize = (v) => (v == null ? [] : typeof v === 'string' ? JSON.parse(v) : v);
+    return ok({
+      buildings,
+      rooms: rooms.map((r) => ({ ...r, residents: normalize(r.residents) })),
+    });
   } catch (e) {
     return jsonError(e);
   }
