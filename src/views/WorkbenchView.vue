@@ -1,5 +1,6 @@
 <template>
   <PortalShell active="workbench">
+    <div class="wb-zoom">
     <!-- 欢迎条 -->
     <section class="wb-hero">
       <div>
@@ -63,6 +64,7 @@
         </div>
       </div>
     </div>
+    </div>
   </PortalShell>
 </template>
 
@@ -85,10 +87,11 @@ const ROLE_LABEL = {
 };
 
 const RESOURCES = [
-  { name: '学信网', desc: '学籍学历查询', url: 'https://www.chsi.com.cn/', color: '#2563eb' },
-  { name: '中国共青团', desc: '共青团中央官网', url: 'https://www.gqt.org.cn/', color: '#dc2626' },
-  { name: '南通市图书馆', desc: '数字资源与馆藏', url: 'http://www.ntlib.cn/', color: '#0d9488' },
-  { name: '中国国家图书馆', desc: '国家图书馆·数字资源', url: 'http://www.nlc.cn/', color: '#d97706' },
+  { name: '中国知网', desc: '学术文献检索', url: 'https://www.cnki.net/', color: '#2563eb' },
+  { name: '学信网', desc: '学籍学历查询', url: 'https://www.chsi.com.cn/', color: '#0d7a6c' },
+  { name: '南通市图书馆', desc: '数字资源与馆藏', url: 'https://www.ntlib.org.cn/', color: '#dc2626' },
+  { name: '中国国家图书馆', desc: '国家图书馆·数字资源', url: 'https://www.nlc.cn/', color: '#d97706' },
+  { name: '中国共青团', desc: '共青团中央官网', url: 'https://www.gqt.org.cn/', color: '#6b46c1' },
 ];
 
 const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
@@ -205,6 +208,9 @@ function onOpen(m) {
   backdrop-filter: blur(6px);
   white-space: nowrap;
 }
+
+/* 工作台整体放大 110%（用户浏览器 110% 缩放的默认观感） */
+.wb-zoom { zoom: 1.1; }
 
 .wb-cols {
   display: grid;
