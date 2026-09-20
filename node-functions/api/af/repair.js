@@ -4,6 +4,7 @@
 import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
+import { notify } from '../../lib/notify.js';
 
 export { preflight as onRequestOptions };
 
@@ -82,6 +83,16 @@ export async function onRequestPost(context) {
         await query('UPDATE af_repair SET status = 2, handler_id = ?, remark = ? WHERE id = ?', [userId, remark, id]);
       }
       await opLog(userId, `repair.${action}`, `repair:${id}`, remark, ip);
+      // 站内通知：受理/完成进度推送给报修人
+      const owner = await query('SELECT user_id, location FROM af_repair WHERE id = ?', [id]);
+      await notify(
+        owner[0]?.user_id,
+        action === 'accept' ? '你的报修工单已受理' : '你的报修工单已完成',
+        action === 'accept'
+          ? `你提交的「${owner[0]?.location || ''}」报修已被受理${remark ? `，备注：${remark}` : ''}，师傅会尽快上门处理。`
+          : `你提交的「${owner[0]?.location || ''}」报修已完成${remark ? `，备注：${remark}` : ''}，请确认。`,
+        { senderId: userId, biz: 'repair' },
+      );
       return ok({ id, status: action === 'accept' ? 1 : 2 }, action === 'accept' ? '已受理' : '工单已完成');
     }
 

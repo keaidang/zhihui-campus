@@ -168,11 +168,37 @@
 | POST | /api/forum/threads | 登录 | action=`create`（交易板块 item_name/price/contact 必填）/ `reply` / `edit` / `delete`（作者或 admin）/ `pin` `lock`（admin） |
 | POST | /api/forum/moderate | admin | action=`ban`（禁言 user_id+until_at+reason）/ `unban` |
 
+### 5.12 宿舍管理（schema-010，/api/dorm）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/dorm?view=my | 登录 | 我的宿舍（楼栋/房间/床位/入住时间/室友） |
+| GET | /api/dorm?view=overview | admin/counselor | 楼栋+房间网格（含住户、入住进度） |
+| GET | /api/dorm?view=students | admin/counselor | 未住宿学生清单（分配下拉用） |
+| POST | /api/dorm | admin/counselor | action=`addBuilding`（性别属性楼栋）/ `addRoom` / `toggleRoom`（有住户拒停用）/ `assign`（事务 FOR UPDATE：容量+性别双重校验，自动分配最小床位号）/ `unassign`（退宿留历史，occupied 同事务维护） |
+
+- 宿舍报修复用 `/api/af/repair`（学生提交时前端自动带出住宿位置）；sys_user.gender（0未知 1男 2女）为分配约束依据
+- 错误码：49201 参数 / 49202 重复 / 49203 性别不符 / 49204 不存在 / 49205 停用冲突 / 49206 已满员 / 49207 已在住
+
+### 5.13 站内信 / 站内通知（schema-011，/api/notice/messages）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/notice/messages?scope=all\|unread&page= | 登录 | 我的消息（含未读数、分页 20/页） |
+| GET | /api/notice/messages?view=recipients | teacher/counselor/admin | 可选接收学生清单 |
+| POST | /api/notice/messages | 登录 | action=`read` / `readAll` / `delete`（本人消息）；`send`（teacher/counselor/admin：target=`user`/`role`/`all`，all 仅 admin） |
+
+- 自动通知接线：请假审批结果（lib → af/leave.js approve/reject）、社团审批结果（club/apply.js review）、报修受理/完成（af/repair.js）；统一走 lib/notify.js（尽力而为，失败不影响主业务）
+- sys_message：sender_id=0 为系统通知；biz 标记来源业务（leave/club/repair/manual）；错误码 49301
+
+### 5.14 数据驾驶舱（M4，/api/admin/dashboard）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/admin/dashboard | admin/leader | 全校聚合只读：用户/性别/各院系分布、教务（课程/选课/成绩）、学工（请假/报修/待审）、宿舍床位、生活服务（图书/社团/论坛）、近 7 日登录趋势、最近 10 条管理动态 |
+
 
 ## 6. 未实现模块端点（规划，实现后在此补充）
-
-### dashboard（M4 驾驶舱）
-- `GET /api/admin/dashboard` 聚合统计（leader 只读，scope=all）
 
 ### 外部图书馆系统对接（预留）
 - `lib_book.ext_source/ext_id` 已预留；对接时在 lib/books.js 增加同步入口即可

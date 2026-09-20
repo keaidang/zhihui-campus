@@ -14,6 +14,12 @@
         </div>
         <div class="shell-user">
           <span class="shell-role">{{ roleLabel }}</span>
+          <!-- 站内信未读提醒 -->
+          <span class="shell-bell" title="消息中心" @click="$router.push('/messages')">
+            <el-badge :value="unread" :hidden="unread === 0" :max="99">
+              <el-icon :size="18"><Bell /></el-icon>
+            </el-badge>
+          </span>
           <el-dropdown @command="onCommand">
             <span class="shell-user-btn">
               <el-avatar :size="28" :style="{ background: 'var(--zc-navy)' }">
@@ -78,10 +84,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { Bell } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
+import { api } from '../api/request';
 
 const props = defineProps({
   active: { type: String, default: 'workbench' },
@@ -103,15 +111,17 @@ const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
 /** 统一菜单表：ALL = 全角色；具体能力由路由守卫 + 后端 scope 双重兜底 */
 const MENUS = [
   { key: 'workbench', label: '工作台', icon: 'HomeFilled', path: '/workbench', roles: null },
+  { key: 'dashboard', label: '数据驾驶舱', icon: 'DataAnalysis', path: '/dashboard', roles: ['admin', 'leader'] },
+  { key: 'messages', label: '消息中心', icon: 'ChatLineRound', path: '/messages', roles: null },
   { key: 'forum', label: '校园论坛', icon: 'ChatDotRound', path: '/forum', roles: null },
   { key: 'library', label: '图书借阅', icon: 'Reading', path: '/library', roles: null },
   { key: 'club', label: '社团活动', icon: 'Flag', path: '/club', roles: null },
   { key: 'lf', label: '失物招领', icon: 'Search', path: '/lost-found', roles: null },
   { key: 'mail', label: '校园邮箱', icon: 'Promotion', path: '/mail', roles: null },
+  { key: 'dorm', label: '宿舍管理', icon: 'House', path: '/dorm', roles: null },
   { key: 'edu-elect', label: '课程选课', icon: 'Notebook', path: '/edu/elect', roles: ['student'] },
   { key: 'edu-scores', label: '成绩课表', icon: 'Collection', path: '/edu/scores', roles: ['student'] },
   { key: 'af-leave', label: '我的请假', icon: 'Clock', path: '/af/leave', roles: ['student'] },
-  { key: 'af-repair', label: '宿舍报修', icon: 'Tools', path: '/af/repair', roles: ['student'] },
   { key: 'edu-teach', label: '我的课程', icon: 'Notebook', path: '/edu/teach', roles: ['teacher'] },
   { key: 'edu-entry', label: '成绩录入', icon: 'EditPen', path: '/edu/score-entry', roles: ['teacher'] },
   { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'admin'] },
@@ -125,21 +135,8 @@ const MENUS = [
 
 const menus = computed(() => MENUS.filter((m) => !m.roles || auth.hasRole(m.roles)));
 
-const pendingMenus = computed(() => {
-  if (auth.primaryRole === 'leader') {
-    return [
-      { label: '数据驾驶舱', icon: 'DataAnalysis' },
-      { label: '统计报表', icon: 'Histogram' },
-    ];
-  }
-  if (auth.primaryRole === 'student') {
-    return [
-      { label: '图书借阅', icon: 'Reading' },
-      { label: '社团活动', icon: 'Flag' },
-    ];
-  }
-  return [];
-});
+// 全部模块已上线，不再有"筹备中"占位
+const pendingMenus = computed(() => []);
 
 async function onCommand(cmd) {
   if (cmd === 'logout') {
@@ -152,6 +149,24 @@ async function onCommand(cmd) {
     router.push('/');
   }
 }
+
+// ---- 站内信未读数轮询（登录后每 60s 拉一次，静默失败不打扰用户） ----
+const unread = ref(0);
+let unreadTimer = null;
+
+async function pollUnread() {
+  if (!auth.accessToken) return;
+  try {
+    const res = await api('/api/notice/messages?scope=unread&page=1');
+    if (res.code === 0) unread.value = res.data.unread;
+  } catch { /* ignore */ }
+}
+
+onMounted(() => {
+  if (auth.accessToken) pollUnread();
+  unreadTimer = setInterval(pollUnread, 60_000);
+});
+onUnmounted(() => clearInterval(unreadTimer));
 </script>
 
 <style scoped>
@@ -205,6 +220,8 @@ async function onCommand(cmd) {
 .shell-brand-text { font-size: 18px; font-weight: 700; color: var(--zc-navy); letter-spacing: 2px; }
 .shell-brand-sub { font-size: 12px; color: var(--zc-text-sub); padding-left: 10px; border-left: 1px solid var(--zc-border); letter-spacing: 1px; }
 .shell-user { display: flex; align-items: center; gap: 14px; }
+.shell-bell { display: flex; align-items: center; cursor: pointer; color: var(--zc-navy); padding: 4px; }
+.shell-bell:hover { opacity: 0.8; }
 .shell-role {
   font-size: 12px;
   color: var(--zc-navy);

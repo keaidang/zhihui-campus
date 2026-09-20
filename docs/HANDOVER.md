@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
 > 最后更新：2026-09-20。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + **M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）** 全量可用，演示数据齐全。
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据齐全。
 
 ## 1. 项目快照
 
@@ -35,7 +35,7 @@
 
 ```
 ├─ docs/                      # 文档（单一事实来源，先改文档再改代码）
-├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ schema-009-m3-modules（M3 十一张表）
+├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ 009-m3-modules（M3 十一表）+ 010-dorm（宿舍）+ 011-message（站内信）
 ├─ node-functions/
 │  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装)
 │  └─ api/
@@ -50,6 +50,9 @@
 │     ├─ lf/                  # items(失物招领发布/浏览/关闭)                     ← M3
 │     ├─ club/                # apply(申请/审批) recruit(发布/预约/取消)          ← M3
 │     └─ forum/               # boards threads(发帖/回复/置顶/锁定) moderate(封禁) ← M3
+│     ├─ dorm/                # index(楼栋/房间/住宿分配 assign 事务+性别约束) ← 宿舍管理
+│     ├─ notice/              # messages(站内信列表/已读/发送/广播) ← schema-011
+│     └─ admin/dashboard.js   # M4 驾驶舱聚合（admin/leader 只读）
 ├─ edge-functions/            # KV 诊断位（kv-check 等）
 ├─ src/
 │  ├─ api/request.js          # 统一请求封装（Bearer + 401 自动刷新重放）
@@ -63,10 +66,12 @@
 │     ├─ WorkbenchView.vue    # 工作台：账号卡 + 功能矩阵 + 校园邮箱卡 + 常用资源横排
 │     ├─ MailView.vue         # /mail 收发件页（收件箱/已发送/详情/写邮件，lucide 图标）
 │     ├─ m3/                  # LibraryView LostFoundView ClubView ForumView ForumThreadView ← M3
+│     ├─ dorm/DormView.vue    # /dorm 宿舍管理：学生=我的宿舍+报修；staff=楼栋房间网格+分配
+│     ├─ MessageView.vue      # /messages 消息中心 + staff 撰写（PortalShell 顶栏铃铛 60s 轮询未读）
 │     ├─ admin/               # UserManageView（含邮箱管理/僵尸筛选/CSV 导出） StudentManageView OrgManageView CourseManageView
 │     ├─ edu/                 # ElectView ScoresView TeachView ScoreEntryView
 │     └─ af/                  # LeaveView ApproveView RepairView RepairManageView NoticeView
-└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs seed-m3.mjs cleanup.mjs（白名单制）
+└─ scripts/                   # migrate.mjs grant-role.mjs seed-demo.mjs seed-admin-staff.mjs seed-m3.mjs seed-dorm.mjs cleanup.mjs（白名单制）
 ```
 
 ### 校园邮箱体系（2026-09-20 上线，关键口径）
@@ -88,16 +93,20 @@
 - **图片**：`/api/blob`（POST base64≤3MB → LONGBLOB 暂存，GET 公共只读带 immutable 缓存）；前端统一 `ImgUploader` 组件（canvas 压缩到 1280px/JPEG 0.85）；接图床时只改 blob.js 与 ImgUploader 的 URL 生成
 - **忘记密码**：登录页对话框 → `POST /api/auth/password/forgot-send-code`（账号+绑定邮箱匹配才发码，purpose='reset'）→ `forgot-reset`（校验后重置 + 删 sys_refresh_token 吊销全部会话）
 - **测试数据**：`node scripts/seed-m3.mjs`（幂等）：420 本藏书 / 失物 8 条 / 社团 6 通过+2 待审 / 论坛 30+ 帖；图片抓 picsum 失败自动生成 SVG 占位图存 sys_blob
+- **宿舍管理**（schema-010）：原独立"宿舍报修"入口已并入 `/dorm`（/af/repair 路由 301 → /dorm，RepairView.vue 留档未删）；分配=事务 FOR UPDATE + **性别楼栋约束**（sys_user.gender 0未知/1男/2女 ↔ dorm_building.gender）+ **生成列 active_flag 唯一键**保证一人一条在住；occupied 冗余计数必须与分配/退宿同事务维护；报修复用 /api/af/repair
+- **站内信**（schema-011）：sys_message 单表（sender_id=0 系统、biz 标来源业务）；发送统一走 lib/notify.js（notify/notifyMany/roleUserIds/allUserIds，尽力而为失败不阻断）；已接线：请假审批结果、社团审批结果、报修受理/完成；前端 PortalShell 铃铛 60s 轮询 /api/notice/messages
+- **驾驶舱**（M4）：/api/admin/dashboard 一次 GET 并发 21 条聚合查询（admin/leader 只读）；前端 DashboardView 全 CSS 图表零依赖；页面 /dashboard + 菜单仅 admin/leader 可见
+- **宿舍数据**：`node scripts/seed-dorm.mjs`（幂等）：性别确定性补齐（user_id 奇偶，男201/女202）→ 384 间房 → 全体学生按性别入住（403/1728 床，集中住满、留空房演示分配）
 
 ## 4. 五角色与页面权限（已定稿，勿动摇）
 
 | 角色 | 主题色 | 菜单/能力 |
 |---|---|---|
-| student | 统一学术风 | 选课、成绩课表、请销假、报修、公告 |
-| teacher | 统一学术风 | 我的课程、成绩录入、公告发布（本院） |
-| counselor | 统一学术风 | 请假审批（本院）、报修处理、学生名册（本院）、公告 |
-| leader | 统一学术风 | 纯只读，M4 驾驶舱（未做），公告 |
-| admin | 统一学术风 | 全部 + 用户/角色管理独占 |
+| student | 统一学术风 | 选课、成绩课表、请销假、宿舍管理（我的宿舍+报修）、公告、消息中心 |
+| teacher | 统一学术风 | 我的课程、成绩录入、公告发布（本院）、站内信发送 |
+| counselor | 统一学术风 | 请假审批（本院）、宿舍管理+报修处理、学生名册（本院）、公告、站内信 |
+| leader | 统一学术风 | **数据驾驶舱（只读大屏）**、公告、消息中心 |
+| admin | 统一学术风 | 全部 + 用户/角色管理独占 + 全校广播 + 驾驶舱 |
 
 - **视觉方向（2026-09-18 用户定稿）**：不再按角色区分主题色，全站统一"学术深蓝 #17325c + 素金 #c8a35f 点缀 + 玻璃拟态卡片"，校园实景背景清晰透出；角色仅以文字徽标呈现
 - 旧 `--role-accent` 机制已移除（PortalShell/WorkbenchView）；新 CSS 变量：--zc-gold、--zc-glass、--zc-glass-border（核对 :root）

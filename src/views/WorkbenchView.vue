@@ -172,7 +172,9 @@ function fmtTime(t) {
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
 const BY_ROLE = {
   admin: [
+    { title: '数据驾驶舱', desc: '全校运行态势只读大屏', icon: 'DataAnalysis', path: '/dashboard' },
     { title: '用户管理', desc: '账号、角色、状态、归属院系', icon: 'UserFilled', path: '/admin/users' },
+    { title: '宿舍管理', desc: '楼栋房间、住宿分配、报修处理', icon: 'House', path: '/dorm' },
     { title: '请假审批', desc: '全校请假单审批', icon: 'Checked', path: '/af/approve' },
     { title: '报修处理', desc: '全校报修工单受理', icon: 'SetUp', path: '/af/repair-manage' },
     { title: '公告管理', desc: '发布全校公告、置顶撤回', icon: 'Bell', path: '/af/notice' },
@@ -183,6 +185,7 @@ const BY_ROLE = {
   ],
   counselor: [
     { title: '请假审批', desc: '本院学生请销假审批', icon: 'Checked', path: '/af/approve' },
+    { title: '宿舍管理', desc: '住宿分配与报修处理', icon: 'House', path: '/dorm' },
     { title: '报修处理', desc: '报修工单受理与派办', icon: 'SetUp', path: '/af/repair-manage' },
     { title: '学生名册', desc: '本班学生名单与管理', icon: 'UserFilled', path: '/admin/students' },
     { title: '公告管理', desc: '发布本院公告', icon: 'Bell', path: '/af/notice' },
@@ -197,8 +200,7 @@ const BY_ROLE = {
     { title: '校园论坛', desc: '校园社区讨论', icon: 'ChatDotRound', path: '/forum' },
   ],
   leader: [
-    { title: '数据驾驶舱', desc: '全校运行态势只读大屏（M4）', icon: 'DataAnalysis' },
-    { title: '统计报表', desc: '学院/年级多维报表（M4）', icon: 'Histogram' },
+    { title: '数据驾驶舱', desc: '全校运行态势只读大屏', icon: 'DataAnalysis', path: '/dashboard' },
     { title: '公告中心', desc: '全校通知公告浏览', icon: 'Bell', path: '/af/notice' },
     { title: '校园论坛', desc: '校园社区讨论', icon: 'ChatDotRound', path: '/forum' },
   ],
@@ -206,7 +208,7 @@ const BY_ROLE = {
     { title: '课程选课', desc: '在线选课退课，名额实时', icon: 'Notebook', path: '/edu/elect' },
     { title: '成绩课表', desc: '成绩单与周课表', icon: 'Collection', path: '/edu/scores' },
     { title: '请销假', desc: '请假申请与销假闭环', icon: 'Clock', path: '/af/leave' },
-    { title: '宿舍报修', desc: '报修提交与进度跟踪', icon: 'Tools', path: '/af/repair' },
+    { title: '宿舍管理', desc: '我的宿舍、室友与报修', icon: 'House', path: '/dorm' },
     { title: '图书借阅', desc: '馆藏检索、借阅与到期提醒', icon: 'Reading', path: '/library' },
     { title: '社团活动', desc: '社团申请与活动报名', icon: 'Flag', path: '/club' },
     { title: '校园论坛', desc: '板块交流 · 二手交易集市', icon: 'ChatDotRound', path: '/forum' },

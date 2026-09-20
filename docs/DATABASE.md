@@ -74,15 +74,20 @@
 | forum_ban | 禁言 | user_id, until_at, reason（发帖/回复前校验） |
 | sys_blob | 图片暂存 | **token CHAR(16) 唯一**，mime, size, content LONGBLOB；访问走 `/api/blob?token=`（EdgeOne 函数不支持路径参数） |
 
-## 3. 未实现模块表规划（草案，实现前先按实情修订）
-
-### dorm 宿舍
-| 表 | 说明 | 关键字段 |
+### 宿舍管理（schema-010，2026-09-20）
+| 表/字段 | 说明 | 关键点 |
 |---|---|---|
-| dorm_building | 楼栋 | name, gender_limit |
-| dorm_room | 房间 | building_id, room_no, capacity, occupied |
-| dorm_assignment | 住宿分配 | room_id, user_id, check_in_at, check_out_at |
-| dorm_repair_order | 报修工单 | room_id, user_id, description, image_url, status(1提交2受理3完成4评价), handler_id, rating |
+| sys_user.gender | 性别 0未知 1男 2女 | 宿舍分配约束依据；种子按 user_id 奇偶确定性铺齐（男 201/女 202） |
+| dorm_building | 楼栋 | name 唯一，**gender 楼栋性别属性**（male/female），floors；8 栋种子（1-4 男寝 5-8 女寝） |
+| dorm_room | 房间 | UNIQUE(building_id, room_no)，floor, capacity, **occupied 冗余计数**（与分配同事务维护），status |
+| dorm_assignment | 住宿分配 | **生成列 active_flag（在住=1/退宿=NULL）+ UNIQUE(user_id, active_flag)** 实现"一人最多一条在住"的库级约束，退宿留历史可再分配；报修复用 af_repair（M2 表）不另建 |
+
+### 站内信（schema-011，2026-09-20）
+| 表 | 说明 | 关键点 |
+|---|---|---|
+| sys_message | 站内信/通知单表 | sender_id=0 系统通知；**biz 标记来源业务**（leave/club/repair/manual）；read_at NULL=未读；索引(receiver_id, read_at, created_at)；广播=批量插入 |
+
+## 3. 未实现模块表规划（草案，实现前先按实情修订）
 
 ### fit 健身打卡（可选）
 | 表 | 说明 | 关键字段 |
@@ -108,3 +113,4 @@ M3 起图片统一存 `sys_blob` 表（LONGBLOB，token CHAR(16)），URL 形如
 - schema 种子随脚本幂等写入（角色/院系/班级/课程/教学班/公告/行政部门/论坛板块）；账号用 `scripts/grant-role.mjs`，批量演示数据见 HANDOVER.md（seed-demo / seed-admin-staff）
 - **M3 测试数据 `node scripts/seed-m3.mjs`（幂等）**：420 本藏书 / 失物 8 条 / 社团 6 通过+2 待审 / 论坛 30+ 帖+回复；图片抓 picsum 失败自动生成 SVG 占位图存 sys_blob
 - 社团预约已用 `scripts/fix-club-bookings.mjs` 打散到全体 400 学生（seed 早期版本集中给前排学生，勿重跑旧逻辑）；student004 保留 AI 兴趣社 1 条预约
+- **宿舍数据 `node scripts/seed-dorm.mjs`（幂等）**：学生性别确定性补齐（user_id 奇偶）→ 8 栋 × 6 层 × 8 间房（4 人间为主含 6 人间）→ 403 名学生按性别全部入住（集中住满，保留空位供演示分配）

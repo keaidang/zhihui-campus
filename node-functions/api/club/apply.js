@@ -6,6 +6,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
+import { notify } from '../../lib/notify.js';
 
 export { preflight as onRequestOptions };
 
@@ -93,6 +94,16 @@ export async function onRequestPost(context) {
         [pass ? 1 : 2, opinion || (pass ? '同意' : '不符合要求'), userId, id],
       );
       await opLog(userId, 'club.review', `club-apply:${id}`, `${rows[0].name} ${pass ? '通过' : '驳回'}`, ip);
+      // 站内通知：审批结果推送给申请人
+      const proposer = await query('SELECT proposer_id FROM club_application WHERE id = ?', [id]);
+      await notify(
+        proposer[0]?.proposer_id,
+        pass ? `社团申请「${rows[0].name}」已通过` : `社团申请「${rows[0].name}」被驳回`,
+        pass
+          ? `你提交的社团申请已通过教务处审批${opinion ? `，意见：${opinion}` : ''}。可前往"社团活动"发布招聘信息。`
+          : `你提交的社团申请未通过${opinion ? `，原因：${opinion}` : ''}。可修改后重新提交。`,
+        { senderId: userId, biz: 'club' },
+      );
       return ok({ id, status: pass ? 1 : 2 }, pass ? '已通过，可在"社团活动"页发布招聘' : '已驳回');
     }
 

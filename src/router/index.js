@@ -77,9 +77,7 @@ const router = createRouter({
     },
     {
       path: '/af/repair',
-      name: 'af-repair',
-      component: () => import('../views/af/RepairView.vue'),
-      meta: { requiresAuth: true, roles: ['student'] },
+      redirect: '/dorm',
     },
     {
       path: '/af/repair-manage',
@@ -130,6 +128,27 @@ const router = createRouter({
       name: 'forum-thread',
       component: () => import('../views/m3/ForumThreadView.vue'),
       meta: { requiresAuth: true },
+    },
+    // ---- 宿舍管理（schema-010，替代独立"宿舍报修"入口）----
+    {
+      path: '/dorm',
+      name: 'dorm',
+      component: () => import('../views/dorm/DormView.vue'),
+      meta: { requiresAuth: true },
+    },
+    // ---- 站内信 / 站内通知（schema-011）----
+    {
+      path: '/messages',
+      name: 'messages',
+      component: () => import('../views/MessageView.vue'),
+      meta: { requiresAuth: true },
+    },
+    // ---- M4 驾驶舱 ----
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../views/admin/DashboardView.vue'),
+      meta: { requiresAuth: true, roles: ['admin', 'leader'] },
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

@@ -4,6 +4,7 @@
 import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
 import { requireRoles, dataScope, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
+import { notify } from '../../lib/notify.js';
 
 export { preflight as onRequestOptions };
 
@@ -119,6 +120,16 @@ export async function onRequestPost(context) {
         await conn.query('UPDATE af_leave SET status = ? WHERE id = ?', [approved ? 2 : 3, leaveId]);
       });
       await opLog(userId, `leave.${action}`, `leave:${leaveId}`, opinion, ip);
+      // 站内通知：审批结果推送给申请人
+      const applicant = await query('SELECT student_id FROM af_leave WHERE id = ?', [leaveId]);
+      await notify(
+        applicant[0]?.student_id,
+        approved ? '你的请假申请已批准' : '你的请假申请被驳回',
+        approved
+          ? `你的请假申请已通过审批${opinion ? `，意见：${opinion}` : ''}。请按时返校并在返校后完成销假。`
+          : `你的请假申请未通过${opinion ? `，原因：${opinion}` : ''}。如有疑问请联系辅导员。`,
+        { senderId: userId, biz: 'leave' },
+      );
       return ok({ leaveId, status: approved ? 2 : 3 }, approved ? '已批准' : '已驳回');
     }
 
