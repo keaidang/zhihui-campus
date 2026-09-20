@@ -41,7 +41,9 @@ export async function onRequestPost(context) {
     const r = await sendVerificationCode(email, code, '注册');
     if (!r.ok) {
       console.error('[send-code] LanQin 发送失败:', r.error);
-      return fail(43004, '验证码发送失败，请稍后重试 [debug] ' + String(r.error || '').slice(0, 200));
+      return fail(43004, '验证码发送失败 [debug] ' + String(r.error || '').slice(0, 120)
+        + ' | mbxId=' + (process.env.LANQIN_SYSTEM_MAILBOX_ID || '(空)')
+        + ' | key=' + (process.env.LANQIN_API_KEY ? process.env.LANQIN_API_KEY.slice(0, 8) + '…' : '(空)'));
     }
 
     await query(
