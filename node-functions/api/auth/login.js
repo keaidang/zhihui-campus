@@ -21,18 +21,20 @@ export async function onRequestPost(context) {
       return fail(42900, '失败次数过多，请 10 分钟后再试', 429);
     }
 
-    // 接口限流（市面常见频率，DB 流水计数——多实例安全）：
-    //   IP+账号 5 次失败/min 防撞库；IP 全局 30 次失败/min 防爆破（容忍 NAT/机房场景）
-    const fn = await query(
-      'SELECT COUNT(*) n FROM sys_login_log WHERE username = ? AND ip = ? AND success = 0 AND created_at > NOW() - INTERVAL 60 SECOND',
-      [username, ip],
+    // 接口限流（市面常见频率，DB 流水计数——多实例安全）。
+    // ★ 注意：Node 侧 x-forwarded-for 是 EdgeOne 出口代理 IP（会在代理池多个 IP 间交替），
+    //   不是真实客户端 IP——因此防撞库按"账号"维度计数（撞库的本质即按账号爆破），
+    //   IP 维度阈值放宽（出口池稀释），仅作辅助。
+    const fa = await query(
+      'SELECT COUNT(*) n FROM sys_login_log WHERE username = ? AND success = 0 AND created_at > NOW() - INTERVAL 60 SECOND',
+      [username],
     );
-    if (Number(fn[0].n) >= 5) return fail(42900, '该账号登录尝试过于频繁，请 1 分钟后再试', 429);
+    if (Number(fa[0].n) >= 5) return fail(42900, '该账号登录尝试过于频繁，请 1 分钟后再试', 429);
     const fi = await query(
       'SELECT COUNT(*) n FROM sys_login_log WHERE ip = ? AND success = 0 AND created_at > NOW() - INTERVAL 60 SECOND',
       [ip],
     );
-    if (Number(fi[0].n) >= 30) return fail(42900, '请求过于频繁，请稍后再试', 429);
+    if (Number(fi[0].n) >= 60) return fail(42900, '请求过于频繁，请稍后再试', 429);
 
     const users = await query(
       'SELECT id, username, password_hash, real_name, status, valid_until FROM sys_user WHERE username = ?',
