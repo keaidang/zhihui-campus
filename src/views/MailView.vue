@@ -3,7 +3,7 @@
     <!-- 未开通对外收发 -->
     <section v-if="!hasMailbox" class="ml-locked">
       <el-empty description="校园邮箱对外收发尚未开通">
-        <template #image><el-icon :size="64" color="#94a3b8"><Promotion /></el-icon></template>
+        <template #image><LockKeyhole :size="56" :stroke-width="1.4" color="#94a3b8" /></template>
         <p class="ml-locked-tip">
           当前账号：<b>{{ auth.user?.campusEmail || '尚未分配校园邮箱' }}</b>
         </p>
@@ -19,8 +19,12 @@
           <p>{{ address }}</p>
         </div>
         <div class="ml-actions">
-          <el-button :icon="Refresh" plain :loading="loading" @click="load(true)">刷新</el-button>
-          <el-button type="primary" :icon="Promotion" @click="composeDlg = true">写邮件</el-button>
+          <el-button plain :loading="loading" @click="load(true)">
+            <RefreshCw v-if="!loading" :size="14" class="ml-btn-ic" />刷新
+          </el-button>
+          <el-button type="primary" @click="composeDlg = true">
+            <SquarePen :size="14" class="ml-btn-ic" />写邮件
+          </el-button>
         </div>
       </section>
 
@@ -28,8 +32,12 @@
         <!-- 左：邮件列表 -->
         <section class="ml-list">
           <div class="ml-tabs">
-            <button :class="{ on: box === 'inbox' }" @click="switchBox('inbox')">收件箱</button>
-            <button :class="{ on: box === 'sent' }" @click="switchBox('sent')">已发送</button>
+            <button :class="{ on: box === 'inbox' }" @click="switchBox('inbox')">
+              <Inbox :size="15" /> 收件箱
+            </button>
+            <button :class="{ on: box === 'sent' }" @click="switchBox('sent')">
+              <Send :size="15" /> 已发送
+            </button>
           </div>
           <div v-if="loading && !items.length" class="ml-loading" v-loading="true" element-loading-text="加载中…" />
           <template v-else>
@@ -68,13 +76,16 @@
             </div>
             <div v-if="box !== 'sent' && detail.attachments?.length" class="ml-d-atts">
               <el-tag v-for="(a, i) in detail.attachments" :key="i" size="small" type="info">
-                📎 {{ a.filename || a.name || '附件' }}
+                <Paperclip :size="11" class="ml-tag-ic" />{{ a.filename || a.name || '附件' }}
               </el-tag>
             </div>
             <el-divider style="margin: 12px 0" />
             <div class="ml-d-body" v-html="mailBody"></div>
           </template>
-          <el-empty v-else-if="!detailLoading" description="选择左侧邮件查看详情" :image-size="90" />
+          <el-empty v-else-if="!detailLoading" :image-size="80">
+            <template #image><MailOpen :size="56" :stroke-width="1.3" color="#cbd5e1" /></template>
+            <p class="ml-empty" style="padding: 0">选择左侧邮件查看详情</p>
+          </el-empty>
           <div v-if="detailLoading" class="ml-loading" v-loading="true" />
         </section>
       </div>
@@ -104,7 +115,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Refresh } from '@element-plus/icons-vue';
+import { Inbox, Send, RefreshCw, SquarePen, Paperclip, MailOpen, LockKeyhole } from 'lucide-vue-next';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../api/request';
@@ -285,6 +296,10 @@ onMounted(() => {
 }
 .ml-tabs button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: none;
   background: transparent;
   padding: 7px 0;
@@ -330,6 +345,8 @@ onMounted(() => {
   white-space: nowrap;
 }
 .ml-more { text-align: center; padding: 6px 0; }
+.ml-btn-ic { margin-right: 5px; }
+.ml-tag-ic { margin-right: 4px; vertical-align: -1px; }
 
 .ml-st { display: inline-flex; align-items: center; gap: 5px; }
 .ml-st::before {

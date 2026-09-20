@@ -50,12 +50,12 @@ body { background: transparent; }
   content: '';
   position: absolute;
   inset: -14px;
-  background: url('/web-pc.png') center / cover no-repeat;
+  background: url('/web-pc.webp') center / cover no-repeat;
   filter: blur(8px);
 }
 /* 移动端切换竖版照片 */
 @media (max-width: 768px) {
-  .sunny-backdrop::before { background-image: url('/web-phont.png'); }
+  .sunny-backdrop::before { background-image: url('/web-phont.webp'); }
 }
 .sunny-backdrop .overlay {
   position: absolute;
@@ -115,10 +115,10 @@ body { background: transparent; }
   position: relative;
   text-align: center;
   padding: 110px 0 100px;
-  background: url('/web-pc.png') center / cover no-repeat;
+  background: url('/web-pc.webp') center / cover no-repeat;
 }
 @media (max-width: 768px) {
-  .zc-hero { background-image: url('/web-phont.png'); padding: 80px 0 70px; }
+  .zc-hero { background-image: url('/web-phont.webp'); padding: 80px 0 70px; }
 }
 .zc-hero::before {
   content: '';
@@ -170,7 +170,7 @@ body { background: transparent; }
   border-color: #fff;
   color: #fff;
 }
-/* 校名书法（public/name.png 1536x1024 透明底）：
+/* 校名书法（public/name.webp 1536x1024 透明底）：
    object-fit: cover 只取中间书法带，裁掉上下留白 */
 .school-name-img {
   display: block;

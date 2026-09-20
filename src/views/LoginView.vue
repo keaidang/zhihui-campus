@@ -3,8 +3,8 @@
     <!-- 抬头：校徽 + 书法校名 + 竖分隔线 + 认证标题（整体居中，参考统一身份认证截图） -->
     <header class="gate-header">
       <div class="gate-brand">
-        <img class="gate-logo" src="/logo.png" alt="清北大学校徽" />
-        <img class="gate-name" src="/name.png" alt="清北大学" />
+        <img class="gate-logo" src="/logo.webp" alt="清北大学校徽" />
+        <img class="gate-name" src="/name.webp" alt="清北大学" />
       </div>
       <span class="gate-vline" aria-hidden="true"></span>
       <h1 class="gate-title">智汇校园 · 统一身份认证</h1>
@@ -13,7 +13,7 @@
     <!-- 认证卡片 -->
     <main class="gate-main">
       <div class="gate-card">
-        <img class="card-school-name" src="/name.png" alt="清北大学" />
+        <img class="card-school-name" src="/name.webp" alt="清北大学" />
         <h2>{{ mode === 'login' ? '账号密码登录' : '注册统一账号' }}</h2>
         <div class="divider"></div>
 

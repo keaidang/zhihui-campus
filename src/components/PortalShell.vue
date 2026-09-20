@@ -8,7 +8,7 @@
     <header class="shell-top">
       <div class="shell-top-inner">
         <div class="shell-brand" @click="$router.push('/')">
-          <img src="/logo.png" alt="清北大学校徽" />
+          <img src="/logo.webp" alt="清北大学校徽" />
           <span class="shell-brand-text">智汇校园</span>
           <span class="shell-brand-sub">清北大学</span>
         </div>
@@ -162,7 +162,7 @@ async function onCommand(cmd) {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: url('/web-pc.png') center / cover no-repeat;
+  background: url('/web-pc.webp') center / cover no-repeat;
   filter: blur(2px) saturate(1.05);
   transform: scale(1.03);
 }

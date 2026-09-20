@@ -4,6 +4,11 @@ import { api } from '../api/request';
 
 const REFRESH_KEY = 'zc_refresh_token';
 
+// 模块级单飞 Promise：多调用方（main.js 启动恢复 / 路由守卫 / 401 拦截器）
+// 并发触发时共享同一次刷新，避免旋转令牌被二次使用而误踢登录
+let refreshInFlight = null;
+let restoreInFlight = null;
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // 访问令牌只放内存（不落 localStorage，降低 XSS 窃取面）
@@ -11,7 +16,6 @@ export const useAuthStore = defineStore('auth', {
     // 刷新令牌存 localStorage（XSS 风险与 UX 的折中；后续可升级 HttpOnly Cookie 方案）
     refreshToken: localStorage.getItem(REFRESH_KEY) || '',
     user: null, // { id, username, realName, roles[] }
-    restored: false, // 本轮页面生命周期内是否已尝试恢复会话
   }),
   getters: {
     isLoggedIn: (s) => !!s.accessToken,
@@ -56,6 +60,14 @@ export const useAuthStore = defineStore('auth', {
 
     async tryRefresh() {
       if (!this.refreshToken) return false;
+      // 单飞：并发调用共享同一次刷新（refresh 令牌是一次性旋转的，两次并发必有一次失败）
+      if (!refreshInFlight) {
+        refreshInFlight = this._doRefresh().finally(() => { refreshInFlight = null; });
+      }
+      return refreshInFlight;
+    },
+
+    async _doRefresh() {
       // 瞬时错误(50000)退避重试：TiDB 抖动导致的刷新失败不应把用户踢回登录页；
       // 40100=令牌真失效（无效/过期/重放），重试无意义
       for (let i = 0; i < 3; i++) {
@@ -76,12 +88,15 @@ export const useAuthStore = defineStore('auth', {
 
     /** 页面加载时的会话恢复：F5 后 accessToken 已丢失，用 refreshToken 静默换回 */
     async restoreSession() {
-      if (this.restored) return;
-      this.restored = true;
-      if (this.refreshToken && !this.accessToken) {
-        const okRefresh = await this.tryRefresh().catch(() => false);
-        if (okRefresh) await this.fetchMe().catch(() => {});
+      if (this.accessToken || !this.refreshToken) return;
+      // 单飞 + 可等待：路由守卫与 main.js 共享同一次恢复，守卫会等它完成而不是拿到"未完成"状态
+      if (!restoreInFlight) {
+        restoreInFlight = (async () => {
+          const okRefresh = await this.tryRefresh().catch(() => false);
+          if (okRefresh) await this.fetchMe().catch(() => {});
+        })().finally(() => { restoreInFlight = null; });
       }
+      await restoreInFlight;
     },
 
     async logout() {

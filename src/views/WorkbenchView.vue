@@ -227,7 +227,7 @@ function onOpen(m) {
   justify-content: space-between;
   gap: 18px;
   color: #fff;
-  background: url('/web-pc.png') center / cover no-repeat;
+  background: url('/web-pc.webp') center / cover no-repeat;
   box-shadow: 0 14px 38px rgba(10, 24, 46, 0.32);
 }
 .wb-hero::before {
