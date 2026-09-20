@@ -60,3 +60,6 @@ node-ok.txt
 zhihui-campus-main/
 check-*.mjs
 verify-*.mjs
+
+# 会话/调试工作目录（严禁入库）
+working/
