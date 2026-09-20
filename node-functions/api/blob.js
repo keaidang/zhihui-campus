@@ -45,9 +45,9 @@ export async function onRequestPost(context) {
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
-    const m = url.pathname.match(/\/api\/blob\/([a-z0-9]{16})$/i);
-    if (!m) return fail(47004, '无效的图片地址', 404);
-    const rows = await query('SELECT mime, data FROM sys_blob WHERE token = ?', [m[1].toLowerCase()]);
+    const token = (url.searchParams.get('token') || '').toLowerCase();
+    if (!/^[a-z0-9]{16}$/.test(token)) return fail(47004, '无效的图片地址', 404);
+    const rows = await query('SELECT mime, data FROM sys_blob WHERE token = ?', [token]);
     if (rows.length === 0) return fail(47004, '图片不存在', 404);
     return new Response(rows[0].data, {
       status: 200,

@@ -69,6 +69,16 @@
 - **发件归属铁律**：LanQin POST /mailboxes 不传 userId 会把邮箱挂到自动新建的独立用户 → /send 404 "mailbox not found"。归属修复前开通的旧邮箱连 messages 也 404，需删旧邮箱 + 重置 mail_mailbox_id 重新 enable
 - LanQin GET /send 历史列表接口常超时，已弃用；验证发件最可靠的方式是直接发真实邮箱看原文
 
+### M3 生活服务（2026-09-20 上线，关键口径）
+
+- **角色映射**：图书馆管理员=admin（/library 管理后台 Tab）；学工处=counselor（失物招领发布）；教务处=teacher（社团审批）；论坛管理员=admin（置顶/锁定/删帖/禁言）
+- **图书**：借期 30 天、在借≤5 本、同书不可重复借；库存扣减一律条件更新 `available_copies > 0`；批量导入 CSV/JSON（ISBN 去重）；`lib_book.ext_source/ext_id` 预留外部图书馆系统对接
+- **社团预约**：`club_booking` 唯一键 `(recruit_id,user_id)`，预约=激活占位+名额条件更新，取消=释放；quota=0 不限名额
+- **论坛**：所有 /api/forum/* 需登录（合规要求）；交易板块发帖 item_name/price/contact 必填；封禁走 `forum_ban`，发帖/回复前校验
+- **图片**：`/api/blob`（POST base64≤3MB → LONGBLOB 暂存，GET 公共只读带 immutable 缓存）；前端统一 `ImgUploader` 组件（canvas 压缩到 1280px/JPEG 0.85）；接图床时只改 blob.js 与 ImgUploader 的 URL 生成
+- **忘记密码**：登录页对话框 → `POST /api/auth/password/forgot-send-code`（账号+绑定邮箱匹配才发码，purpose='reset'）→ `forgot-reset`（校验后重置 + 删 sys_refresh_token 吊销全部会话）
+- **测试数据**：`node scripts/seed-m3.mjs`（幂等）：420 本藏书 / 失物 8 条 / 社团 6 通过+2 待审 / 论坛 30+ 帖；图片抓 picsum 失败自动生成 SVG 占位图存 sys_blob
+
 ## 4. 五角色与页面权限（已定稿，勿动摇）
 
 | 角色 | 主题色 | 菜单/能力 |
@@ -120,18 +130,19 @@
 | M2 学工：请销假审批流闭环/报修工单/公告 | ✅ 上线 |
 | 门户：SSO 联动 + 工作台 + 校园邮箱卡 + 资源链接 | ✅ 上线 |
 | **校园邮箱**：注册验证码/管理员开通收发//mail 收发件页/已发送/多域名 | ✅ 上线（生产全链路验证） |
+| **M3 生活服务**：图书借阅/失物招领/社团活动/校园论坛（含交易板块）/忘记密码 | ✅ 上线（schema-009，2026-09-20） |
 | 演示数据（402 学生/40 教师/8 辅导员/10 校领导 + 29 行政人员） | ✅ 已入生产库 |
 | 安全审计（docs/AUDIT-2026-09-17.md） | ✅ 1P1+3P2 已修复 |
-| M3 生活服务（图书/二手/失物/社团） | ❌ 未开始（PRD 有规划） |
 | M4 校领导驾驶舱 | ❌ 未开始（leader 菜单有占位） |
 | 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
+| 图片图床接入（当前 /api/blob LONGBLOB 暂存） | ❌ 待接（只换 ImgUploader/blob.js 的 URL 生成） |
 | uni-app 小程序端 | ❌ 未开始 |
 
 ## 8. 下一步建议（优先级序）
 
-1. M3 图书借阅（schema-005，lib_ 前缀，参考 DATABASE.md 草案）
-2. M3 二手/失物/社团（标准 CRUD）
-3. M4 驾驶舱（`requireRoles(['admin','leader'])` + scope=all + 聚合统计）
+1. M4 驾驶舱（`requireRoles(['admin','leader'])` + scope=all + 聚合统计）
+2. 图片图床接入（sys_blob → 对象存储/图床，仅改 blob 服务与 ImgUploader）
+3. 图书封面上批量补图（现在多数书无封面，显示首字占位）
 4. 邮箱增强：附件上传发信、管理员邮箱用量统计
 5. 论文素材沉淀：选课并发控制（db.js 防超卖范式）、审批流两表引擎、云边协同架构（ARCHITECTURE.md 已有口径）
 

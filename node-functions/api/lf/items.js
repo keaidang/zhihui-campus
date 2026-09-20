@@ -73,7 +73,7 @@ export async function onRequestPost(context) {
       if (Array.isArray(body.images)) {
         images = body.images
           .map((u) => String(u).trim())
-          .filter((u) => /^\/api\/blob\/[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
+          .filter((u) => /^\/api\/blob\?token=[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
           .slice(0, 6);
       }
       if (!title) return fail(45001, '请填写物品名称');

@@ -85,7 +85,7 @@ export async function onRequestPost(context) {
       if (Array.isArray(body.images)) {
         images = body.images
           .map((u) => String(u).trim())
-          .filter((u) => /^\/api\/blob\/[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
+          .filter((u) => /^\/api\/blob\?token=[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
           .slice(0, 6);
       }
       const existed = await query('SELECT id FROM club_recruit WHERE application_id = ?', [applicationId]);

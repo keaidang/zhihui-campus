@@ -11,6 +11,9 @@ scripts/*
 !scripts/eo.cmd
 !scripts/migrate.mjs
 !scripts/grant-role.mjs
+!scripts/seed-demo.mjs
+!scripts/seed-admin-staff.mjs
+!scripts/seed-m3.mjs
 
 # 调试探针与本地验证产物（严禁入库）
 probe*

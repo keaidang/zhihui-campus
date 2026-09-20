@@ -131,11 +131,12 @@ export async function onRequestPost(context) {
       let price = null;
       let contact = '';
       if (Number(board.is_trade) === 1) {
-        itemName = String(body.itemName || '').trim().slice(0, 64);
-        contact = String(body.contact || '').trim().slice(0, 64);
-        price = Number(body.price);
+        itemName = String(body.itemName ?? '').trim().slice(0, 64);
+        contact = String(body.contact ?? '').trim().slice(0, 64);
+        // 统一归一化：缺失/null/空串 → null（必填校验拦截），避免 NaN/缺键走不同分支
+        price = body.price === undefined || body.price === null || body.price === '' ? null : Number(body.price);
         if (!itemName) return fail(49001, '交易帖必须填写物品信息');
-        if (!Number.isFinite(price) || price < 0) return fail(49001, '交易帖必须填写有效价格');
+        if (price === null || !Number.isFinite(price) || price < 0) return fail(49001, '交易帖必须填写有效价格');
         if (!contact) return fail(49001, '交易帖必须填写联系方式');
       }
 
@@ -143,7 +144,7 @@ export async function onRequestPost(context) {
       if (Array.isArray(body.images)) {
         images = body.images
           .map((u) => String(u).trim())
-          .filter((u) => /^\/api\/blob\/[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
+          .filter((u) => /^\/api\/blob\?token=[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u))
           .slice(0, 9);
       }
 
@@ -176,16 +177,17 @@ export async function onRequestPost(context) {
       const title = String(body.title || '').trim().slice(0, 128);
       const content = String(body.content || '').trim().slice(0, 20000);
       if (!title || content.length < 2) return fail(49001, '标题或正文无效');
-      let itemName = String(body.itemName || '').trim().slice(0, 64);
-      let price = body.price === undefined ? undefined : Number(body.price);
-      let contact = String(body.contact || '').trim().slice(0, 64);
-      if (Number(rows[0].is_trade) === 1 && (!itemName || !Number.isFinite(price) || !contact)) {
+      const itemName = String(body.itemName ?? '').trim().slice(0, 64);
+      const contact = String(body.contact ?? '').trim().slice(0, 64);
+      const priceRaw = body.price;
+      const price = priceRaw === undefined || priceRaw === null || priceRaw === '' ? null : Number(priceRaw);
+      if (Number(rows[0].is_trade) === 1 && (!itemName || price === null || !Number.isFinite(price) || !contact)) {
         return fail(49001, '交易帖的物品信息、价格、联系方式必填');
       }
       let images = null;
       if (Array.isArray(body.images)) {
         images = JSON.stringify(
-          body.images.map((u) => String(u).trim()).filter((u) => /^\/api\/blob\/[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u)).slice(0, 9),
+          body.images.map((u) => String(u).trim()).filter((u) => /^\/api\/blob\?token=[a-z0-9]{16}$/.test(u) || /^https?:\/\//.test(u)).slice(0, 9),
         );
       }
       await query(
