@@ -7,6 +7,7 @@
 import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
+import { isGenderMatch } from '../../lib/dorm-rules.js';
 
 export { preflight as onRequestOptions };
 
@@ -91,7 +92,8 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   try {
-    const { userId, roles } = await requireRoles(context, ['admin', 'counselor']);
+    // 角色白名单已由 requireRoles 第二参兜住，故不需再取 roles
+    const { userId } = await requireRoles(context, ['admin', 'counselor']);
     const ip = clientIp(context.request);
     const body = await readBody(context.request);
     const action = String(body.action || '');
@@ -157,7 +159,8 @@ export async function onRequestPost(context) {
         const [users] = await conn.query('SELECT id, gender, real_name FROM sys_user WHERE id = ?', [targetId]);
         if (users.length === 0) throw Object.assign(new Error('学生不存在'), { code: 49204 });
         const user = users[0];
-        if (user.gender !== 0 && user.gender !== (room.gender === 'male' ? 1 : 2)) {
+        // 判定规则在 lib/dorm-rules.js（纯函数，tests/unit/dorm-rules.spec.js 覆盖）
+        if (!isGenderMatch(user.gender, room.gender)) {
           throw Object.assign(new Error('性别与楼栋不符，禁止分配'), { code: 49203 });
         }
         if (room.occupied >= room.capacity) throw Object.assign(new Error('房间已满员'), { code: 49206 });

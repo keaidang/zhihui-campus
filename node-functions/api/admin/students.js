@@ -110,7 +110,6 @@ export async function onRequestPost(context) {
   try {
     const { roles, userId: operatorId } = await requireRoles(context, MANAGER_ROLES);
     const myClasses = await scopeClassIds(roles, operatorId);
-    const isAdmin = roles.includes('admin');
     const ip = clientIp(context.request);
     const body = await readBody(context.request);
     const action = String(body.action || '');

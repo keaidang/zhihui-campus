@@ -1,7 +1,7 @@
 // /api/auth/register/prefix-check — 校园邮箱前缀占用检查
 // GET ?prefix=xxx&domain=keaidang.com → { available, reason? }
 // 校验两层：系统内 campus_email 唯一 + 邮件服务器未被占用
-import { ok, fail, jsonError, preflight } from '../../../lib/http.js';
+import { ok, jsonError, preflight } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { isLocalPartTaken, isDomainAllowed } from '../../../lib/lanqin.js';
 

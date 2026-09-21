@@ -19,6 +19,7 @@ scripts/*
 !scripts/gap-check.mjs
 !scripts/integrity-check.mjs
 !scripts/cleanup.mjs
+!scripts/ops-check.mjs
 
 # 调试探针与本地验证产物（严禁入库）
 probe*
@@ -66,8 +67,9 @@ verify-*.mjs
 # 会话/调试工作目录（严禁入库）
 working/
 
-# 白名单补录：正式的 16 步全链路验证脚本
-!scripts/smoke-full.mjs
+# 线上端到端冒烟（多角色 + 越权边界 + 历史缺陷回归，只读可重复运行）
+# 已取代旧的 smoke-full.mjs（那个脚本硬编码了已失效的域名 campus.keaidang.com）
+!scripts/e2e-smoke.mjs
 
 # 移动端验收截图（本地产物，不入库）
 .shots/

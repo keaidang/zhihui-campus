@@ -1,6 +1,6 @@
 // /api/edu/timetable — 周课表
 // 学生: 本人所选课程; 教师: 本人任教班级; 其他角色 403
-import { ok, jsonError, preflight, fail } from '../../lib/http.js';
+import { ok, jsonError, preflight } from '../../lib/http.js';
 import { requireRoles, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
 

@@ -13,7 +13,7 @@ export { preflight as onRequestOptions };
 
 export async function onRequestGet(context) {
   try {
-    const { userId, roles } = await requireRoles(context);
+    const { userId } = await requireRoles(context);
     const url = new URL(context.request.url);
     const scope = url.searchParams.get('scope') || 'list';
 

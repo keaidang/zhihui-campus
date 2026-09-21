@@ -4,7 +4,7 @@
 //              | class.create  | class.update  | class.delete
 //              | import.courses | import.schedule （CSV 文本导入）
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
-import { requireRoles, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
+import { requireRoles, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
 
 export { preflight as onRequestOptions };

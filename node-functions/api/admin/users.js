@@ -139,7 +139,7 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   try {
     const { roles, userId: operatorId } = await requireRoles(context, MANAGER_ROLES);
-    const scope = dataScope(roles, null);
+    // 写操作全部由 isAdmin 逐分支拦截（比数据范围更严），故此处不需要 scope
     const isAdmin = roles.includes('admin');
     const ip = clientIp(context.request);
     const body = await readBody(context.request);
@@ -190,7 +190,9 @@ export async function onRequestPost(context) {
                 continue;
               }
               seen.add(username);
-              const { pwd, hash } = await hashOf(r.password);
+              // hashOf 同时返回明文 pwd（默认密码或 CSV 指定），此处有意只取 hash：
+              // 批量导入不回传明文密码，避免密码经响应体/日志扩散（如需线下发放应另做导出）
+              const { hash } = await hashOf(r.password);
               const deptId = r.deptId ? Number(r.deptId) : null;
               const classId = r.classId ? Number(r.classId) : null;
               const userNo = String(r.userNo || '').trim().slice(0, 32);

@@ -39,7 +39,6 @@ async function load() {
 }
 
 const deptName = (id) => depts.value.find((d) => d.id === id)?.name || '—';
-const counselorName = (id) => counselors.value.find((u) => u.id === id)?.real_name || '未指派';
 
 /* ---------- 系部管理 ---------- */
 function openDeptCreate() {

@@ -294,17 +294,6 @@ async function loadRepairs() {
   }
 }
 
-async function submit() {
-  if (!form.value.location.trim() || !form.value.description.trim()) {
-    ElMessage.warning('请填写报修位置和故障描述');
-    return;
-  }
-  submitting();
-  async function submitting() {
-    form.saving = true;
-  }
-}
-
 // 学生提交报修（复用 /api/af/repair）
 const submitting = ref(false);
 async function submitRepair() {

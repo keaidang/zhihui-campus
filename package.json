@@ -10,7 +10,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src node-functions edge-functions tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:db": "node scripts/sql-smoke-m4.mjs && node scripts/integrity-check.mjs && node scripts/gap-check.mjs",
+    "check:e2e": "node scripts/e2e-smoke.mjs",
+    "check": "npm run lint && npm test && npm run check:db && npm run check:e2e"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
@@ -25,9 +31,14 @@
     "vue-router": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.1.2",
+    "eslint": "^10.11.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "globals": "^17.12.0",
     "unplugin-auto-import": "^21.1.0",
     "unplugin-vue-components": "^32.1.0",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "^3.2.7"
   }
 }

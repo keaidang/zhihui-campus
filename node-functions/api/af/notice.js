@@ -9,7 +9,7 @@ export { preflight as onRequestOptions };
 
 export async function onRequestGet(context) {
   try {
-    const { userId, roles, deptId } = await requireRoles(context);
+    const { roles, deptId } = await requireRoles(context);
     const url = new URL(context.request.url);
     const page = Math.max(1, Number(url.searchParams.get('page') || 1));
     const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get('pageSize') || 10)));

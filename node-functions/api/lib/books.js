@@ -6,8 +6,8 @@
 //   update { id, ...fields }
 //   delete { id }
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
-import { requireRoles, opLog, ERR_FORBIDDEN } from '../../lib/guard.js';
-import { query, withTransaction } from '../../lib/db.js';
+import { requireRoles, opLog } from '../../lib/guard.js';
+import { query } from '../../lib/db.js';
 
 export { preflight as onRequestOptions };
 

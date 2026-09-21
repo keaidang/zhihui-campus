@@ -30,7 +30,7 @@ const FLOW = {
 
 export async function onRequestGet(context) {
   try {
-    const { userId, roles, deptId } = await requireRoles(context);
+    const { userId, roles } = await requireRoles(context);
     const url = new URL(context.request.url);
     const status = url.searchParams.get('status');
     const staff = roles.some((r) => ['admin', 'counselor'].includes(r));
@@ -94,7 +94,6 @@ export async function onRequestPost(context) {
 
       const rows = await query('SELECT id, status, user_id, location FROM af_repair WHERE id = ?', [id]);
       if (rows.length === 0) return fail(44004, '工单不存在');
-      const from = Number(rows[0].status);
 
       const remark = String(body.remark || '').trim().slice(0, 256);
       // "无法处理"必须说明原因：学生会收到该原因；留空则工单被关闭却无从解释

@@ -1,6 +1,6 @@
 // edge-functions/api/kv-check.js — KV 连通性验证（验收用）
 // 验证命名空间 zhihuicampus 绑定是否生效：写入→读取→清理
-export async function onRequest({ request }) {
+export async function onRequest() {
   const key = 'health:ping';
   const stamp = new Date().toISOString();
   try {

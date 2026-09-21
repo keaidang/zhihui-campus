@@ -181,7 +181,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import PortalShell from '../../components/PortalShell.vue';
 import ImgUploader from '../../components/ImgUploader.vue';
 import { useAuthStore } from '../../stores/auth';

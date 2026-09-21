@@ -125,7 +125,8 @@ import { useAuthStore } from '../stores/auth';
 import { api } from '../api/request';
 import { useIsMobile } from '../utils/device';
 
-const props = defineProps({
+// 组件 props 仅在模板中按名使用（active 用于菜单高亮），脚本内无需引用故不赋值
+defineProps({
   active: { type: String, default: 'workbench' },
 });
 

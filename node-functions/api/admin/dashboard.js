@@ -13,14 +13,15 @@ export async function onRequestGet(context) {
 
     // 并发跑聚合查询（互不依赖）
     const [
-      userTotal, roleCounts, genderCounts, deptCounts,
+      roleCounts, genderCounts, deptCounts,
       courseCount, classCount, electCount, scoreAgg,
       leaveCounts, repairCounts, pendingApprovals,
       dormBeds, dormBuildingCount,
       libAgg, loanActive, loanOverdue, clubAgg, forumAgg, lfActive,
       loginTrend, recentOps,
     ] = await Promise.all([
-      query("SELECT COUNT(*) n FROM sys_user WHERE status = 1 AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id WHERE ur.user_id = sys_user.id AND r.code = 'student')"),
+      // 注：此处原有一条"在校学生数"查询，其结果从未被使用（学生数取自下方 roleCounts.student），
+      // 删除以减少一次全表 COUNT（2026-09-21 ESLint no-unused-vars 发现）
       query(
         `SELECT r.code, r.name, COUNT(*) n FROM sys_user_role ur
            JOIN sys_role r ON r.id = ur.role_id

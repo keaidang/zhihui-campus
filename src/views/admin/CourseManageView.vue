@@ -44,8 +44,6 @@ async function load() {
   }
 }
 
-const teacherById = computed(() => Object.fromEntries(teachers.value.map((t) => [t.id, t])));
-
 /* ---------- 课程库 ---------- */
 function openCourseCreate() {
   courseForm.value = { id: null, code: '', name: '', credit: 2, hours: 32, deptId: depts.value[0]?.id ?? null, status: 1 };

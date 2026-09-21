@@ -3,8 +3,9 @@
 // POST { action: 'enroll' | 'drop', classId }
 // 防超卖：条件 UPDATE (enrolled < capacity)；防重选：edu_elect 唯一键 + upsert 重激活退课记录
 import { ok, fail, jsonError, readBody, preflight } from '../../lib/http.js';
-import { requireRoles, ERR_FORBIDDEN } from '../../lib/guard.js';
+import { requireRoles } from '../../lib/guard.js';
 import { query, withTransaction } from '../../lib/db.js';
+import { isScheduleConflict } from '../../lib/schedule.js';
 
 export { preflight as onRequestOptions };
 
@@ -70,17 +71,10 @@ export async function onRequestPost(context) {
             [userId, TERM, classId],
           );
           const [target] = await conn.query('SELECT week_day, section FROM edu_class WHERE id = ?', [classId]);
-          const parseSec = (s) => {
-            const m = /^(\d+)\s*-\s*(\d+)节?$/.exec(String(s || '').trim());
-            return m ? [Number(m[1]), Number(m[2])] : null;
-          };
-          const hit = mine.find((r) => {
-            if (Number(r.week_day) !== Number(target[0].week_day)) return false;
-            const a = parseSec(target[0].section);
-            const b = parseSec(r.section);
-            if (a && b) return a[0] <= b[1] && b[0] <= a[1]; // 区间重叠
-            return String(r.section).trim() === String(target[0].section).trim(); // 非标准节次按同串冲突
-          });
+          // 判定规则在 lib/schedule.js（纯函数，tests/unit/schedule.spec.js 覆盖边界）
+          const hit = mine.find((r) =>
+            isScheduleConflict(target[0].week_day, target[0].section, r.week_day, r.section),
+          );
           if (hit) throw new Error(`CONFLICT|${hit.name}|${hit.section}`);
 
           const [ups] = await conn.query(
