@@ -99,51 +99,76 @@
         </el-table-column>
         <el-table-column label="操作" width="390" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openProfile(row)">归属</el-button>
-            <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
-            <el-button v-if="auth.isAdmin" size="small" @click="openValid(row)">有效期</el-button>
-            <el-button
-              v-if="auth.isAdmin && row.campus_email"
-              size="small"
-              :type="row.mail_enabled ? 'warning' : 'success'"
-              @click="toggleMail(row)"
-            >
-              {{ row.mail_enabled ? '关邮箱' : '开邮箱' }}
-            </el-button>
-            <el-button
-              v-if="auth.isAdmin && row.mail_enabled"
-              size="small"
-              @click="viewMailPwd(row)"
-            >
-              密码
-            </el-button>
-            <el-button
-              v-if="auth.isAdmin"
-              size="small"
-              :disabled="!!row.mail_mailbox_id"
-              :title="row.mail_mailbox_id ? '已开通真实邮箱，请先关闭对外收发' : '设置该用户的校园邮箱地址'"
-              @click="openAddr(row)"
-            >
-              邮箱
-            </el-button>
-            <el-button
-              size="small"
-              :type="row.status === 1 ? 'danger' : 'success'"
-              :disabled="row.id === auth.user?.id"
-              @click="toggleStatus(row)"
-            >
-              {{ row.status === 1 ? '禁用' : '启用' }}
-            </el-button>
-            <el-button
-              v-if="auth.isAdmin"
-              size="small"
-              type="danger"
-              link
-              :disabled="row.id === auth.user?.id"
-              @click="removeOne(row)"
-            >
-              删除
-            </el-button>
+            <!-- PC 端：按钮平铺。窄屏由 mobile.css 隐藏本块，改收进右侧「更多」下拉 -->
+            <span class="op-full">
+              <el-button size="small" @click="openProfile(row)">归属</el-button>
+              <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
+              <el-button v-if="auth.isAdmin" size="small" @click="openValid(row)">有效期</el-button>
+              <el-button
+                v-if="auth.isAdmin && row.campus_email"
+                size="small"
+                :type="row.mail_enabled ? 'warning' : 'success'"
+                @click="toggleMail(row)"
+              >
+                {{ row.mail_enabled ? '关邮箱' : '开邮箱' }}
+              </el-button>
+              <el-button
+                v-if="auth.isAdmin && row.mail_enabled"
+                size="small"
+                @click="viewMailPwd(row)"
+              >
+                密码
+              </el-button>
+              <el-button
+                v-if="auth.isAdmin"
+                size="small"
+                :disabled="!!row.mail_mailbox_id"
+                :title="row.mail_mailbox_id ? '已开通真实邮箱，请先关闭对外收发' : '设置该用户的校园邮箱地址'"
+                @click="openAddr(row)"
+              >
+                邮箱
+              </el-button>
+              <el-button
+                size="small"
+                :type="row.status === 1 ? 'danger' : 'success'"
+                :disabled="row.id === auth.user?.id"
+                @click="toggleStatus(row)"
+              >
+                {{ row.status === 1 ? '禁用' : '启用' }}
+              </el-button>
+              <el-button
+                v-if="auth.isAdmin"
+                size="small"
+                type="danger"
+                link
+                :disabled="row.id === auth.user?.id"
+                @click="removeOne(row)"
+              >
+                删除
+              </el-button>
+            </span>
+            <!-- 窄屏专属：全部操作收进「更多」（PC 端由本组件样式 .op-more{display:none} 隐藏） -->
+            <el-dropdown class="op-more" trigger="click" placement="bottom-end" @command="(c) => onRowMore(c, row)">
+              <el-button size="small" plain>
+                更多<el-icon class="op-more-icon"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="profile">归属</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdmin" command="roles">角色</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdmin" command="valid">有效期</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdmin && row.campus_email" command="mail">
+                    {{ row.mail_enabled ? '关闭对外收发' : '开通对外收发' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdmin && row.mail_enabled" command="mailpwd">查看邮箱密码</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdmin" command="addr" :disabled="!!row.mail_mailbox_id">校园邮箱地址</el-dropdown-item>
+                  <el-dropdown-item divided command="status" :disabled="row.id === auth.user?.id">
+                    {{ row.status === 1 ? '禁用账号' : '启用账号' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="del" :disabled="row.id === auth.user?.id">删除账号</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -268,7 +293,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Delete, Download, Message } from '@element-plus/icons-vue';
+import { Plus, Delete, Download, Message, ArrowDown } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api, download } from '../../api/request';
 import { useAuthStore } from '../../stores/auth';
@@ -458,6 +483,21 @@ async function submitBatch() {
 
 /* ---- 删除 ---- */
 const selected = ref([]);
+/** 窄屏「更多」下拉的命令分发（PC 端该下拉不渲染，故此函数只在移动端触发） */
+function onRowMore(cmd, row) {
+  const actions = {
+    profile: () => openProfile(row),
+    roles: () => openRoles(row),
+    valid: () => openValid(row),
+    mail: () => toggleMail(row),
+    mailpwd: () => viewMailPwd(row),
+    addr: () => openAddr(row),
+    status: () => toggleStatus(row),
+    del: () => removeOne(row),
+  };
+  actions[cmd]?.();
+}
+
 async function removeOne(row) {
   const ok = await ElMessageBox.confirm(`确定删除账号 ${row.username}（${row.real_name || '未填姓名'}）？该操作不可恢复。`, '删除账号', { type: 'warning' }).catch(() => false);
   if (!ok) return;
@@ -609,6 +649,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* 窄屏专属的「更多」下拉：PC 端不显示（窄屏由 src/mobile.css 打开并隐藏平铺按钮） */
+.op-more { display: none; }
 .um-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .um-head h2 { margin: 0 0 6px; font-size: 20px; color: var(--zc-navy); letter-spacing: 1px; }
 .um-head p { margin: 0; font-size: 13px; color: var(--zc-text-sub); }
