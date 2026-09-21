@@ -385,12 +385,15 @@ async function submitAddr() {
   }
 }
 async function viewMailPwd(row) {
-  const res = await api('/api/admin/mailbox');
-  if (res.code !== 0) return ElMessage.error(res.message || '加载失败');
-  const item = (res.data.list || []).find((x) => x.id === row.id);
-  if (!item) return ElMessage.error('未找到邮箱记录');
+  // 走独立的查看动作：后端会写 opLog 留痕（谁、何时、看了谁的密码都可追溯）
+  const res = await api('/api/admin/mailbox', {
+    method: 'POST',
+    body: { action: 'viewPassword', userId: row.id },
+  });
+  if (res.code !== 0) return ElMessage.error(res.message || '读取失败');
+  const d = res.data || {};
   await ElMessageBox.alert(
-    `<p>${item.campus_email}</p><p>当前密码：<b style="user-select:all">${item.mail_password || '（无记录）'}</b></p>`,
+    `<p>${d.campusEmail || '（未分配地址）'}</p><p>当前密码：<b style="user-select:all">${d.password || '（无记录）'}</b></p><p style="color:#b45309">本次查看已记入操作日志</p>`,
     `${row.real_name} 的邮箱密码`,
     { dangerouslyUseHTMLString: true },
   );

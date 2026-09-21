@@ -1,10 +1,13 @@
 // /api/admin/mailbox — 管理员：校园邮箱开通/关闭/查看密码/导出
-// GET            全量邮箱状态列表；?export=csv 导出含密码（仅 admin，敏感操作）
-// POST {action: 'enable'|'disable'|'resetPassword', userId}
+// GET            全量邮箱状态列表（**不下发明文密码**）；?export=csv 导出含明文密码（仅 admin，高敏感，必留审计）
+// POST {action: 'enable'|'disable'|'resetPassword'|'viewPassword'|'updateAddress', userId}
 //   enable:  为用户在邮件服务器创建真实邮箱（localPart 取自 campus_email 前缀），
 //            随机密码存库（管理员可见可导出，用户可登录邮件系统后修改）
 //   disable: 关闭对外收发（保留服务器邮箱）
 //   resetPassword: 重置邮箱密码（随机生成，返回新密码）
+//   viewPassword:  查看单个用户的邮箱密码（高敏感，每次查看都写 opLog）
+// ★ 审计口径：明文密码只从两条路径出去——CSV 导出与单个查看，二者都写 opLog；
+//   列表接口一律剥离 mail_password，避免"静默批量取走全部密码"。
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
@@ -21,8 +24,9 @@ const randomPwd = () => {
 
 export async function onRequestGet(context) {
   try {
-    const { roles } = await requireRoles(context, ['admin']);
+    const { userId: operatorId } = await requireRoles(context, ['admin']);
     const url = new URL(context.request.url);
+    const ip = clientIp(context.request);
     const rows = await query(
       `SELECT u.id, u.username, u.real_name, u.user_no, u.email, u.campus_email,
               u.mail_enabled, u.mail_password, u.mail_created_at, d.name AS dept_name
@@ -32,6 +36,8 @@ export async function onRequestGet(context) {
         ORDER BY u.campus_email`,
     );
     if (url.searchParams.get('export') === 'csv') {
+      // 该响应体含全校明文邮箱密码 —— 高敏感动作，先留痕再返回
+      await opLog(operatorId, 'mailbox.export', `count:${rows.length}`, 'CSV 含明文邮箱密码', ip);
       const lines = ['校园邮箱,姓名,账号,学工号,部门,对外收发,邮箱密码,创建时间'];
       for (const r of rows) {
         const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -48,8 +54,8 @@ export async function onRequestGet(context) {
         },
       });
     }
-    if (!roles.includes('admin')) return ok({ list: rows.map((r) => ({ ...r, mail_password: undefined })) });
-    return ok({ list: rows });
+    // 列表一律剥离明文密码（含管理员）：要看单个用户的密码请走 POST action=viewPassword
+    return ok({ list: rows.map((r) => ({ ...r, mail_password: undefined })) });
   } catch (e) {
     return jsonError(e);
   }
@@ -71,6 +77,12 @@ export async function onRequestPost(context) {
     );
     if (!users.length) return fail(43200, '用户不存在');
     const u = users[0];
+
+    // 查看单个用户邮箱密码（高敏感：每次查看都留痕，可追溯是谁在什么时候看了谁的密码）
+    if (action === 'viewPassword') {
+      await opLog(operatorId, 'mailbox.viewPassword', `user:${userId}`, u.campus_email || '', ip);
+      return ok({ campusEmail: u.campus_email, password: u.mail_password });
+    }
 
     if (action === 'enable') {
       if (!u.campus_email) return fail(43201, '该用户尚未分配校园邮箱地址');

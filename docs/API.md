@@ -74,7 +74,9 @@
 | POST | /api/admin/departments | admin | `{action: create \| setStatus \| update \| delete}`（下有人员或班级禁删） |
 | GET/POST | /api/admin/classes | counselor(读)/admin(写) | 班级 CRUD（`create/update/delete`，有在读学生禁删；GET 返回辅导员名单） |
 | GET/POST | /api/admin/courses | 登录(读)/admin(写) | 课程库 CRUD + 排课 CRUD + import.courses / import.schedule 批量导入；有教学班课程禁删、有选课排课禁删 |
-| POST | /api/admin/mailbox | admin | 用户校园邮箱管理：`enable`(开对外收发，按 campus_email 域名建真实邮箱，随机密码) / `disable` / `resetPassword` / `updateAddress`(改前缀+域名，双占用校验) |
+| GET | /api/admin/mailbox | admin | 全量邮箱状态列表，**响应体不下发明文邮箱密码**；`?export=csv` 导出含明文密码的 CSV（高敏感，先写 opLog `mailbox.export` 再返回） |
+| POST | /api/admin/mailbox | admin | 用户校园邮箱管理：`enable`(开对外收发，按 campus_email 域名建真实邮箱，随机密码) / `disable` / `resetPassword` / `viewPassword`(查看单个用户邮箱密码，写 opLog `mailbox.viewPassword`) / `updateAddress`(改前缀+域名，双占用校验) |
+| — | 邮箱密码审计口径 | — | `mail_password` 目前**明文入库**（第三方邮箱凭据，业务需可取回）；明文只从 CSV 导出与 `viewPassword` 两条路径出去，二者均写 opLog；列表接口一律剥离该字段。**若要查看/导出密码，先查 `sys_op_log` 的 `mailbox.export` / `mailbox.viewPassword`**。详见 AUDIT-2026-09-21 P1-5 |
 
 ### 5.2.1 校园邮箱（需登录 + 已开通对外收发）
 
