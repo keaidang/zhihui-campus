@@ -198,14 +198,20 @@
     - **教训三 · 死代码会制造幽灵问题**：改了入口就删旧页面（至少在文档标注"已废弃"）。本次的审计误判与"两条路径"错觉，都源于一个没人访问却仍在仓库里的 `.vue`。
     - **自查命令**：`grep -rn "flow_instance" node-functions --include=*.js | grep INSERT` 看引擎真实接入范围；`grep -rn "<组件名>" src/` 确认无引用后再 `git rm`。
     - **单节点状态机也要有完整终态**：报修原先缺"无法处理"终态（只有 待受理/处理中/已完成），导致师傅发现非本部门职责时**无法正确关闭工单**（只能谎报完成或永远挂着）。已补 `status=3 无法处理`（**必填原因**并通知报修人）——**凡是状态机，先数清终态有几个**。
+35. **★★ 测试三层各有分工，一条 `npm run check` 全跑**（2026-09-21 建立）：
+    - **① 单测 `tests/unit/*.spec.js`（Vitest，秒级、零外部依赖）** —— 只测**纯逻辑**：时间口径、权限判定（`dataScope`）、时段冲突、性别约束、HTTP 层结构。**刻意不测组件**（不引 jsdom），需要真实页面时走 e2e。
+    - **② 库体检 `scripts/{sql-smoke-m4,integrity-check,gap-check}.mjs`（只读）** —— 对真实 TiDB 验证 SQL 字段名与数据一致性。**新 API 上线前必跑**（防 `ER_BAD_FIELD_ERROR` 与静默数据不一致）。
+    - **③ 线上 e2e `scripts/e2e-smoke.mjs`（只读 GET、可重复跑）** —— 四角色 + 越权边界 + 历史缺陷回归。**新增/修改端点后必须补一条断言**。
+    - **加测试的三条规矩**：① 改核心规则先问"这条规则能被单测吗"，不能就把纯逻辑抽成函数（本次 `lib/schedule.js` / `lib/dorm-rules.js` 即这样产出——它们原先内联在事务闭包里，**任何测试都覆盖不到**）；② 写"重构等价性"断言后**必须验证它能失败**（本次用 `Number(null)===0` 反例验证；没验证过的断言可能只是"永远绿"的摆设）；③ 优先只读断言（可随时重跑、不污染演示数据）。
+    - **⚠ ESLint 规则强度刻意克制**：只开**错误级**规则（`js recommended` + `vue flat/essential`），**绝不加格式类规则** —— 一旦引入必然产生几百条历史噪音，最终结果是"没人再看 lint"。`ignores` 里排除 `scripts/`、`.shots/`（一次性脚本不强求风格）。
 
 ## 6. 交付与验证流程
 
 0. **开工前/交付前盘点**：`node scripts/gap-check.mjs`（只读）——规模、角色分布、封面/blob/令牌剩余项实测、演示账号残留、线上错误最后发生时间，对照 docs/PROGRESS.md 阶段 5 确认差距
-1. 改代码 → `npm run build`（前端构建必须过）
+1. 改代码 → **`npm run check`**（lint → 单测 → 库体检 → 线上 e2e，一条命令四段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
 2. **提交用显式 add，禁止 `git add -A`**：`git add <改动的具体文件>` → commit → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）。曾因 `git add -A` 把 `working/` 调试产物带进仓库（b4dc948 才清出）
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
-4. **推荐验证方式**：写一次性 Node 22 脚本（原生 fetch）直打线上 API 全链路（登录拿 token → 逐接口断言 → 结果落盘），跑完即删。参考已删除的 verify-m1m2.mjs 模式：学生选课→防重→辅导员审批→销假→报修→教师录成绩→学生查成绩→越权回归 40301。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
+4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，51 项只读断言，覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
 
 ## 7. 当前完成度
@@ -228,6 +234,7 @@
 | Edge 原生轻端点 /api/edge/stats（KV 访问统计） | ✅ 上线 |
 | 全站时间口径归一（UTC 库内 + 统一展示工具） | ✅ 上线（2026-09-20 深夜，见铁律 #25） |
 | 一键体检：`gap-check` / `integrity-check` / `audit-mobile` / `verify-security` | ✅ 就绪（2026-09-21，命令见 docs/AUDIT-2026-09-21.md 第五节） |
+| **自动化测试体系（`npm run check`）**：ESLint 零告警 + Vitest **68 单测** + 库体检 + 线上 e2e **51 项** | ✅ 就绪（2026-09-21，铁律 #35） |
 | 安全响应头（静态层 CSP/HSTS/nosniff 等）+ 前端全局错误兜底 | ✅ 上线（2026-09-21 体检修复，见铁律 #29/#30） |
 | 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
 | 图片图床接入（当前 /api/blob LONGBLOB 暂存，32 条 1.15MB） | ❌ 待接（只换 ImgUploader/blob.js 的 URL 生成） |
