@@ -182,6 +182,14 @@
       实测 `.shell-main` 只有 **320px** 而容器内容区是 **366px**，表现为"**卡片左右铺不满、右边凭空多出 46px 空白**"（用户反馈"卡片没铺满"）。
     - **同一处还有第二个坑**：`WorkbenchView` 的 `.wb-zoom { zoom: 1.1 }`（PC 刻意放大让内容更饱满）在窄屏会造成**左右不对称**（左 12px / 右 26px）—— 窄屏必须取消缩放（`zoom: 1`）。**`zoom` 属性只在响应式场景下害人，PC 保留无妨。**
     - **排查方法**：遇到"内容没铺满/左右不对称"，先量三层（`.shell-body` → `.shell-main` → 页面根容器）的 `rect.left/width` 与 `align-items`，再查 `zoom`/`transform: scale`。**"不对称"几乎总是指向 `zoom` 或 `align-items`，而不是 padding**（padding 只会造成左右对称的留白）。
+33. **★★ Element Plus 按需引入：三类东西模板插件捕获不到**（2026-09-21 实施，配置见 `vite.config.js`）：
+    用 `unplugin-vue-components` + `ElementPlusResolver` 按需打包模板里的 `el-*` 组件与其样式，替代原来的 `app.use(ElementPlus)` 全量注册。**但以下三类不在模板里，必须手动处理，漏一个就是线上故障**：
+    - ① **函数式 API 的样式**（`ElMessage` 245 处、`ElMessageBox` 33 处 —— 都在 JS 里调用，模板插件看不见）→ `main.js` 显式 `import 'element-plus/es/components/message/style/css'` 及其 message-box；
+    - ② **`v-loading` 指令**（25 处）→ 指令不会自动注册，需 `app.use(ElLoading)` + 显式引入 `loading/style/css`；
+    - ③ **中文 locale** → 不能再 `app.use(ElementPlus, { locale: zhCn })`，改由 `App.vue` 的 `<el-config-provider :locale="zhCn">` 提供（该组件不产生额外 DOM，不影响布局）。
+    - **图标是例外**：菜单/卡片用 `:is="m.icon"`（**字符串**组件名）动态渲染，按需插件解析不了字符串 → `@element-plus/icons-vue` 保持全量注册，但在 `manualChunks` 里单独拆成 `ep-icons` chunk。
+    - **`manualChunks` 必须同步改**：原来的 `'element-plus': ['element-plus']` 会把整包塞进同一个 chunk、**直接废掉按需引入**，要删掉，让 EP 组件跟随各自页面自然分包。
+    - **验证方法（务必照做）**：① `du -ch dist/assets/el-*.js` 看体积是否真降；② **逐一检查产物 CSS 是否含每个用到的组件样式**（`for c in <组件名>; do grep -lq "\.el-$c" dist/assets/*.css; done`）—— 本次 36 个组件逐一确认无遗漏（`el-option` 无独立类名属正常，其样式挂在 `.el-select-dropdown__item`）；③ 用"**先访问代表页、再查样式表**"的脚本断言 —— **顺序很关键：样式是按需加载的，没访问过的页面查不到对应规则，会误判成"样式缺失"**（本次第一版断言就在工作台查 `el-date-picker`/`el-input`，全都不存在，白报了两个 FAIL）；④ 关键组件 computed style 不能退化（`el-input` 圆角 4px、`el-dialog` 4px + 遮罩）。
 
 ## 6. 交付与验证流程
 
@@ -216,7 +224,7 @@
 | 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
 | 图片图床接入（当前 /api/blob LONGBLOB 暂存，32 条 1.15MB） | ❌ 待接（只换 ImgUploader/blob.js 的 URL 生成） |
 | 图书封面（420 本**全部**无封面，显示首字占位） | ❌ 未处理 |
-| Element Plus 按需引入（EP 单 chunk 1.09MB，全量引入） | ❌ 未做（分包已完成，主包 18.7KB） |
+| **Element Plus 按需引入** | ✅ 已完成（2026-09-21）：EP 单包 1088KB→最大 chunk 172KB、gzip 341KB→~145KB，见铁律 #33 |
 | ~~uni-app 小程序端~~ | ❌ **已决策砍掉**（2026-09-20）→ 替代为「移动端 H5 适配 + App 壳封装」，理由见 PRD §4 |
 | **移动端 H5 适配**（替代方案主体） | ✅ 已上线（门户壳汉堡+抽屉 / 表单与对话框全宽 / 网格 minmax(0,1fr) / 五页溢出归零；PC 端实测"移动端 DOM 数=0、侧栏仍 196px"零改动） |
 | App 壳封装出 APK | ❌ 未开始（本机无 Java/Android SDK/Gradle，须云打包或另配工具链） |
@@ -233,7 +241,7 @@
 2. **【低成本·见效快】图书封面补齐**：420 本全无封面。可用 picsum 随机图或按分类生成占位图，仅改 seed 脚本 + `lib_book.cover_url`。
 3. **【低成本】邮箱增强**：附件上传发信（LanQin 支持 attachment）、管理员邮箱用量统计页。
 4. **【中期】图片图床接入**：sys_blob（LONGBLOB，现 32 条/1.15MB）→ 对象存储，仅改 blob.js 与 ImgUploader 的 URL 生成，schema 不用动。
-5. **【工程优化】Element Plus 按需引入**：unplugin-vue-components 自动导入，EP 单包 1.09MB 可显著下降（当前已分包，非阻塞）。
+5. ~~**【工程优化】Element Plus 按需引入**~~ ✅ **已完成**（2026-09-21，见铁律 #33）：EP 单包 1088KB→最大 chunk 172KB（-84%）、gzip 341KB→~145KB（-58%），首页首屏 JS 最大仅 62KB。
 6. **【收尾】演示彩排 + 论文正文**：素材沉淀见 ARCHITECTURE.md（选课并发控制 / 审批流两表引擎 / 云边协同三章核心素材）。
 7. **【数据清理】测试账号 zhreg2871**（id 12209012，2026-09-20 注册）确认无用后删除，避免演示时出现陌生账号。
 

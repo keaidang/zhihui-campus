@@ -135,6 +135,8 @@
 
 - 2026-09-21（工作台铺满）：**修复"卡片左右铺不满"**——用户反馈工作台卡片左右留白过大。排查发现**不是 padding 问题**（padding 只会造成左右对称的留白，而实测左 12px / 右 26px **不对称**），真因两个：① `.shell-body` 在 PC 是 row + **`align-items: flex-start`**（刻意为之，让侧栏与内容顶部对齐），窄屏改 column 时漏把 align-items 改回 `stretch` → 子项按内容自然宽度收缩，`.shell-main` 只有 320px 而容器内容区 366px；② WorkbenchView 的 **`.wb-zoom { zoom: 1.1 }`**（PC 刻意放大）在窄屏导致左右不对称。修复：窄屏 `align-items: stretch` + 取消 `.wb-zoom` 缩放。实测手机卡片 366px、左右各 12px 对称、全站 22 路由零溢出；PC 端零影响（zoom 仍 1.1、卡片仍 1014px）。已写进 HANDOVER 铁律 #32
 
+- 2026-09-21（EP 按需引入）：**Element Plus 由全量注册改为按需引入**（c3e9bee）——原先 `app.use(ElementPlus)` 全量注册，产物里 EP 单包 **1088KB（gzip 341KB）**，而项目实际只用到 **36 个** `el-*` 组件。改用 `unplugin-vue-components` + `ElementPlusResolver` 按需打包（含各自样式）后：**最大 chunk 1088KB→172KB（-84%）**、EP 部分 1088KB→516KB（-53%）、**gzip 341KB→~145KB（-58%）**、**首页首屏引用的 JS 最大仅 62KB**。三类模板插件捕获不到的必须手动处理（漏一个就是线上故障）：① **`ElMessage`(245处)/`ElMessageBox`(33处) 的样式**（JS 里调用，模板插件看不见）② **`v-loading` 指令**(25处) 的注册与样式 ③ **中文 locale**（改由 `App.vue` 的 `el-config-provider` 提供）。图标因 `:is="m.icon"` 是**字符串**组件名无法按需解析，保持全量并单独分包 `ep-icons`；`manualChunks` 里原来的 `'element-plus': ['element-plus']` 必须删除，否则会把整包塞进一个 chunk、**直接废掉按需**。验证：36 个组件样式在产物 CSS 中**逐一确认无遗漏**（`el-option` 无独立类名属正常，样式挂在 `.el-select-dropdown__item`）、关键组件 computed style 未退化、全站 21 路由渲染正常零 console 错误。详见 HANDOVER 铁律 #33
+
 ## 下一步
 
 > 详细剩余项与整改建议已收敛到 **docs/AUDIT-2026-09-21.md**（2026-09-21 全面体检报告，含 P0~P2 分级与工作量估计），此处不再重复维护（避免漂移）。
