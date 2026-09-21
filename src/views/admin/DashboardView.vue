@@ -47,10 +47,12 @@
           <div class="stat-grid">
             <div class="stat"><b class="warn">{{ data.affairs.leave.pending }}</b><span>请假待审批</span></div>
             <div class="stat"><b class="ok">{{ data.affairs.leave.approved }}</b><span>已批准</span></div>
+            <div class="stat"><b>{{ data.affairs.leave.rejected }}</b><span>已驳回</span></div>
             <div class="stat"><b>{{ data.affairs.leave.done }}</b><span>已销假</span></div>
             <div class="stat"><b class="warn">{{ data.affairs.repair.pending }}</b><span>报修待受理</span></div>
             <div class="stat"><b>{{ data.affairs.repair.processing }}</b><span>处理中</span></div>
             <div class="stat"><b class="ok">{{ data.affairs.repair.done }}</b><span>已完成</span></div>
+            <div class="stat"><b>{{ data.affairs.repair.rejected }}</b><span>无法处理</span></div>
           </div>
         </section>
 

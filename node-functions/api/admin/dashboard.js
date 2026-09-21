@@ -91,7 +91,14 @@ export async function onRequestGet(context) {
       },
       affairs: {
         leave: { pending: leaveMap.s1 || 0, approved: leaveMap.s2 || 0, rejected: leaveMap.s3 || 0, done: leaveMap.s4 || 0 },
-        repair: { pending: repairMap.s0 || 0, processing: repairMap.s1 || 0, done: repairMap.s2 || 0 },
+        // 报修工单状态机：0 待受理 / 1 处理中 / 2 已完成 / 3 无法处理
+        // rejected 是终态，单独计数（不计入 done）——用于发现"多少工单被判定为非后勤职责"
+        repair: {
+          pending: repairMap.s0 || 0,
+          processing: repairMap.s1 || 0,
+          done: repairMap.s2 || 0,
+          rejected: repairMap.s3 || 0,
+        },
         pendingApprovals: Number(pendingApprovals[0].n),
       },
       dorm: {

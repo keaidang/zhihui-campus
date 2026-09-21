@@ -40,10 +40,23 @@
 | flow_instance | 审批流实例 | biz_type('leave'...), biz_id, applicant_id, dept_id, status(1进行中 2通过 3驳回 4已销假), current_node |
 | flow_node | 审批流节点 | instance_id, node_order, handler_role, handler_id, status(0待处理 1通过 2驳回), opinion, handled_at；**UNIQUE(instance_id, node_order)** |
 | af_leave | 请假单 | student_id, dept_id, type(事假/病假/其他), reason, start_at/end_at, status(1审批中 2已批准 3已驳回 4已销假), back_at, instance_id |
-| af_repair | 报修工单 | user_id, location, category(水电/家具/网络/门锁/其他), description, contact, status(0待受理 1处理中 2已完成), handler_id, remark |
+| af_repair | 报修工单（**单节点状态机，无 instance_id**） | user_id, location, category(水电/家具/网络/门锁/其他), description, contact, status(0待受理 1处理中 2已完成 3无法处理), handler_id, remark(处理备注 / 无法处理原因) |
 | af_notice | 公告 | title, content, publisher_id, dept_id(NULL=全校), pinned, status(1发布 0撤回) |
 
-**审批流引擎（论文亮点素材）**：flow_instance/flow_node 两表通用驱动，与具体业务解耦。新审批业务只需：建业务单据 + 插 instance + 按 node_order 插节点。请假链路：申请→辅导员审批(实时匹配本院 counselor)→通过/驳回→销假。后续奖助/调宿复用。
+**审批流引擎（论文亮点素材）**：flow_instance/flow_node 两表驱动，与具体业务解耦——业务表只维护自身状态，另插一条 instance 以 `(biz_type, biz_id)` 关联；节点按 `node_order` 逐个流转，处理人由 `handler_role` **实时匹配**（不写死具体人）。新审批业务只需：建业务单据 + 插 instance + 按 node_order 插节点。请假链路：申请→辅导员审批(实时匹配本院 counselor)→通过/驳回→销假。
+
+### 审批流 vs 状态机（★ 新业务先做这个判断，再动手）
+
+**实际接入范围（如实口径）**：审批流引擎**当前仅请销假在用**（`flow_instance` 里 `biz_type` 只有 `'leave'`）。
+
+| 判据 | 用审批流引擎（flow_instance/flow_node） | 用单节点状态机（业务表自带 status） |
+|---|---|---|
+| 处理环节 | 多节点、逐级流转 | **单节点**——一个人受理即闭环 |
+| 业务语义 | 批准 / 驳回（对"申请"的表态） | 受理 / 完成（对"工单"的派办） |
+| 留痕需求 | 需要每节点的意见、处理人、时间 | 单据自身的 `handler_id` / `remark` 已足够 |
+| 现有实例 | **请销假**（af_leave） | **报修**（af_repair）、社团申请（club_application） |
+
+报修与社团申请都是自建状态机——这是**有意的设计取舍**（为单节点业务引入两表流程反而增加无收益的耦合），不是漏接。⚠ 历史文档曾表述为"请假/奖助/报修共用一套流转逻辑"，与实现不符，已于 2026-09-21 更正。
 
 ### 组织升级（schema-005/006）
 | 变更 | 说明 |

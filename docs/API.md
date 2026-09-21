@@ -28,7 +28,7 @@
 | 42900 | 登录失败次数过多（限流锁定 10 分钟） |
 | 42001~42006 | 教务线：参数/停选/重复选课/不存在/名额满/未选中 |
 | 43001~43004 | 学工线：请假参数/不在审批中/不可销假/不存在 |
-| 44001~44004 | 报修：参数/已受理/不可完成/不存在 |
+| 44001/44004/44005/44006 | 报修：参数或工单参数不合法 / 工单不存在 / 当前状态不允许该操作 / 无法处理未填原因 |
 | 45001/45004 | 公告：参数/不存在 |
 | 43501~43508 | 忘记密码：参数/账号邮箱不匹配/验证码错误过期/重置失败 |
 | 45005 | 失物招领（lf）：权限/状态类 |
@@ -118,7 +118,7 @@
 | POST | /api/af/leave | student | `{action:'back', leaveId}` 销假（已批准→已销假） |
 | GET | /api/af/repair?status= | 本人 / staff 全部 | 报修工单列表 |
 | POST | /api/af/repair | 登录 | `{action:'create', location, category, description, contact}` |
-| POST | /api/af/repair | counselor/admin | `{action:'accept'\|'finish', id, remark}` 工单流转 |
+| POST | /api/af/repair | counselor/admin | `{action:'accept'\|'finish', id[, remark]}` 受理/完成；`{action:'reject', id, remark}` 标记无法处理（**remark 必填**，原因会通知报修人） |
 | GET | /api/af/notice | 登录 | 公告列表（学生=全校+本院；staff 全部；置顶优先） |
 | POST | /api/af/notice | teacher/counselor/admin | `{action:'publish', title, content[, deptId, pinned]}`；counselor/teacher 强制本院 |
 | POST | /api/af/notice | 发布者/admin | `{action:'revoke'\|'pin', id}` 撤回/置顶（pin 仅 admin） |
@@ -128,6 +128,10 @@
 - 请假单创建时同步生成：`flow_instance(biz_type='leave', status=1, current_node=1)` + `flow_node(node_order=1, handler_role='counselor')`
 - 审批通过 → instance status=2；驳回 → 3；销假 → 4。后续奖助/调宿等审批复用同一套两表引擎
 - 审批人权限校验：handler_role + 申请人 dept_id 与辅导员 deptId 匹配（admin 豁免）
+
+**哪些业务接入了本引擎（口径，新业务接入前必读）**：
+- **当前仅请销假**在用（`biz_type='leave'`）。报修（`af_repair`）与社团申请（`club_application`）是**单节点状态机，不建流程实例**——判据与对照表见 `docs/DATABASE.md`「审批流 vs 状态机」。
+- 报修全项目**只有一个写入端点**（`/api/af/repair`）。⚠ 历史文档与审计报告曾记载"存在 `/api/dorm/repair` 另一条写入路径"，经 2026-09-21 全代码 + 全 git 历史核实：**该端点从未存在过，报修也从未建过流程实例**。
 
 ### 5.7 图片 Blob（M3）
 
@@ -179,7 +183,9 @@
 | GET | /api/dorm?view=students | admin/counselor | 未住宿学生清单（分配下拉用） |
 | POST | /api/dorm | admin/counselor | action=`addBuilding`（性别属性楼栋）/ `addRoom` / `toggleRoom`（有住户拒停用）/ `assign`（事务 FOR UPDATE：容量+性别双重校验，自动分配最小床位号）/ `unassign`（退宿留历史，occupied 同事务维护） |
 
-- 宿舍报修复用 `/api/af/repair`（学生提交时前端自动带出住宿位置）；sys_user.gender（0未知 1男 2女）为分配约束依据
+- 宿舍报修复用 `/api/af/repair`（学生提交时前端自动带出住宿位置）；**全项目仅此一个报修写入端点**
+- 报修是**单节点受理工单（状态机）**，不建 `flow_instance`：0 待受理 → 1 处理中 → 2 已完成；0/1 均可 → 3 无法处理（终态，必填原因并通知报修人）
+- sys_user.gender（0未知 1男 2女）为分配约束依据
 - 错误码：49201 参数 / 49202 重复 / 49203 性别不符 / 49204 不存在 / 49205 停用冲突 / 49206 已满员 / 49207 已在住
 
 ### 5.13 站内信 / 站内通知（schema-011，/api/notice/messages）

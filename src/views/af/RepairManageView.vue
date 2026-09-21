@@ -10,6 +10,7 @@
           <el-radio-button value="0">待受理</el-radio-button>
           <el-radio-button value="1">处理中</el-radio-button>
           <el-radio-button value="2">已完成</el-radio-button>
+          <el-radio-button value="3">无法处理</el-radio-button>
           <el-radio-button value="">全部</el-radio-button>
         </el-radio-group>
       </header>
@@ -29,22 +30,33 @@
         <el-table-column label="提交时间" width="150">
           <template #default="{ row }"><span class="small">{{ fmt(row.created_at) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="140" align="center">
+        <el-table-column label="操作" width="200" align="center">
           <template #default="{ row }">
-            <el-button v-if="row.status === 0" type="primary" size="small" round @click="open(row, 'accept')">受理</el-button>
-            <el-button v-else-if="row.status === 1" type="success" size="small" round @click="open(row, 'finish')">完成</el-button>
+            <template v-if="row.status === 0 || row.status === 1">
+              <el-button v-if="row.status === 0" type="primary" size="small" round @click="open(row, 'accept')">受理</el-button>
+              <el-button v-else type="success" size="small" round @click="open(row, 'finish')">完成</el-button>
+              <el-button type="danger" size="small" round plain @click="open(row, 'reject')">无法处理</el-button>
+            </template>
             <span v-else class="small muted">{{ row.handler_name || '—' }}</span>
           </template>
         </el-table-column>
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="action === 'accept' ? '受理工单' : '完成工单'" width="440px">
+    <el-dialog v-model="dialogVisible" :title="DLG_TITLE[action]" width="440px">
       <p class="dlg-sub">{{ current?.location }} · {{ current?.category }} · {{ current?.description }}</p>
-      <el-input v-model="remark" type="textarea" :rows="3" maxlength="256" placeholder="处理备注（选填）" />
+      <el-input
+        v-model="remark"
+        type="textarea"
+        :rows="3"
+        maxlength="256"
+        :placeholder="action === 'reject' ? '无法处理的原因（必填，会通知报修人）' : '处理备注（选填）'"
+      />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button :type="action === 'accept' ? 'primary' : 'success'" :loading="saving" @click="confirm">确认</el-button>
+        <el-button :type="action === 'finish' ? 'success' : action === 'reject' ? 'danger' : 'primary'" :loading="saving" @click="confirm">
+          确认
+        </el-button>
       </template>
     </el-dialog>
   </PortalShell>
@@ -65,7 +77,9 @@ const action = ref('accept');
 const remark = ref('');
 const saving = ref(false);
 
-const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success' }[s] || 'info');
+// 工单状态机文案（与后端 af/repair.js 的 FLOW 对齐：「无法处理」为终态，需填原因）
+const DLG_TITLE = { accept: '受理工单', finish: '完成工单', reject: '标记无法处理' };
+const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'danger' }[s] || 'info');
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
 import { fmtTime as fmt } from '../../utils/time';
 
@@ -89,6 +103,11 @@ function open(row, act) {
 }
 
 async function confirm() {
+  // 「无法处理」必须填原因：报修人看到的就是这个 remark 字段，留空则工单被关闭却无从解释
+  if (action.value === 'reject' && !remark.value.trim()) {
+    ElMessage.warning('请填写无法处理的原因');
+    return;
+  }
   saving.value = true;
   try {
     const res = await api('/api/af/repair', {

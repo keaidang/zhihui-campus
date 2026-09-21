@@ -96,7 +96,8 @@
 - **图片**：`/api/blob`（POST base64≤3MB → LONGBLOB 暂存，GET 公共只读带 immutable 缓存）；前端统一 `ImgUploader` 组件（canvas 压缩到 1280px/JPEG 0.85）；接图床时只改 blob.js 与 ImgUploader 的 URL 生成
 - **忘记密码**：登录页对话框 → `POST /api/auth/password/forgot-send-code`（账号+绑定邮箱匹配才发码，purpose='reset'）→ `forgot-reset`（校验后重置 + 删 sys_refresh_token 吊销全部会话）
 - **测试数据**：`node scripts/seed-m3.mjs`（幂等）：420 本藏书 / 失物 8 条 / 社团 6 通过+2 待审 / 论坛 30+ 帖；图片抓 picsum 失败自动生成 SVG 占位图存 sys_blob
-- **宿舍管理**（schema-010）：原独立"宿舍报修"入口已并入 `/dorm`（/af/repair 路由 301 → /dorm，RepairView.vue 留档未删）；分配=事务 FOR UPDATE + **性别楼栋约束**（sys_user.gender 0未知/1男/2女 ↔ dorm_building.gender）+ **生成列 active_flag 唯一键**保证一人一条在住；occupied 冗余计数必须与分配/退宿同事务维护；报修复用 /api/af/repair
+- **宿舍管理**（schema-010）：原独立"宿舍报修"入口已并入 `/dorm`（/af/repair 路由 301 → /dorm；旧 `RepairView.vue` 已于 2026-09-21 删除——它是**无引用的死文件**，曾导致"报修有两个入口 / 两条写入路径"的误判）；分配=事务 FOR UPDATE + **性别楼栋约束**（sys_user.gender 0未知/1男/2女 ↔ dorm_building.gender）+ **生成列 active_flag 唯一键**保证一人一条在住；occupied 冗余计数必须与分配/退宿同事务维护
+- **报修工单模型**（2026-09-21 定口径，铁律 #34）：**单节点状态机，不建 flow_instance** —— 全项目唯一写入端点 `/api/af/repair`（学生 /dorm 提交与查看、staff /af/repair-manage 处理）。状态机：`0 待受理 → 1 处理中 → 2 已完成`；`0/1 均可 → 3 无法处理`（终态，**remark 必填**并通知报修人，用于"非后勤职责 / 需学生自理"等无法完成的场景）
 - **站内信**（schema-011）：sys_message 单表（sender_id=0 系统、biz 标来源业务）；发送统一走 lib/notify.js（notify/notifyMany/roleUserIds/allUserIds，尽力而为失败不阻断）；已接线：请假审批结果、社团审批结果、报修受理/完成；前端 PortalShell 铃铛 60s 轮询 /api/notice/messages
 - **驾驶舱**（M4）：/api/admin/dashboard 一次 GET 并发 21 条聚合查询（admin/leader 只读）；前端 DashboardView 全 CSS 图表零依赖；页面 /dashboard + 菜单仅 admin/leader 可见
 - **宿舍数据**：`node scripts/seed-dorm.mjs`（幂等）：性别确定性补齐（user_id 奇偶，男201/女202）→ 384 间房 → 全体学生按性别入住（403/1728 床，集中住满、留空房演示分配）
@@ -190,6 +191,13 @@
     - **图标是例外**：菜单/卡片用 `:is="m.icon"`（**字符串**组件名）动态渲染，按需插件解析不了字符串 → `@element-plus/icons-vue` 保持全量注册，但在 `manualChunks` 里单独拆成 `ep-icons` chunk。
     - **`manualChunks` 必须同步改**：原来的 `'element-plus': ['element-plus']` 会把整包塞进同一个 chunk、**直接废掉按需引入**，要删掉，让 EP 组件跟随各自页面自然分包。
     - **验证方法（务必照做）**：① `du -ch dist/assets/el-*.js` 看体积是否真降；② **逐一检查产物 CSS 是否含每个用到的组件样式**（`for c in <组件名>; do grep -lq "\.el-$c" dist/assets/*.css; done`）—— 本次 36 个组件逐一确认无遗漏（`el-option` 无独立类名属正常，其样式挂在 `.el-select-dropdown__item`）；③ 用"**先访问代表页、再查样式表**"的脚本断言 —— **顺序很关键：样式是按需加载的，没访问过的页面查不到对应规则，会误判成"样式缺失"**（本次第一版断言就在工作台查 `el-date-picker`/`el-input`，全都不存在，白报了两个 FAIL）；④ 关键组件 computed style 不能退化（`el-input` 圆角 4px、`el-dialog` 4px + 遮罩）。
+34. **★★ 业务模型归属必须先定再动手；文档宣称不得超出实现**（2026-09-21，由「报修两条写入路径」误判引出）：
+    - **误判经过**：审计报告曾称"报修有两条写入路径（`/api/af/repair` 建流程实例、`/api/dorm/repair` 不建），模型不一致"。经**全代码 + 全 git 历史**核实**两者皆伪**——`/api/dorm/repair` 从未存在，`/api/af/repair` 也从未建过 `flow_instance`：**报修全项目只有一个写入端点**。误判根源是仓库里留着一个**无路由引用的死文件** `RepairView.vue`（旧 /af/repair 页面，已 301 → /dorm），看起来像"另一个入口"。
+    - **教训一 · 文档宣称不得超出实现**：`RESEARCH-功能架构调研.md` 原写"审批流 请假/奖助/报修共用一套流转逻辑"，而引擎**实际只接了请假**。设计期的"预判"若不随实施结果回归，就会变成失实口径，进而在体检/答辩时被当成"缺陷"。**实施完成后必须回头改正预判类文档**。
+    - **教训二 · 先定模型归属再动手**：新业务属"审批流"还是"状态机"必须**动手前**判断，判据表见 `DATABASE.md`「审批流 vs 状态机」。**单节点业务**（一个人受理即闭环、语义是"受理/完成"而非"批准/驳回"）**不该套两表流程**——那是无收益的耦合。现状：请假 = 审批流；**报修、社团申请 = 单节点状态机**（有意取舍，非漏接）。
+    - **教训三 · 死代码会制造幽灵问题**：改了入口就删旧页面（至少在文档标注"已废弃"）。本次的审计误判与"两条路径"错觉，都源于一个没人访问却仍在仓库里的 `.vue`。
+    - **自查命令**：`grep -rn "flow_instance" node-functions --include=*.js | grep INSERT` 看引擎真实接入范围；`grep -rn "<组件名>" src/` 确认无引用后再 `git rm`。
+    - **单节点状态机也要有完整终态**：报修原先缺"无法处理"终态（只有 待受理/处理中/已完成），导致师傅发现非本部门职责时**无法正确关闭工单**（只能谎报完成或永远挂着）。已补 `status=3 无法处理`（**必填原因**并通知报修人）——**凡是状态机，先数清终态有几个**。
 
 ## 6. 交付与验证流程
 

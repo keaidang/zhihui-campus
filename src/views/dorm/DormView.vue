@@ -268,7 +268,8 @@ const visibleRooms = computed(() => {
   return list;
 });
 const bedPct = (b) => (b.bedTotal > 0 ? Math.round((b.bedUsed / b.bedTotal) * 100) : 0);
-const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success' }[s] || 'info');
+// 报修工单状态配色（3=无法处理，终态；原因在 r.remark 中展示）
+const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'danger' }[s] || 'info');
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
 import { fmtTime as fmt } from '../../utils/time';
 
