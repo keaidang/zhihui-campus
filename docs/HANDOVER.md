@@ -202,6 +202,8 @@
     - **① 单测 `tests/unit/*.spec.js`（Vitest，秒级、零外部依赖）** —— 只测**纯逻辑**：时间口径、权限判定（`dataScope`）、时段冲突、性别约束、HTTP 层结构。**刻意不测组件**（不引 jsdom），需要真实页面时走 e2e。
     - **② 库体检 `scripts/{sql-smoke-m4,integrity-check,gap-check}.mjs`（只读）** —— 对真实 TiDB 验证 SQL 字段名与数据一致性。**新 API 上线前必跑**（防 `ER_BAD_FIELD_ERROR` 与静默数据不一致）。
     - **③ 线上 e2e `scripts/e2e-smoke.mjs`（只读 GET、可重复跑）** —— 四角色 + 越权边界 + 历史缺陷回归。**新增/修改端点后必须补一条断言**。
+      - ⚠ 对 EdgeOne 的一种**已知偶发**（POST body 被平台重复读取 → `50000 Body is unusable: Body has already been read`，**部署窗口期更易撞上**）在 `postJson` 里做**一次重试**：**只认这一种错误消息**，其它 500 一律照常判失败 —— 否则会把真实缺陷掩盖成"抖动"。排查这类问题时先跑 `node scripts/ops-check.mjs` 看 `sys_op_log` 的 `error.500` 分组拿到真实错误消息（本次即靠它一条命令定位到是平台问题而非代码问题）。
+      - 服务端配套：读体后**先把缺失键归一化**（`String(body.x || '')`）再校验，可显著降低该偶发触发率。
     - **加测试的三条规矩**：① 改核心规则先问"这条规则能被单测吗"，不能就把纯逻辑抽成函数（本次 `lib/schedule.js` / `lib/dorm-rules.js` 即这样产出——它们原先内联在事务闭包里，**任何测试都覆盖不到**）；② 写"重构等价性"断言后**必须验证它能失败**（本次用 `Number(null)===0` 反例验证；没验证过的断言可能只是"永远绿"的摆设）；③ 优先只读断言（可随时重跑、不污染演示数据）。
     - **⚠ ESLint 规则强度刻意克制**：只开**错误级**规则（`js recommended` + `vue flat/essential`），**绝不加格式类规则** —— 一旦引入必然产生几百条历史噪音，最终结果是"没人再看 lint"。`ignores` 里排除 `scripts/`、`.shots/`（一次性脚本不强求风格）。
 

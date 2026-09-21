@@ -30,18 +30,31 @@ async function call(path, token) {
   return { http: res.status, json };
 }
 
-/** POST JSON（用于"不该成功"的安全边界断言；本脚本不改动任何账号状态） */
+/** POST JSON（用于"不该成功"的安全边界断言；本脚本不改动任何账号状态）
+ *  ⚠ 对 EdgeOne 平台的一种**已知偶发**错误做一次重试：
+ *     POST body 被平台重复读取 → 50000 "Body is unusable: Body has already been read"，
+ *     部署窗口期（新旧函数混跑）更容易撞上，与业务代码无关。
+ *     这里**只对这一种消息**重试，其它 500 一律照常判失败，避免把真实缺陷掩盖成"抖动"。 */
 async function postJson(path, token, body) {
-  const res = await fetch(BASE + path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body || {}),
-  });
-  const json = await res.json().catch(() => ({}));
-  return { http: res.status, json };
+  const doCall = async () => {
+    const res = await fetch(BASE + path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const json = await res.json().catch(() => ({}));
+    return { http: res.status, json };
+  };
+  let r = await doCall();
+  if (r.json.code === 50000 && String(r.json.message || '').includes('Body')) {
+    log('     [transient] 命中 EdgeOne 偶发 body-read 错误，重试一次…');
+    await new Promise((s) => setTimeout(s, 400));
+    r = await doCall();
+  }
+  return r;
 }
 
 /** 断言业务码符合预期；expect 传数组表示"多种可接受结果"（如正常态与业务态都算通过） */
