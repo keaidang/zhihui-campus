@@ -110,12 +110,9 @@
       </aside>
     </div>
 
-    <footer class="shell-foot">
-      清北大学 · 智汇校园一站式服务平台 © 2026 ·
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a>
-      ·
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">鲁ICP备2025186072号</a>
-    </footer>
+    <!-- 页脚：窄屏由 mobile.css 改为纵向排列（站点名一行、两个备案号各一行）。
+         span 之间不留空白，保证 PC 端渲染与改动前逐字节一致。 -->
+    <footer class="shell-foot"><span class="ft-main">清北大学 · 智汇校园一站式服务平台 © 2026</span><span class="ft-sep"> · </span><a class="ft-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a><span class="ft-sep"> · </span><a class="ft-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">鲁ICP备2025186072号</a></footer>
   </div>
 </template>
 

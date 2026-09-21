@@ -197,4 +197,28 @@
   .fm-ban-add.fm-ban-add.fm-ban-add .el-input {
     width: 100% !important;
   }
+
+  /* ---------- 10. 页脚备案号：窄屏纵向排列（2026-09-21） ----------
+     问题：页脚原为一整行内联文本，窄屏会被折在"苏ICP备"中间，两个备案号挤在一起、
+     且官方备案号被断成两截（观感与合规展示都不合适）。
+     改为纵向三行：站点名一行、两个备案号各占一行。
+     三处页脚结构相同（.shell-foot 门户 / .site-footer 首页 / .gate-footer 登录页），
+     故统一用 .ft-main / .ft-sep / .ft-link 这组语义类名处理。 */
+  .shell-foot.shell-foot.shell-foot,
+  .site-footer.site-footer.site-footer,
+  .gate-footer.gate-footer.gate-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    line-height: 1.8;
+  }
+  /* PC 下用的 " · " 分隔符，纵向排列时多余，隐藏 */
+  .ft-sep.ft-sep.ft-sep {
+    display: none;
+  }
+  /* 备案号整体不断行，避免"苏ICP备"被折断 */
+  .ft-link.ft-link.ft-link {
+    white-space: nowrap;
+  }
 }
