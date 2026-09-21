@@ -42,6 +42,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="workbench">工作台</el-dropdown-item>
                 <el-dropdown-item command="home">返回首页</el-dropdown-item>
+                <el-dropdown-item command="password">修改登录密码</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -113,6 +114,26 @@
     <!-- 页脚：窄屏由 mobile.css 改为纵向排列（站点名一行、两个备案号各一行）。
          span 之间不留空白，保证 PC 端渲染与改动前逐字节一致。 -->
     <footer class="shell-foot"><span class="ft-main">清北大学 · 智汇校园一站式服务平台 © 2026</span><span class="ft-sep"> · </span><a class="ft-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026056678号</a><span class="ft-sep"> · </span><a class="ft-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">鲁ICP备2025186072号</a></footer>
+
+    <!-- 修改登录密码（自助改密；成功后服务端已吊销全部会话，故清本地令牌并回登录页） -->
+    <el-dialog v-model="pwdDlg" title="修改登录密码" width="420px">
+      <el-form label-position="top">
+        <el-form-item label="原密码">
+          <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="当前登录密码" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="8~64 位" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdForm.confirm" type="password" show-password placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <p class="pwd-tip">修改成功后，其他设备的登录状态会失效，需要用新密码重新登录。</p>
+      <template #footer>
+        <el-button @click="pwdDlg = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="submitPwd">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -182,6 +203,46 @@ const menus = computed(() => MENUS.filter((m) => !m.roles || auth.hasRole(m.role
 // 全部模块已上线，不再有"筹备中"占位
 const pendingMenus = computed(() => []);
 
+// ---- 自助修改登录密码 ----
+// 后端在改密成功后会吊销该用户**全部** refresh token，因此本地必须同步清会话并回登录页，
+// 否则界面还是"已登录"样子、但任何刷新都会失败，用户会以为系统坏了。
+const pwdDlg = ref(false);
+const pwdSaving = ref(false);
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' });
+
+async function submitPwd() {
+  const f = pwdForm.value;
+  if (!f.oldPassword || !f.newPassword) {
+    ElMessage.warning('请填写原密码与新密码');
+    return;
+  }
+  if (f.newPassword.length < 8 || f.newPassword.length > 64) {
+    ElMessage.warning('新密码长度须为 8~64 位');
+    return;
+  }
+  if (f.newPassword !== f.confirm) {
+    ElMessage.warning('两次输入的新密码不一致');
+    return;
+  }
+  pwdSaving.value = true;
+  try {
+    const res = await api('/api/me/password', {
+      method: 'POST',
+      body: { oldPassword: f.oldPassword, newPassword: f.newPassword },
+    });
+    if (res.code !== 0) {
+      ElMessage.error(res.message || '修改失败');
+      return;
+    }
+    pwdDlg.value = false;
+    ElMessage.success('密码已修改，请用新密码重新登录');
+    auth.clearSession();
+    router.push('/login');
+  } finally {
+    pwdSaving.value = false;
+  }
+}
+
 async function onCommand(cmd) {
   if (cmd === 'logout') {
     await auth.logout();
@@ -191,6 +252,9 @@ async function onCommand(cmd) {
     router.push('/workbench');
   } else if (cmd === 'home') {
     router.push('/');
+  } else if (cmd === 'password') {
+    pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' };
+    pwdDlg.value = true;
   }
 }
 
@@ -214,6 +278,13 @@ onUnmounted(() => clearInterval(unreadTimer));
 </script>
 
 <style scoped>
+/* 改密对话框的提示文字 */
+.pwd-tip {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--zc-text-sub);
+}
 .shell {
   position: relative;
   min-height: 100vh;

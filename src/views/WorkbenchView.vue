@@ -46,7 +46,7 @@
             <p class="mail-note" v-if="!auth.user.mailEnabled">开通对外收发后即可收发外部邮件，请联系管理员开通</p>
             <div class="mail-btns" v-if="auth.user.mailEnabled">
               <el-button type="primary" size="small" @click="router.push('/mail')">进入邮箱</el-button>
-              <el-button size="small" plain @click="mailPwdDlg = true">修改密码</el-button>
+              <el-button size="small" plain @click="mailPwdDlg = true">修改邮箱密码</el-button>
             </div>
           </template>
           <p v-else class="mail-note">校园邮箱尚未分配，请联系管理员</p>

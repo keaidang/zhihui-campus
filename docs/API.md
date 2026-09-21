@@ -31,6 +31,7 @@
 | 44001/44004/44005/44006 | 报修：参数或工单参数不合法 / 工单不存在 / 当前状态不允许该操作 / 无法处理未填原因 |
 | 45001/45004 | 公告：参数/不存在 |
 | 43501~43508 | 忘记密码：参数/账号邮箱不匹配/验证码错误过期/重置失败 |
+| 43700~43704 | 自助改密（/api/me/password）：参数缺失 / 新密码长度不合法 / 与原密码相同 / 用户不存在或已禁用 / 原密码不正确 |
 | 45005 | 失物招领（lf）：权限/状态类 |
 | 46001~46015 | 图书借阅（lib）：参数/库存/在借上限/重复借/不存在/导入校验 |
 | 47001~47004 | 图片 blob：参数/大小/类型/token 无效 |
@@ -61,6 +62,7 @@
 | GET | /api/auth/me | 登录 | 当前用户（含 user_no / dept / class / campus_email / mail_enabled + 数据库实时角色） |
 | POST | /api/auth/password/forgot-send-code | 公开 | 忘记密码发码：`{username, email}` 账号+绑定邮箱匹配才发（purpose='reset'） |
 | POST | /api/auth/password/forgot-reset | 公开 | `{username, email, code, newPassword}` 校验后重置 + 删 sys_refresh_token 吊销全部会话 |
+| POST | /api/me/password | 登录 | **登录后自助修改登录密码**：`{oldPassword, newPassword}` —— 必须验原密码（防会话劫持后把真实用户锁在门外）；新密码 8~64 位且不得与原密码相同；成功后**吊销该用户全部 refresh token**（改密即视为口令可能已泄露）；原密码错误 10 分钟 5 次限流（DB 流水计数） |
 | GET | /api/health | 公开 | 健康检查（db / jwtConfigured / protocol 诊断位） |
 
 ### 5.2 管理端基础（阶段 1 基础部分）

@@ -4,11 +4,11 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../../lib/http.js';
 import { query } from '../../../lib/db.js';
 import { opLog } from '../../../lib/guard.js';
+// 口令强度规则统一来源（注册 / 忘记密码 / 自助改密 共用，防规则漂移）
+import { isPasswordLengthOk, PWD_MIN, PWD_MAX } from '../../../lib/password-rules.js';
 import bcrypt from 'bcryptjs';
 
 export { preflight as onRequestOptions };
-
-const PWD_OK = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 64;
 
 export async function onRequestPost(context) {
   try {
@@ -20,7 +20,7 @@ export async function onRequestPost(context) {
     const ip = clientIp(context.request);
     if (!username || !email) return fail(43501, '请输入账号与绑定邮箱');
     if (!/^\d{6}$/.test(code)) return fail(43501, '请输入 6 位验证码');
-    if (!PWD_OK(newPassword)) return fail(43507, '新密码至少 8 位');
+    if (!isPasswordLengthOk(newPassword)) return fail(43507, `新密码长度须为 ${PWD_MIN}~${PWD_MAX} 位`);
 
     // 接口限流：重置动作依托发码侧 3 次/hour/IP 的 DB 限流（无码无法重置，验证码另有 5 次尝试上限）
     // ——此处不再单独计数，避免同 IP 正常用户"发码+重置"两步被重复限制误伤

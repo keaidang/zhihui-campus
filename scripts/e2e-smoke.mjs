@@ -30,6 +30,20 @@ async function call(path, token) {
   return { http: res.status, json };
 }
 
+/** POST JSON（用于"不该成功"的安全边界断言；本脚本不改动任何账号状态） */
+async function postJson(path, token, body) {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { http: res.status, json };
+}
+
 /** 断言业务码符合预期；expect 传数组表示"多种可接受结果"（如正常态与业务态都算通过） */
 async function check(name, path, token, expect = 0) {
   try {
@@ -164,6 +178,35 @@ const bogus = await call('/api/auth/me', 'garbage.token.value');
 assert('伪造 token 被拒（HTTP 401）',
   bogus.http === 401 && [40100, 40103].includes(bogus.json.code),
   `code=${bogus.json.code} http=${bogus.http}`);
+
+// ── 8. 自助改密的安全边界（全部是"不该成功"的调用，不会改动任何账号）──
+// 说明：本脚本整体只读，改密的**成功**路径不在 e2e 覆盖范围（会真改密码、破坏演示账号），
+// 成功路径由 tests/unit/password-rules.spec.js + 人工一次性验证覆盖。
+log('\n【8. 自助改密安全边界】');
+
+const pwNoAuth = await postJson('/api/me/password', null, { oldPassword: 'x', newPassword: 'NewPass456' });
+assert('未登录改密 → 40103', pwNoAuth.json.code === 40103, `code=${pwNoAuth.json.code}`);
+
+const pwShort = await postJson('/api/me/password', tk.student, { oldPassword: 'wrong-old', newPassword: 'short' });
+assert('新密码过短被拒 → 43701', pwShort.json.code === 43701, `code=${pwShort.json.code} msg=${pwShort.json.message}`);
+
+const pwSame = await postJson('/api/me/password', tk.student, {
+  oldPassword: ACCOUNTS.student.password,
+  newPassword: ACCOUNTS.student.password,
+});
+assert('新旧密码相同被拒 → 43702', pwSame.json.code === 43702, `code=${pwSame.json.code}`);
+
+// 错误原密码会被计入"10 分钟 5 次"的失败限流，故 42900 也算被拒（反复跑本脚本时的正常结果）
+const pwWrong = await postJson('/api/me/password', tk.student, {
+  oldPassword: 'definitely-not-the-password',
+  newPassword: 'NewPass456',
+});
+assert('原密码错误被拒 → 43704/42900',
+  [43704, 42900].includes(pwWrong.json.code), `code=${pwWrong.json.code} msg=${pwWrong.json.message}`);
+
+// 反向证明：上面这些失败调用没有误改密码（原 token 仍可用）
+const stillOk = await call('/api/auth/me', tk.student);
+assert('学生账号未被以上调用影响（原 token 仍有效）', stillOk.json.code === 0, `code=${stillOk.json.code}`);
 
 // ── 汇总 ────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.pass);

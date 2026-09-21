@@ -7,9 +7,10 @@ import { query, withTransaction } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp, preflight } from '../../lib/http.js';
 import { registerAllowed, registerRecord } from '../../lib/auth.js';
 import { isDomainAllowed } from '../../lib/lanqin.js';
+// 口令强度规则统一来源（注册 / 忘记密码 / 自助改密 / 管理员重置共用，防规则漂移）
+import { isPasswordLengthOk, PWD_MIN, PWD_MAX } from '../../lib/password-rules.js';
 
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/; // 字母开头, 4~32 位
-const PASSWORD_MIN = 8;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
 const DEFAULT_DOMAIN = 'keaidang.com';
@@ -34,8 +35,8 @@ export async function onRequestPost(context) {
     if (RESERVED_NAMES.includes(username.toLowerCase())) {
       return fail(41002, '该用户名为系统保留，请更换');
     }
-    if (password.length < PASSWORD_MIN || password.length > 64) {
-      return fail(41001, `密码长度须为 ${PASSWORD_MIN}~64 位`);
+    if (!isPasswordLengthOk(password)) {
+      return fail(41001, `密码长度须为 ${PWD_MIN}~${PWD_MAX} 位`);
     }
     if (!realName) return fail(41001, '请填写姓名');
     if (!EMAIL_RE.test(email)) return fail(41003, '邮箱格式不正确');
