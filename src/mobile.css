@@ -177,10 +177,24 @@
     width: 88px;
   }
 
-  /* 表格：不撑破父容器（列多时由 el-table 内部横向滚动承担） */
-  .shell-main .el-table.el-table {
-    max-width: 100%;
+  /* ---------- 表格：窄屏不压扁列，改为表格内部横向滚动 ----------
+     ★★ 2026-09-21 修正（重要教训）：
+     上一版为了消除"页面横向溢出"，给表格加了 `max-width: 100%` —— 结果 Element Plus
+     会把**所有列按比例压缩**到容器宽度内：账号管理页 10 列被压成一条条按钮堆叠
+     （列宽只剩 40~60px），完全不可读。根因是**测试口径不完整**：当时只断言了
+     `documentElement.scrollWidth === innerWidth`（无溢出通过），却没有断言"列是否还可读"。
+     正确做法：让 table 本体按内容自然宽度（`max-content`），容器不足时由 EP 自带的
+     `.el-scrollbar__wrap`（overflow-x: auto）横向滚动。
+     实测：`.el-table` 保持 352px（=容器宽）、table 本体 1762px、列宽 120/100/200… 正常、
+     页面零溢出。少列表格不会被拉宽，多列表格可左右滑动。
+     ⚠ 后续改表格样式后，必须同时验证"无溢出"**和**"列宽未被压扁"。 */
+  .shell-main .el-table.el-table .el-table__header,
+  .shell-main .el-table.el-table .el-table__body {
+    width: max-content !important;
+    min-width: 100% !important;
   }
+  /* 注意：不要去改 .el-table__header-wrapper 的 overflow —— EP 默认是 hidden，
+     靠 JS 把它与 .el-scrollbar 的滚动位置同步；改成 visible 会让表头撑破容器。 */
   /* 页面根容器：不得超出内容区宽度 */
   .shell-main > * {
     min-width: 0;

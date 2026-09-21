@@ -169,6 +169,12 @@
     - `main.js` 的 `app.config.errorHandler` + `window.unhandledrejection` —— 只记录不弹窗（业务错误已由 `api/request.js` 统一提示，重复弹窗只会打扰用户）；
     - `router.onError` 处理**懒加载 chunk 失效**：本项目 26 路由中 22 个懒加载 + 部署极频繁，用户停在旧页面再点新路由会请求到**已被替换的旧 chunk** → 404 → 此前直接整页白屏，现自动硬刷新一次（`chunkReloaded` 标志位防刷新循环）；
     - 排查"页面空白"类问题时，先看 console 的 `[vue-error]` / `[unhandled-rejection]`，再看 `sys_op_log` 的 `error.500`。
+31. **★★ 移动端表格：绝不能用 `max-width` 压表格**（2026-09-21 修正，血泪教训）：
+    - **事故经过**：为消除"页面横向溢出"，曾给 `.el-table` 加 `max-width: 100%` —— Element Plus 会把**所有列按比例压缩**到容器宽度内：账号管理页 11 列被压成一条条按钮堆叠（列宽只剩 42~60px），**完全不可读**。
+    - **正确做法**：给 `table.el-table__header` / `table.el-table__body` 设 `width: max-content !important; min-width: 100% !important` —— 表格本体按内容自然宽度，容器不足时由 EP 自带的 `.el-scrollbar__wrap`（`overflow-x: auto`）横向滚动。少列表格**不会**被拉宽，多列表格可左右滑动。
+    - **不要去改 `.el-table__header-wrapper` 的 overflow**：EP 默认是 `hidden`，靠 JS 把它与 scrollbar 的滚动位置同步；改成 `visible` 会让表头撑破容器。
+    - **根因是测试口径不完整**：当时只断言了 `documentElement.scrollWidth === innerWidth`（无溢出→通过），**没断言"列是否还可读"**。移动端表格验证必须**同时**满足：① 页面无横向溢出 ② 有数据行的表格最宽列 > 80px。命令：`node .shots/audit-tables.mjs`（遍历 13 个页面，无数据行/隐藏 tab 的页面自动降级为只校验溢出）。
+    - **通用教训**：**"消除溢出"不能以牺牲可读性为代价** —— 窄屏下宽内容（表格、代码块、大图）的正解是"容器内滚动"，不是"压缩到容器里"。
 
 ## 6. 交付与验证流程
 
