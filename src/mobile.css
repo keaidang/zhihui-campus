@@ -30,6 +30,14 @@
     max-width: 100%;
     overflow-x: hidden;
   }
+  /* ★★ PC 的 .shell-body 是 row 布局 + `align-items: flex-start`（让侧栏与内容顶部对齐）。
+     窄屏改成 column 后**必须把 align-items 改回 stretch** —— 否则 flex-start 会让子项按
+     "内容自然宽度"收缩而不是撑满容器：实测 .shell-main 只有 320px 而容器内容区是 366px，
+     表现就是"卡片左右铺不满、右边凭空多出 46px 空白"（2026-09-21 用户反馈）。
+     教训：改 flex-direction 时，交叉轴对齐方式必须一并复查。 */
+  .shell-body.shell-body.shell-body {
+    align-items: stretch;
+  }
 
   /* ---------- 2. 弹窗：占满可用宽度，限制高度可滚动 ---------- */
   .el-dialog {
@@ -251,5 +259,15 @@
      用 :has() 精准命中，避免误伤那 2 个平铺按钮的小操作列（它们的列宽是合适的）。 */
   .shell-main .el-table.el-table:has(.op-more) colgroup col:last-child {
     width: 92px !important;
+  }
+
+  /* ---------- 12. 工作台的 zoom 缩放：窄屏取消（2026-09-21） ----------
+     现象：用户反馈工作台"卡片左右没铺满"。实测发现根因不是 padding ——
+     `.shell-main` 左 12px 但右留白 26px（左右不对称）、内容宽 352px 而容器内容区是 366px。
+     根因：WorkbenchView 的 `.wb-zoom { zoom: 1.1 }`（PC 上刻意放大让内容更饱满）。
+     zoom 从左上角起算，在窄屏表现为"整体缩到 96%、右侧多出一截空白"。
+     窄屏取消缩放（PC 保持 1.1 不变），卡片即可铺满内容区。 */
+  .wb-zoom.wb-zoom.wb-zoom {
+    zoom: 1;
   }
 }
