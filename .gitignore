@@ -20,6 +20,7 @@ scripts/*
 !scripts/integrity-check.mjs
 !scripts/cleanup.mjs
 !scripts/ops-check.mjs
+!scripts/make-readme-shots.mjs
 
 # 调试探针与本地验证产物（严禁入库）
 probe*
@@ -73,3 +74,8 @@ working/
 
 # 移动端验收截图（本地产物，不入库）
 .shots/
+
+# README 完整性自检脚本
+# ⚠ 必须放在上面 `check-*.mjs` 规则**之后** —— gitignore 后匹配的规则优先，
+#   放在前面会被 check-*.mjs 覆盖掉（实测踩过）
+!scripts/check-readme.mjs

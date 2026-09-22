@@ -16,7 +16,9 @@
     "test:watch": "vitest",
     "check:db": "node scripts/sql-smoke-m4.mjs && node scripts/integrity-check.mjs && node scripts/gap-check.mjs",
     "check:e2e": "node scripts/e2e-smoke.mjs",
-    "check": "npm run lint && npm test && npm run check:db && npm run check:e2e"
+    "check:docs": "node scripts/check-readme.mjs",
+    "shots": "node scripts/make-readme-shots.mjs",
+    "check": "npm run lint && npm test && npm run check:db && npm run check:e2e && npm run check:docs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
