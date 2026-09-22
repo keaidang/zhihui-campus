@@ -31,30 +31,43 @@
       </div>
     </header>
 
-    <!-- Hero：校园实景 + 深蓝渐变压暗 + 白字（高校门户通行做法） -->
+    <!-- Hero：左文案 + 右真实界面预览（双栏；首屏就能看到平台长什么样） -->
     <section class="zc-hero">
       <div class="zc-container hero-inner">
-        <img class="school-name-img hero-school-name" src="/name.webp" alt="清北大学" />
-        <h1>一站式智慧校园服务平台</h1>
-        <p>
-          学习、生活、社交，一个入口全部搞定。
-          智汇校园把选课、成绩、课表、请假、报修、图书、
-          二手、失物招领、社团与运动装进同一个平台，
-          让校园生活更简单、更高效、更有温度。
-        </p>
-        <div class="actions">
-          <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
-            立即开始
-          </el-button>
-          <el-button v-else type="primary" size="large" round @click="$router.push('/workbench')">
-            进入工作台
-          </el-button>
-          <el-button size="large" round class="ghost-btn" @click="scrollToModules">浏览全部服务</el-button>
+        <div class="hero-copy">
+          <img class="school-name-img hero-school-name" src="/name.webp" alt="清北大学" />
+          <h1>一站式智慧校园服务平台</h1>
+          <p>
+            一个账号打通选课、成绩、课表、请销假、宿舍、图书、失物招领、社团与论坛，
+            让校园事务都在同一个入口里完成。
+          </p>
+          <div class="actions">
+            <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
+              立即开始
+            </el-button>
+            <el-button v-else type="primary" size="large" round @click="$router.push('/workbench')">
+              进入工作台
+            </el-button>
+            <el-button size="large" round class="ghost-btn" @click="scrollToModules">浏览全部服务</el-button>
+          </div>
+        </div>
+        <div class="hero-preview">
+          <img src="/home-app.jpg" alt="智汇校园工作台界面" />
         </div>
       </div>
     </section>
 
-    <!-- 模块矩阵 -->
+    <!-- 数据带：用真实规模数字替代空泛形容词 -->
+    <section class="zc-container">
+      <div class="zc-stats">
+        <div class="stat"><b>{{ modules.length }}</b><span>服务模块</span></div>
+        <div class="stat"><b>400<i>+</i></b><span>在校学生</span></div>
+        <div class="stat"><b>420</b><span>馆藏图书</span></div>
+        <div class="stat"><b>5</b><span>角色权限</span></div>
+      </div>
+    </section>
+
+    <!-- 模块矩阵：改 3 列后 9 个模块正好 3×3 排满（原 4 列会剩最后一行孤零零 1 个） -->
     <section ref="modulesRef" class="zc-container">
       <h2 class="zc-section-title">校园服务 · 全都在这里</h2>
       <p class="zc-section-sub">统一账号登录，模块持续上新</p>
@@ -62,10 +75,13 @@
         <div v-for="m in modules" :key="m.title" class="zc-card" :class="{ pending: !m.ready }" @click="onModule(m)">
           <span v-if="!m.ready" class="badge">即将上线</span>
           <div class="icon-wrap">
-            <el-icon :size="26"><component :is="m.icon" /></el-icon>
+            <el-icon :size="24"><component :is="m.icon" /></el-icon>
           </div>
-          <h3>{{ m.title }}<el-icon class="go"><ArrowRight /></el-icon></h3>
-          <p>{{ m.desc }}</p>
+          <div class="card-body">
+            <h3>{{ m.title }}</h3>
+            <p>{{ m.desc }}</p>
+          </div>
+          <el-icon class="go"><ArrowRight /></el-icon>
         </div>
       </div>
     </section>
@@ -92,7 +108,7 @@ const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', ready: true, path: '/edu/elect', roles: ['student'] },
   { title: '成绩课表', desc: '成绩查询、周课表，学业一目了然', icon: 'Reading', ready: true, path: '/edu/scores', roles: ['student'] },
   { title: '请销假', desc: '在线请假、辅导员审批、销假闭环', icon: 'Clock', ready: true, path: '/af/leave', roles: ['student'] },
-  { title: '校园邮箱', desc: '专属 @keaidang.com 邮箱，收发外部邮件', icon: 'Promotion', ready: true, path: '/mail' },
+  { title: '校园邮箱', desc: '专属校园邮箱，可收发外部邮件', icon: 'Promotion', ready: true, path: '/mail' },
   { title: '宿舍管理', desc: '我的宿舍、室友一览、在线报修', icon: 'House', ready: true, path: '/dorm' },
   { title: '图书借阅', desc: '馆藏检索、借阅续借、到期提醒', icon: 'Collection', ready: true, path: '/library' },
   { title: '失物招领', desc: '拾金不昧有去处，失物快速找回', icon: 'Search', ready: true, path: '/lost-found' },
