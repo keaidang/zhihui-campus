@@ -215,6 +215,12 @@
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
 4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，51 项只读断言，覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
+6. **README 与配图维护**（项目对外门面，界面/功能有变动后同步）：
+   - **重截截图**：`npm run shots`（=`scripts/make-readme-shots.mjs`，打线上真实环境，输出 `docs/images/`，JPEG q86 控体积）。可切环境：`SHOT_BASE=http://127.0.0.1:4178 npm run shots`
+   - **⚠ 数据驾驶舱截图需 admin/leader 权限**：`admin` 密码已于 2026-09-22 经自助改密功能被用户修改，需以 `E2E_ADMIN_PWD=<密码> npm run shots` 提供；**未提供时脚本跳过该图并保留已有文件**（不用旧图/坏图覆盖）
+   - **完整性自检**：`npm run check:docs`（=`scripts/check-readme.mjs`）—— 校验 19 处图片与 10 处文档链接是否存在、扫描过时表述（如已砍掉的 `miniprogram/`）、统计图片总体积。**已串入 `npm run check` 成为第五段**
+   - **⚠ gitignore 覆盖坑**：`!scripts/check-readme.mjs` 这条白名单**必须写在 `check-*.mjs` 规则之后**（后匹配规则优先），写在前面会被忽略（实测踩过）
+   - 架构配图复用论文自绘 SVG 导出的 PNG（`.shots/paper/fig-0*.png`），放入 `docs/images/` 前**需裁掉底部论文题注**
 
 ## 7. 当前完成度
 
@@ -235,6 +241,8 @@
 | 限流（登录/发码 DB 流水计数）| ✅ 上线（内存版多实例失效，已改 DB） |
 | Edge 原生轻端点 /api/edge/stats（KV 访问统计） | ✅ 上线 |
 | 全站时间口径归一（UTC 库内 + 统一展示工具） | ✅ 上线（2026-09-20 深夜，见铁律 #25） |
+| **对外 README**（19 张线上截图 + 架构/功能/部署详解） | ✅ 完成（2026-09-22，`npm run shots` 可一键重截） |
+| **登录后自助修改登录密码**（原密码校验 + 全端令牌吊销） | ✅ 上线（/api/me/password，2026-09-22） |
 | 一键体检：`gap-check` / `integrity-check` / `audit-mobile` / `verify-security` | ✅ 就绪（2026-09-21，命令见 docs/AUDIT-2026-09-21.md 第五节） |
 | **自动化测试体系（`npm run check`）**：ESLint 零告警 + Vitest **80 单测** + 库体检 + 线上 e2e | ✅ 就绪（2026-09-21，铁律 #35） |
 | **账号安全：登录后自助修改登录密码**（`POST /api/me/password`） | ✅ 上线（2026-09-21）—— 须验原密码（防会话劫持后锁死账号）+ 新密码不得与原密码相同 + **成功后吊销该用户全部 refresh token**；⚠ 纯 JWT 架构下 access token 是 2h 无状态凭证，故其他设备最长 2h 窗口内仍有有效凭证（要秒级全端失效需引入令牌版本号，当前规模不做）；入口在顶栏用户名下拉 |
