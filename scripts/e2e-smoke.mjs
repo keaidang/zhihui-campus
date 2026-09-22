@@ -10,11 +10,28 @@
 // 运行：node scripts/e2e-smoke.mjs
 //   换环境：E2E_BASE=https://xxx node scripts/e2e-smoke.mjs
 // 退出码：全过 0；有失败 1（可直接用于 CI / npm run check）
+import fs from 'node:fs';
+import path from 'node:path';
+
 const BASE = process.env.E2E_BASE || 'https://c.9o.pw';
 
-// ⚠ admin 的密码**可被用户自助修改**（2026-09-22 起实测已被改，`admin`/`admin` 不再可用）。
-//   要校验 admin 专属端点（驾驶舱/账号管理等）时，把当前密码放进环境变量后重跑：
-//     E2E_ADMIN_PWD=<当前密码> node scripts/e2e-smoke.mjs
+/** 从项目根 .env 兜底加载环境变量（已存在的 process.env 优先；.env 不入库，口令不落仓库） */
+function loadDotEnv() {
+  try {
+    const file = path.resolve(import.meta.dirname, '..', '.env');
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+    }
+  } catch {
+    // 无 .env（CI / 云端）时静默忽略，靠外部环境变量提供
+  }
+}
+loadDotEnv();
+
+// ⚠ admin 口令**可被用户自助修改**（2026-09-22 起 `admin`/`admin` 已失效）。
+//   当前口令放在 .env 的 `E2E_ADMIN_PWD`（.env 已 gitignore，勿写入 docs/）；
+//   要临时覆盖：`E2E_ADMIN_PWD=<口令> node scripts/e2e-smoke.mjs`
 const ACCOUNTS = {
   student: { username: 'student004', password: 'Zhihui@2026' },
   admin: { username: 'admin', password: process.env.E2E_ADMIN_PWD || 'admin' },

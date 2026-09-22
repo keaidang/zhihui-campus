@@ -19,12 +19,14 @@
 
 | 账号 | 密码 | 角色 | 备注 |
 |---|---|---|---|
-| **admin** | **admin** | admin+student | 超管（2026-09-18 用户指定弱密码，答辩演示用） |
+| **admin** | 见 `.env` 的 `E2E_ADMIN_PWD` | admin+student | 超管。**2026-09-22 经自助改密功能已改为强口令**（原 `admin/admin` 失效）。口令**刻意不写进本文件** —— 本文件入库即公开，明文口令就是 AUDIT 里的 P0 缺陷。本地脚本（`e2e-smoke` / `make-readme-shots`）会自动从 `.env` 读取，无需手动传参 |
 | teacher01 | Zhihui@2026 | teacher | 王志远 T2001001，任教 3 个教学班 |
 | counselor01 | Zhihui@2026 | counselor | 刘慧敏，计算机学院（本院数据范围） |
 | student01 | Zhihui@2026 | student | 陈晓东 20261001，**已有选课+92 分成绩数据，勿清库** |
 | student02 / student03 | Zhihui@2026 | student | 林小雨 / 赵子墨 |
 | student004 | Zhihui@2026 | student | **M3 主测试号**：有借阅记录、AI 兴趣社 1 条预约、论坛发帖；社团预约数据已打散，其余社团可直接预约 |
+
+> **口令管理约定**：演示/测试口令只允许放在 `.env`（已 gitignore）或控制台环境变量，**严禁写入 `docs/` 下任何文件**（docs 随仓库公开）。新增需要口令的脚本时，统一走 `process.env` + `.env` 兜底（参考 `scripts/e2e-smoke.mjs` 的 `loadDotEnv()`）。
 
 - 建号/授权/重置密码：`& node.exe scripts/grant-role.mjs <user> <role> [--create] [--reset] [--name=姓名] [--no=学号]`
 - SQL 迁移：`& node.exe scripts/migrate.mjs database/schema-NNN-*.sql`（幂等，可重复跑）
