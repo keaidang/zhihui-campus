@@ -12,9 +12,12 @@
 // 退出码：全过 0；有失败 1（可直接用于 CI / npm run check）
 const BASE = process.env.E2E_BASE || 'https://c.9o.pw';
 
+// ⚠ admin 的密码**可被用户自助修改**（2026-09-22 起实测已被改，`admin`/`admin` 不再可用）。
+//   要校验 admin 专属端点（驾驶舱/账号管理等）时，把当前密码放进环境变量后重跑：
+//     E2E_ADMIN_PWD=<当前密码> node scripts/e2e-smoke.mjs
 const ACCOUNTS = {
   student: { username: 'student004', password: 'Zhihui@2026' },
-  admin: { username: 'admin', password: 'admin' },
+  admin: { username: 'admin', password: process.env.E2E_ADMIN_PWD || 'admin' },
   counselor: { username: 'counselor01', password: 'Zhihui@2026' },
   teacher: { username: 'teacher01', password: 'Zhihui@2026' },
 };
@@ -91,6 +94,10 @@ async function login(role) {
   const ok = json.code === 0;
   results.push({ name: `登录(${role})`, pass: ok, code: json.code });
   log(`${ok ? '✅' : '❌'} 登录(${role})  roles=${json.data?.user?.roles?.join(',') || '-'}`);
+  if (!ok && role === 'admin') {
+    log('     ↳ admin 密码可能已被自助修改（属正常运维动作）。需校验 admin 专属端点时，');
+    log('       请以 E2E_ADMIN_PWD=<当前密码> 重跑本脚本；其余角色断言不受影响。');
+  }
   return ok ? json.data.accessToken : null;
 }
 
