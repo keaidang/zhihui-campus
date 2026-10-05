@@ -71,6 +71,7 @@ working/
 # 线上端到端冒烟（多角色 + 越权边界 + 历史缺陷回归，只读可重复运行）
 # 已取代旧的 smoke-full.mjs（那个脚本硬编码了已失效的域名 campus.keaidang.com）
 !scripts/e2e-smoke.mjs
+!scripts/verify-m4.mjs
 
 # 移动端验收截图（本地产物，不入库）
 .shots/
