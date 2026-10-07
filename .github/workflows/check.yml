@@ -1,0 +1,49 @@
+# 智汇校园 CI —— push/PR 自动跑无密钥检查段（lint + 单测 + 文档自检）
+# 全量检查（含 TiDB 体检与线上 e2e）需 DB/E2E 口令，放在第二个手动触发的 job，
+# 需先在仓库 Settings → Secrets 配置：DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME / E2E_ADMIN_PWD
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # 手动触发时顺带跑全量检查（需已配 secrets）
+
+jobs:
+  quick-check:
+    name: lint + unit + docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run check:docs
+
+  full-check:
+    name: db-check + e2e（需 secrets，手动触发才跑）
+    runs-on: ubuntu-latest
+    needs: quick-check
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check:db
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+      - run: npm run check:e2e
+        env:
+          E2E_ADMIN_PWD: ${{ secrets.E2E_ADMIN_PWD }}
