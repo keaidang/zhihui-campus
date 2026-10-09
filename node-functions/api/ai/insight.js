@@ -16,6 +16,7 @@ import { aiConfigured } from '../../lib/ai.js';
 import { getBool } from '../../lib/ai-config.js';
 import { consumeAiQuota } from '../../lib/ai-guard.js';
 import { canInsight, pickTemplate, runInsight } from '../../lib/ai-insight.js';
+import { runStructuredQuery } from '../../lib/ai-query.js';
 
 export { preflight as onRequestOptions };
 
@@ -38,13 +39,32 @@ export async function onRequestPost(context) {
     const parsed = await pickTemplate(actor, text);
     if (!parsed) return fail(49430, '问数服务暂时不可用，请稍后再试', 503);
 
+    // ---- C13 通用结构化查询：模板覆盖不到时由它接手 ----
+    // 放在模板之后：模板的多表统计表达力更强且已验证，能用模板就优先。
+    if (!parsed.template && parsed.query) {
+      const r = await runStructuredQuery(actor, parsed.query);
+      return ok({
+        intent: { template: null, entity: r.entity, label: `${r.entityLabel}统计` },
+        kind: 'data',
+        viaQuery: true,
+        isAggregate: r.isAggregate,
+        scalar: r.scalar,
+        rows: r.rows,
+        summary: r.summary,
+        metrics: r.metrics,
+        groupBy: r.groupBy,
+        sources: parsed.sources,
+        degraded: false,
+      });
+    }
+
     if (!parsed.template) {
       return ok({
         intent: { template: null },
         kind: 'none',
         reply:
           parsed.reply ||
-          '我不确定你想看哪项数据。可以试试"近 7 天哪个班请假最多""各院系请假天数排名""选课人数最多的课"。',
+          '我不确定你想看哪项数据。可以试试"近 7 天哪个班请假最多""各院系请假天数排名""学生账号总数""绩点最差的学生"。',
         sources: parsed.sources,
       });
     }

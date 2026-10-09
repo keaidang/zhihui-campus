@@ -373,7 +373,16 @@ async function sendViaAction(text, reply) {
     reply.summary = d.summary || '';
     reply.rows = d.rows || [];
     reply.extra = d.extra || null;
-    reply.content = `${reply.label} ${reply.summary}`.trim();
+    // ★ 单值结果（scalar 有值）→ 只答一句话，**不渲染表格**。
+    //   用户问"学生账号总数"期待的是一个数字，给一张 1 行的表是噪声。
+    //   （2026-10-10 用户原话：「每次提问账号问题就是输出 50 个账号和死的一样」）
+    if (d.scalar !== null && d.scalar !== undefined) {
+      reply.kind = 'text';
+      reply.sources = d.sources || [];
+      reply.content = reply.summary || String(d.scalar);
+    } else {
+      reply.content = `${reply.label} ${reply.summary}`.trim();
+    }
   } else if (d.kind === 'write') {
     reply.preview = d.preview;
     reply.confirmToken = d.confirmToken;
@@ -398,13 +407,20 @@ async function sendViaInsight(text, reply) {
   }
   const d = res.data || {};
   if (d.kind === 'data') {
-    reply.kind = 'data';
-    reply.label = d.intent?.label || '';
-    reply.periodLabel = d.periodLabel || '';
-    reply.summary = d.summary || '';
-    reply.rows = d.rows || [];
-    reply.extra = d.extra || null;
-    reply.content = `${reply.label} ${reply.summary}`.trim();
+    // 同 action 分支：单值只答数字
+    if (d.scalar !== null && d.scalar !== undefined) {
+      reply.kind = 'text';
+      reply.sources = d.sources || [];
+      reply.content = reply.summary || String(d.scalar);
+    } else {
+      reply.kind = 'data';
+      reply.label = d.intent?.label || '';
+      reply.periodLabel = d.periodLabel || '';
+      reply.summary = d.summary || '';
+      reply.rows = d.rows || [];
+      reply.extra = d.extra || null;
+      reply.content = `${reply.label} ${reply.summary}`.trim();
+    }
   } else {
     reply.kind = 'none';
     reply.content = d.reply || '我不确定你想看哪项数据。';

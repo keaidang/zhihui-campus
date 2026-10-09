@@ -20,6 +20,7 @@ import { aiJson, logAiUsage } from './ai.js';
 import { buildAnswerSystem } from './ai-prompt.js';
 import { KB_PROFILE, buildKnowledgeContext } from './ai-kb.js';
 import { identityBlock, loadIdentity } from './ai-identity.js';
+import { entityCatalog } from './ai-entity.js';
 
 const ROLES = ['leader', 'admin'];
 
@@ -364,22 +365,28 @@ export async function runInsight(actor, key, params = {}) {
 // ============================================================
 
 const PARSE_RULES = [
-  '你是「智汇校园」平台的**数据问数解析器**。任务：把用户的问题映射到下方【可用问数模板】。',
+  '你是「智汇校园」平台的**数据问数解析器**。任务：把用户的问题映射到下方【可用问数模板】；模板覆盖不到时，用【可自由组合查询的对象】自己组一个查询。',
   '',
   '【输出格式】严格输出 JSON，不要任何解释文字：',
-  '{"template":"<模板 key 或 null>","params":{...},"reply":"<仅当 template=null 时填写>"}',
+  '{"template":"<模板 key 或 null>","params":{...},"query":<对象或 null>,"reply":"<两者都为 null 时填写>"}',
   '',
   '【硬性规则】',
   '1. template 必须是下方列出的 key 之一；**不确定就填 null**，绝不编造。',
-  '2. params 里的枚举值**只能取括号中列出的值**，不要自造（例如时间范围只能填 7d / 30d / 180d / all）。',
-  '3. 用户只是在问制度、流程、校园情况（不是要统计数据）时，template 填 null，reply 里按下方【资料】回答。',
-  '4. 不要输出 SQL，也不要描述你打算怎么查——只选模板。',
+  '2. **优先用 template**：模板能覆盖的多表统计更准。只有模板明确做不到（总数、按任意维度分组、',
+  '   按某个指标取最差/最优）时，才用 query。',
+  '3. params 里的枚举值**只能取括号中列出的值**，不要自造（例如时间范围只能填 7d / 30d / 180d / all）。',
+  '4. 用户只是在问制度、流程、校园情况（不是要统计数据）时，template 与 query 都填 null，reply 里按下方【资料】回答。',
+  '5. **不要输出 SQL，也不要写列名或函数** —— query 里只能用列出的 key。',
 ].join('\n');
 
 const FINAL_JUDGE = [
-  '【最终判定】先判断用户是不是在**要统计数据**：',
-  '- 是 → 输出 template + params，reply 留空。',
-  '- 不是 → template 填 null，reply 里正常回答用户的问题（当作校园助手）。',
+  '【最终判定】按顺序判断用户是不是在**要统计数据**：',
+  '1. 先看【可用问数模板】能否直接回答 → 能就输出 template + params。',
+  '2. 模板做不到 → 输出 query（用【可自由组合查询的对象】里的 key 自己组）。',
+  '   · "有多少 / 总数" → 只给 metrics，不要 groupBy（这样直接返回一个数字）',
+  '   · "按某维度排名" → groupBy 那个维度 + orderBy 排序',
+  '   · "谁最差/最好/最多" → groupBy 人或类 + orderBy:{field:"<指标>",dir:"asc|desc"}',
+  '3. 不是要统计数据 → template 与 query 都填 null，reply 里正常回答（当作校园助手）。',
 ].join('\n');
 
 /**
@@ -396,7 +403,15 @@ export async function pickTemplate(actor, text) {
     identityText: identityBlock(identity, actor.roles),
     kbProfile: KB_PROFILE,
     kbText: kb.text,
-    extraTop: [PARSE_RULES, '', '【可用问数模板】', insightPromptFor(actor), '', FINAL_JUDGE].join('\n'),
+    extraTop: [
+      PARSE_RULES,
+      '',
+      '【可用问数模板】',
+      insightPromptFor(actor),
+      '',
+      ...entityPromptSections(actor),
+      FINAL_JUDGE,
+    ].join('\n'),
   });
 
   const t0 = Date.now();
@@ -414,7 +429,40 @@ export async function pickTemplate(actor, text) {
   return {
     template: parsed.template == null ? null : String(parsed.template),
     params: parsed.params && typeof parsed.params === 'object' ? parsed.params : {},
+    // C13 通用查询描述（模板为空时由它接手）
+    query: parsed.query && typeof parsed.query === 'object' && !Array.isArray(parsed.query) ? parsed.query : null,
     reply: String(parsed.reply || ''),
     sources: kb.sources || [],
   };
+}
+
+
+/**
+ * 实体目录渲染（与 api/ai/action.js 的同名函数保持同源口径）
+ *
+ * 刻意**只给语义层**（有哪些对象 / 字段 / 统计），不给 SQL 片段：
+ * 模型看到列名与表达式就会开始写 SQL 式的东西，白名单随即失效。
+ */
+export function entityPromptSections(actor) {
+  const cats = entityCatalog(actor);
+  if (!cats.length) return [];
+  const lines = cats.map((e) => {
+    const fields = e.fields.map((f) => {
+      const extra = [];
+      if (f.groupable) extra.push('可分组');
+      if (f.values?.length) extra.push(`取值:${f.values.join('/')}`);
+      if (f.hint) extra.push(f.hint);
+      return `    - ${f.key}（${f.label}${extra.length ? '；' + extra.join('；') : ''}）`;
+    });
+    const metrics = e.metrics.map((m) => `    - ${m.key}（${m.label}${m.hint ? '；' + m.hint : ''}）`);
+    return [`  ■ ${e.key}（${e.label}）`, '    可用字段：', ...fields, '    可用统计：', ...metrics, ...(e.hints.length ? ['    提示：', ...e.hints.map((h) => `      · ${h}`)] : [])].join('\n');
+  });
+  return [
+    '【可自由组合查询的对象】（仅当上面的模板覆盖不到时用）',
+    ...lines,
+    '  query 格式：{"entity":"<对象key>","metrics":{"<统计key>":1},"groupBy":["<字段key>"],"filters":[{"field":"<字段key>","op":"eq|ne|gt|gte|lt|lte|like|in","value":...,"days":30}],"orderBy":{"field":"<统计key或数值字段key>","dir":"asc|desc"},"limit":10}',
+    '  ★ 只允许用上面列出的 key；不要自己写 SQL、不要写列名、不要写函数。',
+    '  ★ 时间范围用 {"field":"createdAt","days":30} 表示"近 30 天"。',
+    '',
+  ];
 }

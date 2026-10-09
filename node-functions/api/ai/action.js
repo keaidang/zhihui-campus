@@ -20,7 +20,8 @@ import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
 import { ACTIONS, actionCatalog, actionPromptFor, executeConfirmedAction, previewWriteAction, runReadAction } from '../../lib/ai-actions.js';
-import { canInsight, insightPromptFor, runInsight } from '../../lib/ai-insight.js';
+import { canInsight, entityPromptSections, insightPromptFor, runInsight } from '../../lib/ai-insight.js';
+import { runStructuredQuery } from '../../lib/ai-query.js';
 
 export { preflight as onRequestOptions };
 
@@ -29,7 +30,9 @@ const FINAL_JUDGE = [
   '1. 要**改动数据**（禁用账号、批准请假、发公告…）→ 输出 action + params，其余留空；',
   '   **不要**替用户执行，也**不要**说"已执行"。',
   '2. 要**看统计数据**（哪个班请假最多、各院系排名、入住率…）→ 输出 insight + insightParams，其余留空。',
-  '3. 其余（提问、闲聊、问制度流程、表述含糊）→ action 与 insight 都填 null，',
+  '3. 要**自由组合统计**（总数、按某维度分组排名、按某指标取最差/最优）→ 输出 query + query。',
+  '   ⚠ **优先级最低**：能用 insight 模板回答的，优先用 insight；模板覆盖不到的才用 query。',
+  '4. 其余（提问、闲聊、问制度流程、表述含糊）→ action / insight / query 全部填 null，',
   '   reply 里按上面的回答纪律正常回答；若意图是操作但信息不足，明确反问他缺什么。',
 ].join('\n');
 
@@ -37,10 +40,10 @@ const PARSE_RULES = [
   '你是「智汇校园」平台的**管理指令解析器**。你的唯一任务是把用户的一句话解析成结构化操作。',
   '',
   '【输出格式】严格输出 JSON，不要任何解释文字：',
-  '{"action":"<操作 key 或 null>","params":{...},"insight":"<问数模板 key 或 null>","insightParams":{...},"reply":"<以上都为 null 时的一句话说明>"}',
+  '{"action":"<操作 key 或 null>","params":{...},"insight":"<问数模板 key 或 null>","insightParams":{...},"query":<对象或 null>,"reply":"<三者都为 null 时的一句话说明>"}',
   '',
   '【硬性规则】',
-  '1. action 与 insight **最多只能有一个非 null**（一个是要改数据、一个是要查统计，别同时给）。',
+  '1. action / insight / query **最多只能有一个非 null**（改数据、查模板、自由统计，三选一，别同时给）。',
   '2. action / insight 都必须是下方列出的 key 之一；**不确定就填 null**，绝不编造 key。',
   '3. 只抽取用户**明确说出**的信息，不要脑补、不要补默认值；枚举值只能取括号里列出的值。',
   '4. 用户说"全部/所有/所有XX"时，把 all 设为 true，并用 role 或 keyword 标明范围。',
@@ -100,7 +103,8 @@ export async function onRequestPost(context) {
         '【可用操作】',
         actionPromptFor(actor),
         '',
-        ...(canInsight(actor) ? ['【可用问数模板】（用户要统计数字时用这个，不要用 action）', insightPromptFor(actor), ''] : []),
+        ...(canInsight(actor) ? ['【可用问数模板】（用户要统计数字时优先用这个，不要用 action）', insightPromptFor(actor), ''] : []),
+        ...entityPromptSections(actor),
         FINAL_JUDGE,
       ].join('\n'),
     });
@@ -155,12 +159,34 @@ export async function onRequestPost(context) {
       }
     }
 
+    // ---- 通用结构化查询分支（C13）：模板覆盖不到的统计走这里 ----
+    // 放在 insight 之后：模板表达力更强（多表联查）且已验证，能用模板就优先用。
+    // ★ 角色无权时**不静默跳过**而是直接回错：那说明是权限问题，告知模型才能改口，
+    //   静默跳过会让它误以为"没有这个能力"，反复换措辞重试浪费轮次。
+    if ((!key || !ACTIONS[key]) && !insKey) {
+      const q = parsed.query;
+      if (q && typeof q === 'object' && !Array.isArray(q)) {
+        const r = await runStructuredQuery(actor, q, { wanted: Number(parsed.limit) || undefined });
+        return ok({
+          intent: { entity: r.entity, label: `${r.entityLabel}统计` },
+          kind: 'data',
+          viaQuery: true,
+          isAggregate: r.isAggregate,
+          scalar: r.scalar,
+          rows: r.rows,
+          summary: r.summary,
+          metrics: r.metrics,
+          groupBy: r.groupBy,
+        });
+      }
+    }
+
     // 模型说"这不是一个操作" → 交给前端当普通回答展示
     if (!key || !ACTIONS[key]) {
       return ok({
         intent: { action: null },
         kind: 'none',
-        reply: String(parsed.reply || '我没理解这是一条系统管理指令。你可以说得更具体些，例如"禁用账号 student01"或"查看所有待审批的请假"。').slice(0, 800),
+        reply: String(parsed.reply || '我没理解这是要做什么。可以更具体些，例如"禁用账号 student01""查看所有待审批的请假""学生账号总数""绩点最差的学生"。').slice(0, 800),
         sources: kb.sources || [],
       });
     }
