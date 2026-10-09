@@ -6,8 +6,8 @@
 // 为什么不做成定时任务：EdgeOne Pages 的定时触发需要额外配置，而"管理员点一下"已经覆盖
 //   毕设场景（也更容易在答辩现场演示）。检测逻辑与触发方式解耦在 lib/ai-anomaly.js，
 //   将来接定时器只需在这个端点外面加一个 cron 调用即可。
-import { ok, fail, jsonError, preflight, readBody } from '../../lib/http.js';
-import { requireRoles, opLog, clientIp } from '../../lib/guard.js';
+import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
+import { requireRoles, opLog } from '../../lib/guard.js';
 import { getBool } from '../../lib/ai-config.js';
 import { runChecks, scanAndAlert } from '../../lib/ai-anomaly.js';
 
