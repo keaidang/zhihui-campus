@@ -311,8 +311,12 @@ async function send() {
   const history = historyForRequest();
   draft.value = '';
   msgs.value.push({ id: nextId(), role: 'user', content: q, sources: [] });
-  const reply = newReplyMessage(nextId());
-  msgs.value.push(reply);
+  msgs.value.push(newReplyMessage(nextId()));
+  // ★ 关键：必须从数组里**取回 reactive 代理**来改，不能继续用 push 进去的原始对象。
+  //   msgs 是 ref([])，push 的原始对象会被数组代理包装，模板拿到的是代理；
+  //   而局部变量仍指向原始对象 —— 改原始对象**不触发渲染**，症状就是
+  //   「文字一次性出现、光标一直闪」（2026-10-09 线上实测）。
+  const reply = msgs.value[msgs.value.length - 1];
   busy.value = true;
   setWaitHint(reply);
   await nextTick();
@@ -325,8 +329,15 @@ async function send() {
 
   reply.pending = false;
   clearWaitHint(reply);
-  // 流式链路此时打字机可能还在补字，交给它自己收尾（追平后置 streaming=false）
-  if (!reply._typer) reply.streaming = false;
+  // 流式链路此时打字机可能还在补字，交给它自己收尾（追平后置 streaming=false）；
+  // 但**必须留一道兜底**：打字机若因故没启动/已提前退出，光标会一直亮着
+  //（v-if="m.streaming && m.content" 只认 streaming）——所以这里再补一个保险收尾。
+  setTimeout(() => {
+    if (reply.streaming && !reply._typer) {
+      reply.streaming = false;
+      scrollToBottom();
+    }
+  }, 200);
   busy.value = false;
   controller = null;
   scrollToBottom();

@@ -107,7 +107,7 @@ import { ChatDotRound, Close, CloseBold, FullScreen, Promotion } from '@element-
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
 import { streamChat } from '../api/ai';
-import { disposeReply, newReplyMessage, setWaitHint, streamHandlers } from '../utils/ai-typewriter';
+import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, streamHandlers } from '../utils/ai-typewriter';
 
 const route = useRoute();
 const router = useRouter();
@@ -196,8 +196,9 @@ async function send() {
 
   draft.value = '';
   msgs.value.push({ id: nextId(), role: 'user', content: q, sources: [] });
-  const reply = newReplyMessage(nextId());
-  msgs.value.push(reply);
+  msgs.value.push(newReplyMessage(nextId()));
+  // ★ 同 AIView：必须改数组里取回的 reactive 代理，改原始对象不会触发渲染
+  const reply = msgs.value[msgs.value.length - 1];
   busy.value = true;
   setWaitHint(reply);
   await nextTick();
@@ -213,6 +214,9 @@ async function send() {
 
   reply.pending = false;
   reply._streamEnd = true;
+  clearWaitHint(reply);
+  // 与 AIView 同理：打字机没接管时必须兜底关掉 streaming，否则光标一直亮
+  if (!reply._typer) reply.streaming = false;
   if (!res.ok) {
     if (!res.aborted) {
       reply.content = res.message || '智能问答暂时不可用，请稍后再试';
