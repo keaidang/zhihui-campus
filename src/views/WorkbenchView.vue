@@ -110,10 +110,12 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
+import { useAiStore } from '../stores/ai';
 import { api } from '../api/request';
 
 const router = useRouter();
 const auth = useAuthStore();
+const ai = useAiStore();
 
 // 校园邮箱改密
 const mailPwdDlg = ref(false);
@@ -168,6 +170,8 @@ const greeting = computed(() => {
 import { fmtTime } from '../utils/time';
 
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
+const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答', icon: 'MagicStick', path: '/ai' };
+
 const BY_ROLE = {
   admin: [
     { title: '数据驾驶舱', desc: '全校运行态势只读大屏', icon: 'DataAnalysis', path: '/dashboard' },
@@ -214,7 +218,11 @@ const BY_ROLE = {
   ],
 };
 
-const modules = computed(() => BY_ROLE[auth.primaryRole] || BY_ROLE.student);
+const modules = computed(() => {
+  const base = BY_ROLE[auth.primaryRole] || BY_ROLE.student;
+  // AI 助手置顶：能力不可用（未配置/被关闭）时整卡不出现，避免点进去看到空页面
+  return ai.chatOn ? [AI_CARD, ...base] : base;
+});
 
 function onOpen(m) {
   if (m.path) {

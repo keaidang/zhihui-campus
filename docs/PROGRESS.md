@@ -79,7 +79,23 @@
 - [ ] Element Plus 按需引入（EP 单 chunk 1.09MB 全量引入；分包已完成，非阻塞）
 - [x] 测试账号 zhreg2871（id 12209012）已处理（2026-10-07）：**停用 + 注销对外邮箱 + 吊销全部刷新令牌 + 退宿**（有住宿/邮件引用，硬删会破坏关联，采用可逆的软停用）
 
-### 阶段 6 · AI 融合（2026-10-09 方向定版 + 同日修订选型，未开工）
+### 阶段 6 · AI 融合（2026-10-09 开工；**P0~P3 已完成**，P4~P9 进行中）
+
+**⚠ 实施进度以 [docs/AI-FEATURES.md](AI-FEATURES.md) §9 的 P0~P9 为准**（步骤级计划 + 每阶段验收）。当前：
+
+| 阶段 | 状态 | 产出 |
+|---|---|---|
+| P0 准备 | ✅ 2026-10-09 | `docs/AI-KB-SOURCES.md`（知识库核对清单）、`lib/sse.js`、`api/ai/stream-probe.js` |
+| P1 底座 | ✅ 2026-10-09（commit `68fe735`） | `database/schema-012-ai.sql`（已执行到生产库）+ 6 个 lib（`ai/ai-config/ai-guard/ai-kb/alert` + `lanqin.sendMail`）+ 39 项单测 |
+| P2 知识库 | ✅ 2026-10-09（commit `ea42b90`） | `scripts/seed-ai-kb.mjs`（唯一数据源，幂等）、`docs/AI-KB-CONTENT.md`（67 条 / 7962 字） |
+| P3 C1 问答 | ✅ 2026-10-09 | `api/ai/status.js`、`api/ai/chat.js`、`lib/ai-variant.js`、`views/AIView.vue`、`components/AiOrb.vue`、`stores/ai.js`、`api/ai.js` + 路由/菜单/工作台卡片 |
+| P4 服务层 / P5 C2+C3 / P6 C5 / P7 C4+C6 / P8 C7~C12 / P9 控制台 | ⏳ 待做 | 见 AI-FEATURES §9 |
+
+> **★ P3 期间实测的新结论（两条，已生效）**
+> 1. **EdgeOne Node Functions 支持真流式 SSE**——用 `api/ai/stream-probe.js` 线上实测：4 个约定间隔 400ms 的分片在客户端**逐个到达**（间隔 392/401/403ms）。因此 C1 走**真流式打字机**，AI-FEATURES §8-5 标注的"平台缓冲风险"已排除（降级路径保留但不再触发）。验证脚本 `working/stream-probe-live.mjs`。
+> 2. **兼容网关的流式响应自带 `usage`**（无需 `stream_options.include_usage`），且含 `prompt_tokens_details.cached_tokens`——上游上下文缓存生效，token 统计是**真值**不是估算。验证脚本 `working/stream-usage-probe.mjs`。
+
+---
 
 > 唯一口径 = ARCHITECTURE **ADR-9**（选型依据 / 四路径 / 硬约束）。模型已实测连通：**qwen3.8-omni-flash**（阿里云 DashScope 兼容网关 `https://dashscope.aliyuncs.com/compatible-mode/v1`，仅国内站可用），HTTP 200 / JSON 正常 / 上下文 40 万字通过。
 > **★ 详细设计方案（v1，2026-10-09 用户已确认，范围 C1~C12 全量一次做完）= [docs/AI-FEATURES.md](AI-FEATURES.md)**：C1 校园问答 / C2 论坛 AI 审核员 / C3 异常告警邮件 / C4 审批助手 / C5 管理员智能管理 / C6 校领导问数 + C7~C12 全部建议项；**累加式能力分级（标准/审批/校领导/管理员四版）+ 浅色调按角色变主标识色**；技术底座 + schema-012 + 接口清单。决定项见其第 8 节（已全部确认）。
@@ -162,6 +178,8 @@
   > ⚠ **本条中的模型选型（GLM-4V-Flash）与"上下文 4K"已于同日被下一条修订取代，以修订条与 ADR-9 为准。**
 
 - 2026-10-09（AI 选型修订 + 多模态成本红线）：**模型由 GLM-4V-Flash 换为阿里云 qwen3.8-omni-flash，并立下"开发测试期只用文本输入输出、禁碰多模态"的硬约束**（用户指定：多模态计费过高，开发测试期成本敏感）。① **接入实测**：走 DashScope OpenAI 兼容 `https://dashscope.aliyuncs.com/compatible-mode/v1`（**仅国内站可用**，国际站 `dashscope-intl` 返回 401 invalid_api_key）；该 key 实为**聚合网关**——`/models` 返回 **262 个模型**（含 kimi-k3 / deepseek-v4-pro / glm-5.3-prime / qwen3.8-max / MiniMax-M3 等），**不可按阿里云官方文档预期配额与价格**。配置 `AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER=qwen` 入 `.env`（密钥不入库不入文档），GLM 三键保留备用。② **模型能力实测（vs glm-4v-flash）**：`reasoning_content` 为**独立字段**（GLM 把 `<think>` 混进正文需清洗）；**上下文 40 万字 / 206962 token 通过**（GLM-4V-Flash 16384 即报错，此前 ADR-9 记的"4K"实为误记）；RAG 长文检索命中率明显更高（40 篇干扰文档下 qwen 答对、glm-4v-flash 答"未找到"）；"全部批准"能返回**数组**多条（GLM 只回单条）；**强制工具调用**：qwen 关思考后 `auto`/`required` 均可、glm-4v-flash 完全不支持。③ **★ 思考模式开关实测**（同为 qwen3.8-omni-flash）：意图 JSON **4117ms → 669ms（快 6.2 倍）**、completion tokens **229（思考 214）→ 13（降 94%）**，而 reasoning token 按输出计费 → **又快又省钱且准确率 5/5 不变**；**额外解锁工具调用**——思考模式下 `tool_choice: required` 直接报错（`does not support being set to required or object in thinking mode`），关思考后可用。三种关闭写法均生效（`enable_thinking:false` / `chat_template_kwargs.enable_thinking:false` / `thinking:{type:"disabled"}`）。因此定为**硬约束二：思考模式默认关闭**。④ **硬约束一（本次核心）**：**开发测试期禁止任何多模态调用**（不传 image/audio/video、不做 OCR/图片理解/语音/图像生成），连带把 ADR-9 第 3 步「论坛 AI 审核」**降级为纯文本审核**；需媒体能力须另立 ADR 并先定预算。已写入 **ARCHITECTURE ADR-9（选型结论 + 两条硬约束 + 实施顺序）**、**HANDOVER 铁律 #36** 与本文档阶段 6 / 已知坑。⑤ 遗留：**EdgeOne 控制台尚未配 `AI_QWEN_*` 环境变量**（上线前必须补，铁律 #5 env 改了要重新部署）；用户提供的 key 系对话明文，已建议其去控制台轮换
+
+- 2026-10-09（AI 融合开工：P2 知识库 + P3 C1 校园问答上线）：**从"仅设计稿"进入可对话状态**——线上已能用自然语言问校园问题并带出处回答。① **P2 知识库**：`scripts/seed-ai-kb.mjs` 作为唯一数据源（67 条 / 7962 字 / 10 分类，幂等 upsert），自动渲染出 `docs/AI-KB-CONTENT.md`；**修掉一个真实缺陷**——`ai-kb.normalize` 原把 `.` `-` 一律当标点删除，导致 `4.0`→`40`、`2026-2027-1`→`202620271`，改成"夹在字母数字之间才保留"并补测试。实测检索比全量注入省 95% token、TopK=3 命中 20/21，故把 `ai.kb.inline_max_chars` 从 8000 降到 4000 走召回（新增 `ai.kb.top_k` 配置项）。**TiDB 与 MySQL 的 `affectedRows` 语义差异**（INSERT…ON DUPLICATE KEY UPDATE 内容无变化时 TiDB 返回 1、MySQL 返回 0）导致幂等复跑误报"新增 67"，改为先查存在性再决定 insert/update。② **P3 C1 问答**：新增 `lib/ai-variant.js`（能力目录 + 累加式四档分级，**防御式默认拒绝**：`roles` 为空一律不给能力）、`api/ai/status.js`（按角色返回能力/版本/候选问题）、`api/ai/chat.js`（SSE 流式，事件 `meta`→`delta`*→`done`；**校验/限流/上游失败一律用普通 JSON 返回**，前端把 message 当一条助手消息渲染而非报错）、前端 `views/AIView.vue` + `components/AiOrb.vue` + `stores/ai.js` + `api/ai.js`，门户菜单/工作台卡片按能力自动出现。单测 119 → **149**，lint 零告警，构建通过。③ **两条实测新结论**：**EdgeOne Node Functions 支持真流式 SSE**（探测端点 4 个约定 400ms 间隔的分片在客户端逐个到达：392/401/403ms），**平台缓冲风险排除**，C1 走真流式打字机；**兼容网关流式响应自带 `usage`**（无需 `stream_options`，含 `cached_tokens`），token 统计为真值。④ 运维：`.env` 的 `E2E_ADMIN_PWD` 与线上实际密码（admin 于 2026-10-06 经自助改密修改）长期不一致，导致线上 e2e 13 项级联失败，本次同步后 **56/56 全绿**——**教训：凡文档/脚本里出现"演示密码"，改密后必须同步，否则冒烟脚本会给出误导性的失败**。
 
 ## 下一步
 

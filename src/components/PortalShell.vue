@@ -134,6 +134,9 @@
         <el-button type="primary" :loading="pwdSaving" @click="submitPwd">确认修改</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 助手悬浮球（主色随角色变化；不在 /ai 页面本身出现） -->
+    <AiOrb />
   </div>
 </template>
 
@@ -143,8 +146,10 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Bell, Menu } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
+import { useAiStore } from '../stores/ai';
 import { api } from '../api/request';
 import { useIsMobile } from '../utils/device';
+import AiOrb from './AiOrb.vue';
 
 // 组件 props 仅在模板中按名使用（active 用于菜单高亮），脚本内无需引用故不赋值
 defineProps({
@@ -153,6 +158,7 @@ defineProps({
 
 const router = useRouter();
 const auth = useAuthStore();
+const ai = useAiStore();
 
 // ---- 移动端布局开关：PC 全屏视口恒为 false，不渲染任何移动端 DOM ----
 const isMobile = useIsMobile();
@@ -176,6 +182,8 @@ const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
 /** 统一菜单表：ALL = 全角色；具体能力由路由守卫 + 后端 scope 双重兜底 */
 const MENUS = [
   { key: 'workbench', label: '工作台', icon: 'HomeFilled', path: '/workbench', roles: null },
+  // gate:'ai' → 仅当 AI 问答能力可用时才出现（未配置密钥/被管理员关闭时整体隐藏入口）
+  { key: 'ai', label: 'AI 助手', icon: 'ChatDotRound', path: '/ai', roles: null, gate: 'ai' },
   { key: 'dashboard', label: '数据驾驶舱', icon: 'DataAnalysis', path: '/dashboard', roles: ['admin', 'leader'] },
   { key: 'messages', label: '消息中心', icon: 'ChatLineRound', path: '/messages', roles: null },
   { key: 'forum', label: '校园论坛', icon: 'ChatDotRound', path: '/forum', roles: null },
@@ -198,7 +206,9 @@ const MENUS = [
   { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
 ];
 
-const menus = computed(() => MENUS.filter((m) => !m.roles || auth.hasRole(m.roles)));
+const menus = computed(() =>
+  MENUS.filter((m) => (!m.roles || auth.hasRole(m.roles)) && (!m.gate || ai.chatOn)),
+);
 
 // 全部模块已上线，不再有"筹备中"占位
 const pendingMenus = computed(() => []);
@@ -246,6 +256,7 @@ async function submitPwd() {
 async function onCommand(cmd) {
   if (cmd === 'logout') {
     await auth.logout();
+    ai.reset(); // 清掉 AI 能力缓存，避免下个账号看到上一个账号的配色与能力项
     ElMessage.success('已退出登录');
     router.push('/login');
   } else if (cmd === 'workbench') {
@@ -273,6 +284,8 @@ async function pollUnread() {
 onMounted(() => {
   if (auth.accessToken) pollUnread();
   unreadTimer = setInterval(pollUnread, 60_000);
+  // AI 能力清单：菜单项与悬浮球都依赖它；store 内按用户去重，多页切换不会重复请求
+  ai.load(auth.user?.id ?? null);
 });
 onUnmounted(() => clearInterval(unreadTimer));
 </script>

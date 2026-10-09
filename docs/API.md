@@ -208,6 +208,39 @@
 | GET | /api/admin/dashboard | admin/leader | 全校聚合只读：用户/性别/各院系分布、教务（课程/选课/成绩）、学工（请假/报修/待审）、宿舍床位、生活服务（图书/社团/论坛）、近 7 日登录趋势、最近 10 条管理动态 |
 
 
+### 5.15 AI 能力（schema-012，/api/ai，全部需登录）
+
+> 统一口径见 **ARCHITECTURE ADR-9** 与 **docs/AI-FEATURES.md**。模型 qwen3.8-omni-flash（阿里云 DashScope 兼容网关），统一出口 `lib/ai.js`（**思考模式默认关**、失败一律返回 null 由调用方降级、绝不抛异常）。**铁律 #36：只用文本，不接收任何图片/音频/视频字段。**
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/ai/status | 登录 | 按角色返回可用能力：`{ provider, model, configured, roles, variant, variantLabel, features{}, catalog[], suggestions[], degraded, degradedReason }`。`variant` ∈ standard/counselor/leader/admin（**取高不取低**，admin 兼 student 时为 admin），前端据此换主标识色并渲染能力项 |
+| POST | /api/ai/chat | 登录 | **C1 校园智能问答（流式）**。入参 `{ question, history? }`（question ≤500 字，history 取末 6 条、每条截 400 字） |
+| GET | /api/ai/stream-probe | 登录 | 流式能力探测（诊断用，**部署后判定平台是否真增量推送**；已实测：EdgeOne Node Functions 支持） |
+
+**`POST /api/ai/chat` 响应协议（重要）**
+
+- **成功 → `text/event-stream`**，事件序列：
+
+  | 事件 | data | 说明 |
+  |---|---|---|
+  | `meta` | `{ variant, mode, sources:[{id,title,category}], model }` | **先于内容发出**；`mode` = inline(全量注入) / retrieve(TopK 召回) / empty(未命中) |
+  | `delta` | `{ text }` | 增量文本，逐片到达（实测平台真流式） |
+  | `done` | `{ usage, len }` | 上游 usage 为真值（网关流式响应自带，含 cached_tokens） |
+  | `error` | `{ message }` | 生成中途异常；**其后仍会补 `done`**，保证客户端一定能收尾 |
+
+- **失败 → 普通 JSON `{code,message}`**（不是 SSE）。这样"根本没开始生成"的错误有干净语义，前端把 message 当**一条助手消息**展示，页面不报错。校验/开关在调用上游**之前**完成，避免为无效请求消耗额度。
+
+| code | HTTP | 触发 |
+|---|---|---|
+| 49400 | 503 | AI 未配置（服务端缺 `AI_QWEN_API_KEY`） |
+| 49401 | 400 | 问题为空或超 500 字 |
+| 49429 | 429 | 频控超限（DB 流水计数：默认 10 次/分、200 次/日，铁律 #23 禁内存计数） |
+| 49430 | 503 | `ai.enabled` / `ai.chat.enabled` 关闭，或上游调用失败（已降级） |
+
+- 运行时开关读 `sys_config`（**改完 30 秒内生效，无需重新部署**，铁律 #5 的产物）；知识注入 `L0 固定档案 + L1 条目`，阈值 `ai.kb.inline_max_chars`=4000、召回条数 `ai.kb.top_k`=5
+- 每次调用落 `ai_usage_log`（user_id/kind/model/prompt_tokens/completion_tokens/ok/cost_ms），供频控与论文统计
+
 ## 6. 未实现模块端点（规划，实现后在此补充）
 
 ### 外部图书馆系统对接（预留）

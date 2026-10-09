@@ -4,7 +4,7 @@
 // 比整段返回更难排查。所以协议格式与上游解析必须有断言。
 // 不测 pipeUpstreamWithTap 的真实网络路径（那需要上游，已由 working/sse-test.mjs 端到端验证）。
 import { describe, it, expect } from 'vitest';
-import { sseEvent, parseUpstreamDelta, textToSseStream, SSE_HEADERS } from '../../node-functions/lib/sse.js';
+import { sseEvent, parseUpstreamDelta, textToSseStream, SSE_HEADERS, openAiToEvents } from '../../node-functions/lib/sse.js';
 
 describe('sseEvent · 协议格式', () => {
   it('对象统一 JSON 化', () => {
@@ -88,5 +88,123 @@ describe('SSE_HEADERS · 安全头（铁律 #29）', () => {
   it('禁止缓存与中间层缓冲', () => {
     expect(SSE_HEADERS['Cache-Control']).toContain('no-cache');
     expect(SSE_HEADERS['X-Accel-Buffering']).toBe('no');
+  });
+});
+
+// ---------- openAiToEvents：上游 SSE → 本项目事件流 ----------
+// 这段是"前端能不能看到字"的唯一通道：上游事件到达但转换出错，用户会看到
+// 转圈到超时，而不是报错——属于最难排查的一类故障，所以必须有断言。
+
+/** 用分片字符串伪造一个上游 Response（模拟网络切包，含跨片断行） */
+function mockUpstream(pieces) {
+  const enc = new TextEncoder();
+  return {
+    body: new ReadableStream({
+      start(controller) {
+        for (const p of pieces) controller.enqueue(enc.encode(p));
+        controller.close();
+      },
+    }),
+  };
+}
+
+/** 收集生成器的全部产出 */
+async function collect(gen) {
+  const out = [];
+  for await (const c of gen) out.push(c);
+  return out.join('');
+}
+
+/** 取出指定事件的所有 data（JSON 化） */
+function events(text, name) {
+  const re = new RegExp(`event: ${name}\\ndata: (.*)`, 'g');
+  return [...text.matchAll(re)].map((m) => JSON.parse(m[1]));
+}
+
+describe('openAiToEvents · 上游事件重组', () => {
+  it('delta 逐个透出，拼回原文', async () => {
+    const up = mockUpstream([
+      'data: {"choices":[{"delta":{"content":"你"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"好"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+    const text = await collect(openAiToEvents(up));
+    expect(events(text, 'delta').map((d) => d.text).join('')).toBe('你好');
+  });
+
+  it('跨分片被切断的 data 行仍能正确解析（网络不保证按事件分片）', async () => {
+    const up = mockUpstream([
+      'data: {"choices":[{"delta":{"cont',
+      'ent":"半句"}}]}\n\ndata: {"choices":[{"delta":{"content":"后半"}}]}\n\n',
+    ]);
+    const text = await collect(openAiToEvents(up));
+    expect(events(text, 'delta').map((d) => d.text).join('')).toBe('半句后半');
+  });
+
+  it('preamble 先于所有 delta 发出（meta 必须先到，前端才知道出处）', async () => {
+    const up = mockUpstream(['data: {"choices":[{"delta":{"content":"答"}}]}\n\n']);
+    const text = await collect(openAiToEvents(up, { preamble: [sseEvent('meta', { sources: [{ id: 1 }] })] }));
+    expect(text.indexOf('event: meta')).toBeLessThan(text.indexOf('event: delta'));
+    expect(events(text, 'meta')[0].sources).toEqual([{ id: 1 }]);
+  });
+
+  it('onDone 拿到累计全文与 usage（供落 ai_usage_log）', async () => {
+    const up = mockUpstream([
+      'data: {"choices":[{"delta":{"content":"甲"}}]}\n',
+      'data: {"choices":[{"delta":{"content":"乙"}}]}\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":30,"completion_tokens":9}}\n',
+    ]);
+    let got = null;
+    await collect(openAiToEvents(up, { onDone: (i) => { got = i; } }));
+    expect(got.content).toBe('甲乙');
+    expect(got.usage.completion_tokens).toBe(9);
+  });
+
+  it('思考模式：reasoning_content 只统计不外发（不混进回答正文）', async () => {
+    const up = mockUpstream([
+      'data: {"choices":[{"delta":{"reasoning_content":"先想想…"}}]}\n',
+      'data: {"choices":[{"delta":{"content":"答案"}}]}\n',
+    ]);
+    let got = null;
+    const text = await collect(openAiToEvents(up, { onDone: (i) => { got = i; } }));
+    expect(events(text, 'delta').map((d) => d.text).join('')).toBe('答案');
+    expect(got.reasoning).toBe('先想想…');
+    expect(got.content).toBe('答案');
+  });
+
+  it('上游 body 为空 → 仍以 done 收尾（否则客户端永远等不到结束）', async () => {
+    const text = await collect(openAiToEvents({ body: null }));
+    expect(text).toContain('event: done');
+    expect(events(text, 'delta')).toHaveLength(0);
+  });
+
+  it('读取中途抛错 → 补 error 事件后依然发 done', async () => {
+    const boom = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"前"}}]}\n\n'));
+        controller.error(new Error('socket closed'));
+      },
+    });
+    let caught = null;
+    const text = await collect(openAiToEvents({ body: boom }, { onError: (e) => { caught = e; } }));
+    expect(caught?.message).toBe('socket closed');
+    expect(text).toContain('event: error');
+    expect(text.indexOf('event: done')).toBeGreaterThan(text.indexOf('event: error'));
+  });
+
+  it('onDone 抛异常不影响已产出的内容（落库失败不能反噬回答）', async () => {
+    const up = mockUpstream(['data: {"choices":[{"delta":{"content":"稳"}}]}\n\n']);
+    const text = await collect(openAiToEvents(up, { onDone: () => { throw new Error('db down'); } }));
+    expect(events(text, 'delta').map((d) => d.text).join('')).toBe('稳');
+    expect(text).toContain('event: done');
+  });
+
+  it('done 事件带 usage 与正文长度（前端可显示"已引用 N 字资料"）', async () => {
+    const up = mockUpstream([
+      'data: {"choices":[{"delta":{"content":"abc"}}]}\n',
+      'data: {"choices":[],"usage":{"total_tokens":12}}\n',
+    ]);
+    const text = await collect(openAiToEvents(up));
+    expect(events(text, 'done')[0]).toEqual({ usage: { total_tokens: 12 }, len: 3 });
   });
 });

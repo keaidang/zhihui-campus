@@ -160,3 +160,71 @@ export async function* probeChunks({ chunks = 4, gapMs = 400 } = {}) {
   }
   yield sseEvent('done', { elapsedMs: Date.now() - t0, chunks });
 }
+
+/**
+ * 上游 OpenAI 兼容 SSE → **本项目统一事件流**（`delta` / `done` / `error`）
+ *
+ * 与 `pipeUpstreamWithTap` 的分工：
+ *   · pipeUpstreamWithTap：**字节级原样转发**，要求上下游协议一致（用于纯透传场景）
+ *   · openAiToEvents    ：**重新组装**事件，前端只需实现一种解析路径（C1/C7 问答用这条）
+ *
+ * 事件序列：preamble 原样先发 → 若干 `delta{text}` → `done{usage,len}`；
+ * 读取中途异常 → 补一个 `error` 事件后仍发 `done`，保证客户端循环一定能收尾。
+ *
+ * @param {Response} upstream 上游响应（stream:true）；body 为 null 时按空流处理
+ * @param {object} [opts]
+ * @param {string[]} [opts.preamble] 先于内容发出的**已格式化** SSE 文本（如 meta 事件）
+ * @param {(info:{content:string,usage:object|null,reasoning:string})=>any} [opts.onDone]
+ *        流结束回调（用于写 ai_usage_log）；其异常不影响已发出的响应
+ * @param {(e:Error)=>void} [opts.onError]
+ */
+export async function* openAiToEvents(upstream, { preamble = [], onDone, onError } = {}) {
+  for (const p of preamble) yield p;
+
+  const decoder = new TextDecoder();
+  let buf = '';
+  let content = '';
+  let reasoning = '';
+  let usage = null;
+
+  try {
+    const reader = upstream?.body?.getReader();
+    if (reader) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const ln of lines) {
+          const s = ln.trim();
+          if (!s.startsWith('data:')) continue;
+          const payload = s.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          const { delta, reasoning: r, usage: u } = parseUpstreamDelta(payload);
+          if (r) reasoning += r;
+          if (u) usage = u;
+          if (delta) {
+            content += delta;
+            yield sseEvent('delta', { text: delta });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    try {
+      onError?.(e);
+    } catch {
+      /* 回调异常不影响收尾 */
+    }
+    yield sseEvent('error', { message: 'AI 输出中断，可稍后重试' });
+  }
+
+  yield sseEvent('done', { usage, len: content.length });
+
+  try {
+    await onDone?.({ content, usage, reasoning });
+  } catch (e) {
+    console.error('[sse-ondone-fail]', e?.message);
+  }
+}

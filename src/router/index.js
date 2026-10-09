@@ -13,6 +13,13 @@ const router = createRouter({
       component: () => import('../views/WorkbenchView.vue'),
       meta: { requiresAuth: true },
     },
+    // ---- AI 助手（C1 校园智能问答；能力与配色按角色在前端动态渲染）----
+    {
+      path: '/ai',
+      name: 'ai',
+      component: () => import('../views/AIView.vue'),
+      meta: { requiresAuth: true },
+    },
     {
       path: '/admin/users',
       name: 'admin-users',
