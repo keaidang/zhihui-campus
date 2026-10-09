@@ -153,7 +153,7 @@
 | 边缘层 | **EdgeOne Edge Functions** + KV | 静态分发、边缘缓存、轻量统计端点（无 DB 依赖） |
 | 服务层 | **EdgeOne Node Functions** | 业务 API、事务、统一鉴权、DB 流水限流 |
 | 数据库 | **TiDB Cloud Serverless**（MySQL 兼容） | 33 张表，强一致事务；连接走 TLS |
-| 外部集成 | 蓝沁邮件开放 API（校园邮箱收发） | 可选，未配置时邮箱模块自动降级提示 |
+| 外部集成 | keaidang mail 邮件开放 API（校园邮箱收发） | 可选，未配置时邮箱模块自动降级提示 |
 | 测试 | Vitest（单测）+ ESLint（flat config）+ 自研线上 e2e | `npm run check` 一条命令四段 |
 | 部署 | EdgeOne Pages：Git 推送 → 自动构建部署 | 见 §7 |
 
@@ -277,7 +277,7 @@ Git 仓库 ──push──▶ EdgeOne Pages（自动构建）──┬──▶
 |---|---|---|
 | 1 | **EdgeOne Pages 账号** | 提供静态托管 + 双运行时 + KV |
 | 2 | **TiDB Cloud Serverless 实例** | 免费额度足够毕设量级；创建后下载 CA 证书（TLS 必需，`rejectUnauthorized: true`） |
-| 3 | **蓝沁邮件开放 API**（可选） | 校园邮箱模块依赖；不配置则该模块降级为提示，其余功能不受影响 |
+| 3 | **keaidang mail 邮件开放 API**（可选） | 校园邮箱模块依赖；不配置则该模块降级为提示，其余功能不受影响 |
 | 4 | Node.js ≥ 20 | 与 `edgeone.json` 中 `nodeVersion` 保持一致 |
 
 ### 7.3 环境变量

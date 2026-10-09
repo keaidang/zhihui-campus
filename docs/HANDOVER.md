@@ -11,7 +11,7 @@
 | 论文标题（定稿） | 《基于云边协同与 Serverless 架构的"智汇校园"一站式服务平台设计与实现》 |
 | 线上地址 | **https://c.9o.pw/**（EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可用） |
 | 仓库 | github.com/keaidang/zhihui-campus（main 分支） |
-| 技术栈 | Vue3 + Element Plus + Pinia（前端）/ EdgeOne Node Functions（业务 API）/ TiDB Cloud Serverless（MySQL 8.0 兼容）/ LanQin Email 开放 API（邮件） |
+| 技术栈 | Vue3 + Element Plus + Pinia（前端）/ EdgeOne Node Functions（业务 API）/ TiDB Cloud Serverless（MySQL 8.0 兼容）/ keaidang mail 开放 API（邮件） |
 | 虚拟学校 | 清北大学（校徽 public/logo.webp、书法校名 public/name.webp）；页脚备案 苏ICP备2026056678号 · 鲁ICP备2025186072号 并列 |
 | 本地路径 | `C:\Users\Administrator\Desktop\zhihui-campus` |
 
@@ -81,11 +81,11 @@
 
 ### 校园邮箱体系（2026-09-20 上线，关键口径）
 
-- **注册**：外部邮箱收 6 位验证码（10 分钟有效，SQL 侧 `expires_at > NOW()` 判过期；60s 重发/每邮箱日 10 封/每 IP 日 20 封）。可选填校园邮箱前缀（默认学号/工号），域名后缀下拉从 `/api/auth/register/domains` 实时拉取（LanQin 6 个 active 域名，后端白名单校验），默认角色学生
-- **开通**：管理员在账号管理页"开通对外收发"才调 LanQin 创建真实邮箱（`createMailbox` 带 `userId=LANQIN_OWNER_USER_ID` 归属主用户），随机密码管理员可见/可导出 CSV，用户在工作台自助改密
-- **收发**：/mail 页收件箱（LanQin messages，cursor 分页）+ 已发送（本地 `sys_mail_sent` 表）+ 写邮件（每日 50 封限额）；发信统一用 system@keaidang.com；已发送状态对 queued/sending 记录用 GET /send/{id} 实时回查（模块级 Map 60s 节流、单次最多 8 封）
-- **发件归属铁律**：LanQin POST /mailboxes 不传 userId 会把邮箱挂到自动新建的独立用户 → /send 404 "mailbox not found"。归属修复前开通的旧邮箱连 messages 也 404，需删旧邮箱 + 重置 mail_mailbox_id 重新 enable
-- LanQin GET /send 历史列表接口常超时，已弃用；验证发件最可靠的方式是直接发真实邮箱看原文
+- **注册**：外部邮箱收 6 位验证码（10 分钟有效，SQL 侧 `expires_at > NOW()` 判过期；60s 重发/每邮箱日 10 封/每 IP 日 20 封）。可选填校园邮箱前缀（默认学号/工号），域名后缀下拉从 `/api/auth/register/domains` 实时拉取（keaidang mail 6 个 active 域名，后端白名单校验），默认角色学生
+- **开通**：管理员在账号管理页"开通对外收发"才调 keaidang mail 创建真实邮箱（`createMailbox` 带 `userId=LANQIN_OWNER_USER_ID` 归属主用户），随机密码管理员可见/可导出 CSV，用户在工作台自助改密
+- **收发**：/mail 页收件箱（keaidang mail messages，cursor 分页）+ 已发送（本地 `sys_mail_sent` 表）+ 写邮件（每日 50 封限额）；发信统一用 system@keaidang.com；已发送状态对 queued/sending 记录用 GET /send/{id} 实时回查（模块级 Map 60s 节流、单次最多 8 封）
+- **发件归属铁律**：keaidang mail POST /mailboxes 不传 userId 会把邮箱挂到自动新建的独立用户 → /send 404 "mailbox not found"。归属修复前开通的旧邮箱连 messages 也 404，需删旧邮箱 + 重置 mail_mailbox_id 重新 enable
+- keaidang mail GET /send 历史列表接口常超时，已弃用；验证发件最可靠的方式是直接发真实邮箱看原文
 
 ### M3 生活服务（2026-09-20 上线，关键口径）
 
@@ -132,9 +132,9 @@
 10. **gitignore 白名单制**：根目录 `/*.txt` 与 `node-functions/*.txt` 全忽略，scripts 只保留白名单——调试产物严禁入库
 11. **db.js query() 直接返回 rows**，不能按 mysql2 原生 `[rows]` 解构
 12. **DATETIME 过期判断放 SQL 侧**（`expires_at > NOW()`）：TiDB 服务器时区 vs Node UTC，JS 里比较会误判
-13. **LanQin POST /mailboxes 必须带 userId**（LANQIN_OWNER_USER_ID env），否则发件 404 归属失败；LANQIN_* 密钥在 .env 与 EdgeOne env，严禁入库
+13. **keaidang mail POST /mailboxes 必须带 userId**（LANQIN_OWNER_USER_ID env），否则发件 404 归属失败；LANQIN_* 密钥在 .env 与 EdgeOne env，严禁入库
 14. **窄卡片里禁止用 `el-input` 的 `#append`/`#prepend` 插槽**：Element Plus 会渲染成 `display:table` 的 `.el-input-group`，在 ~340px 内容区里追加按钮会把输入区挤到只剩几十像素。统一用「输入框与按钮/下拉做兄弟节点」的 flex 行布局（见 LoginView.vue `.field-row`），并覆盖 `.gate-card .el-button` 的全局 6px 字距
-15. **前缀校验接口耗时 4~10s**（后端要查 LanQin 邮箱列表），前端不做逐字自动校验，仅"检查可用性"按钮显式触发 + 前端 14s 超时兜底；注册提交本身不依赖该校验结果（后端注册时会再校验）
+15. **前缀校验接口耗时 4~10s**（后端要查 keaidang mail 邮箱列表），前端不做逐字自动校验，仅"检查可用性"按钮显式触发 + 前端 14s 超时兜底；注册提交本身不依赖该校验结果（后端注册时会再校验）
 16. **验证线上部署别只比 bundle hash**：EdgeOne 构建环境与本地不同，同一份代码 hash 可能不一致。可靠做法是取线上对应懒加载 chunk（路由组件是独立文件，不在 index 主包），grep 新版代码的特征类名/字符串（注意构建产物中中文会被转义成 \uXXXX，用 ASCII 类名如 field-row 最稳）
 17. **EdgeOne node functions 不支持路径参数**：`/api/xx/<id>` 落回 SPA 返回 index.html——动态参数一律用查询串（`/api/blob?token=xxx`）
 18. **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
@@ -267,7 +267,7 @@
    - **⚠ 打包 APK 环境现状**：本机**无 Java / Android SDK / Gradle**，无法本地出包。三条路径：Capacitor（需装 Android Studio）、**PWABuilder**（先把站点 PWA 化再加 manifest+SW，在线生成 TWA 版 APK，零本地环境）、**HBuilderX 云打包**（webview 壳，需 DCloud 账号）。注意 iOS 上架 App Store 会撞 Guideline 4.2（纯 webview 无原生能力必被拒），只做本地安装/演示则无影响
    - **移动端验收方法**（可复用）：`node .shots/capture.mjs`（Playwright + 系统 Edge；本地 preview 把 `/api/*` 用 `route.fetch` 转发到线上；断言 `document.documentElement.scrollWidth === innerWidth` 且 PC 视口下 `.shell-burger` 数量为 0）
 2. **【低成本·见效快】图书封面补齐**：420 本全无封面。可用 picsum 随机图或按分类生成占位图，仅改 seed 脚本 + `lib_book.cover_url`。
-3. **【低成本】邮箱增强**：附件上传发信（LanQin 支持 attachment）、管理员邮箱用量统计页。
+3. **【低成本】邮箱增强**：附件上传发信（keaidang mail 支持 attachment）、管理员邮箱用量统计页。
 4. **【中期】图片图床接入**：sys_blob（LONGBLOB，现 32 条/1.15MB）→ 对象存储，仅改 blob.js 与 ImgUploader 的 URL 生成，schema 不用动。
 5. ~~**【工程优化】Element Plus 按需引入**~~ ✅ **已完成**（2026-09-21，见铁律 #33）：EP 单包 1088KB→最大 chunk 172KB（-84%）、gzip 341KB→~145KB（-58%），首页首屏 JS 最大仅 62KB。
 6. **【收尾】演示彩排 + 论文正文**：素材沉淀见 ARCHITECTURE.md（选课并发控制 / 审批流两表引擎 / 云边协同三章核心素材）。

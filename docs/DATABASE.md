@@ -68,9 +68,9 @@
 ### 校园邮箱（schema-007/008）
 | 表/字段 | 说明 |
 |---|---|
-| sys_user.campus_email / mail_enabled / mail_mailbox_id / mail_password / mail_created_at / email_verified | 校园邮箱地址 + 对外收发开通态（LanQin 邮箱 ID/密码） |
+| sys_user.campus_email / mail_enabled / mail_mailbox_id / mail_password / mail_created_at / email_verified | 校园邮箱地址 + 对外收发开通态（keaidang mail 邮箱 ID/密码） |
 | sys_email_code | 邮箱验证码：purpose('register'/'reset')，SQL 侧 `expires_at > NOW()` 判过期，尝试次数限制 |
-| sys_mail_sent | 本地发件台账（LanQin GET /send 列表接口超时弃用后自建；状态回查 60s 节流） |
+| sys_mail_sent | 本地发件台账（keaidang mail GET /send 列表接口超时弃用后自建；状态回查 60s 节流） |
 
 ### M3 生活服务（schema-009，2026-09-20）
 | 表 | 说明 | 关键点 |

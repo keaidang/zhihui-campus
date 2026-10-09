@@ -55,7 +55,7 @@
 | POST | /api/auth/register | 公开 | 注册：`{realName, username, password, email, code, prefix?, domain?}`；验证码校验（SQL 侧判过期）、prefix 双重占用校验、domain 白名单校验，默认 student 角色，分配校园邮箱 |
 | POST | /api/auth/register/send-code | 公开 | `{email}` 发 6 位验证码（10 分钟，60s 重发/每邮箱日 10 封/每 IP 日 20 封），发件人 system@keaidang.com |
 | GET | /api/auth/register/prefix-check?prefix=&domain= | 公开 | 校园邮箱前缀占用校验（库内 + 邮件服务器双重） |
-| GET | /api/auth/register/domains | 公开 | 校园邮箱可选域名列表（LanQin 实时 active 域名，10 分钟缓存，兜底 keaidang.com） |
+| GET | /api/auth/register/domains | 公开 | 校园邮箱可选域名列表（keaidang mail 实时 active 域名，10 分钟缓存，兜底 keaidang.com） |
 | POST | /api/auth/login | 公开 | 登录，返回双令牌 + user{roles} |
 | POST | /api/auth/refresh | 公开 | 刷新令牌轮换（重放检测） |
 | POST | /api/auth/logout | 登录 | 吊销刷新令牌 |
@@ -84,7 +84,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /api/mail | 收件箱列表（cursor 分页）；`?action=sent` 已发送列表（读 sys_mail_sent，60s 节流回查 LanQin 状态回写） |
+| GET | /api/mail | 收件箱列表（cursor 分页）；`?action=sent` 已发送列表（读 sys_mail_sent，60s 节流回查 keaidang mail 状态回写） |
 | POST | /api/mail | `{to, subject, text?, html?}` 发信（发件人 system@，每日 50 封按 sys_op_log 计数，成功写 sys_mail_sent） |
 | GET | /api/mail/detail?id= | 邮件详情（mailboxId 归属校验） |
 | POST | /api/me/mail-password | 用户自助修改邮箱密码 |

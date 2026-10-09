@@ -95,8 +95,8 @@
 - 登录失败限流：**已由内存版改为 DB 流水计数**（sys_login_log 失败流水 + sys_email_code），多实例安全；细节见变更记录"边缘网关试错与回滚"条
 - **db.js query() 直接返回 rows**（项目封装过），不能按 mysql2 原生 `[rows]` 解构——解构会把首行当数组用，随机 500
 - **DATETIME 过期判断放 SQL 侧**（`WHERE expires_at > NOW()`）：TiDB NOW() 是服务器时区、Node 是 UTC，JS 里 new Date() 比较会误判"已过期"
-- **LanQin Email POST /mailboxes 必须带 userId=主用户**（LANQIN_OWNER_USER_ID env），否则邮箱挂到自动新建的独立用户下 → /send 报 404 "mailbox not found"（实为归属校验失败）
-- **LanQin GET /send 发送历史列表接口在本机常超时**——发信成功即本地写 sys_mail_sent 表，列表读库；状态用 GET /send/{id} 单封回查（60s 节流）
+- **keaidang mail POST /mailboxes 必须带 userId=主用户**（LANQIN_OWNER_USER_ID env），否则邮箱挂到自动新建的独立用户下 → /send 报 404 "mailbox not found"（实为归属校验失败）
+- **keaidang mail GET /send 发送历史列表接口在本机常超时**——发信成功即本地写 sys_mail_sent 表，列表读库；状态用 GET /send/{id} 单封回查（60s 节流）
 - EdgeOne env set 接口常超时需重试 2-3 次；env 改后必须重新部署；部署未完成时新旧函数混跑出"诡异 500"，先等满 3 分钟再测
 - **EdgeOne node functions 不支持路径参数**：`/api/xx/<id>` 会落到 SPA 返回 index.html——动态参数一律用查询串（如 `/api/blob?token=xxx`）
 - **EdgeOne POST body 缺键偶发 "Body has already been read" 500**：服务端先把缺失键归一化（`?? '' / null`）再校验；前端表单始终发全量字段
@@ -112,8 +112,8 @@
 - 2026-09-17（深夜）：**M1 教务线 + M2 学工线全量上线**（schema-003/004、7 个业务 API、9 个业务页面）；主页 SSO 联动；工作台五角色主题改版（--role-accent）+ 校园实景背景 + 资源链接；16 步线上验证全过；修复公告 LEFT JOIN/出分课程课表消失/选课返回体三个 bug
 - 2026-09-18：admin 密码按用户要求重置为 `admin`（弱密码，演示专用）；**文档全面更新 + 新增 HANDOVER.md 交接文档**
 - 2026-09-19：**演示数据批量生成**（402 学生/40 教师/8 辅导员/10 校领导/14 班/27 课程/59 教学班/约 2006 选课，scripts/seed-demo.mjs 幂等）；系部与班级管理补全（/admin/org 双 Tab，删除保护、辅导员越权 403）；选课超员修复（seed 数据绕过 API 所致，跨班共享容量重灌，核实超员 0）；课表导出根治（固定网格 周一~周日 × 6 大节次）+ 选课时段冲突校验（42007）+ 行政部门 10 个/29 名行政人员（schema-006 dept_type，seed-admin-staff.mjs）
-- 2026-09-20（上午）：备案号新增鲁ICP备2025186072号（三处页脚与苏ICP并列）；**校园邮箱体系上线**：注册邮箱验证码（6 位/10 分钟/频控）、校园邮箱前缀分配（学号/工号）、管理员开通对外收发（LanQin 真实邮箱，密码可见可导出）、工作台邮箱卡；发件归属 404 根治（POST /mailboxes 带 userId）；7 项体验优化（僵尸用户筛选/管理员邮箱管理/域名后缀等）
-- 2026-09-20（午后）：**/mail 收发件页面**（收件箱/已发送/详情/写邮件，未开通显示引导）；sys_mail_sent 本地发件表（GET /send 列表接口超时弃用）；多域名后缀（LanQin 实时 6 域名，注册/管理员可选，后端白名单校验）；邮件页去彩色 emoji 改色点；已发送状态实时回查（60s 节流）；**登录态 F5 丢失修复**（auth store 单飞 Promise 治并发恢复/刷新竞态）；首屏提速（4 张 PNG→WebP，7MB→476KB + preload）；邮箱页换 lucide 图标
+- 2026-09-20（上午）：备案号新增鲁ICP备2025186072号（三处页脚与苏ICP并列）；**校园邮箱体系上线**：注册邮箱验证码（6 位/10 分钟/频控）、校园邮箱前缀分配（学号/工号）、管理员开通对外收发（keaidang mail 真实邮箱，密码可见可导出）、工作台邮箱卡；发件归属 404 根治（POST /mailboxes 带 userId）；7 项体验优化（僵尸用户筛选/管理员邮箱管理/域名后缀等）
+- 2026-09-20（午后）：**/mail 收发件页面**（收件箱/已发送/详情/写邮件，未开通显示引导）；sys_mail_sent 本地发件表（GET /send 列表接口超时弃用）；多域名后缀（keaidang mail 实时 6 域名，注册/管理员可选，后端白名单校验）；邮件页去彩色 emoji 改色点；已发送状态实时回查（60s 节流）；**登录态 F5 丢失修复**（auth store 单飞 Promise 治并发恢复/刷新竞态）；首屏提速（4 张 PNG→WebP，7MB→476KB + preload）；邮箱页换 lucide 图标
 - 2026-09-20（晚）：**修复注册页邮箱后缀下拉"无数据"**——LoginView.vue 模板引用了 domains/regForm.domain 但脚本从未定义/加载；补上 domains ref + 页面加载时拉 /api/auth/register/domains + 注册提交携带 domain（后端本就支持，纯前端缺陷）
 - 2026-09-20（晚·论文）：**本科毕业设计开题报告成稿**《基于云边协同与 Serverless 架构的"智汇校园"一站式服务平台设计与实现》（约 6000 字正文 / 16 条可查证参考文献，含 GB/T 36342—2018 国标）。素材全部取自本仓库 docs/（PRD / ARCHITECTURE / DATABASE / 商用架构调研），产出 DOCX 交付物：封面信息栏(占位符) + 18 条可点击两级目录 + 摘要 + 五章正文 + 三线表 + 参考文献，页脚页码、封面无页码。产物路径见 `.workbuddy` 会话流水线 output/&lt;request_id&gt;/stage3/
 - 2026-09-20（深夜）：**修复注册页输入框被挤没**——`el-input` 用 `#append` 时 Element Plus 渲染为 `display:table` 的 `.el-input-group`，430px 卡片（内容区 340px）里追加按钮把真正的输入区压到只剩几十像素（邮箱占位符被截断、前缀框只剩一个图标）。改为「输入框 + 按钮/下拉做成兄弟节点」的 `.field-row` flex 布局，并覆盖 `.gate-card .el-button` 的 6px 字距；"检查可用"从输入框内挪到提示行右侧文字链（前缀校验后端需查邮件服务器约 4~10s，故不逐字自动校验，仅显式触发 + 14s 前端超时兜底）。管理员"设置校园邮箱"对话框同步修复：原先硬编码 `@keaidang.com`（`addrDomain` 有状态却没用、接口也没传 domain），改为可选后缀下拉并传 domain（后端 updateAddress 本就支持）
