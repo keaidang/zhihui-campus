@@ -15,6 +15,7 @@ scripts/*
 !scripts/seed-admin-staff.mjs
 !scripts/seed-m3.mjs
 !scripts/seed-dorm.mjs
+!scripts/seed-ai-kb.mjs
 !scripts/sql-smoke-m4.mjs
 !scripts/gap-check.mjs
 !scripts/integrity-check.mjs

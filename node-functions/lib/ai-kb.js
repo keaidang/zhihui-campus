@@ -135,7 +135,7 @@ export function renderEntries(entries) {
  * 构建知识上下文：按阈值决定"全量注入"还是"关键词召回"
  * @returns {{ text:string, sources:Array<{id,title,category}>, mode:'inline'|'retrieve'|'empty' }}
  */
-export async function buildKnowledgeContext(question, { inlineMaxChars = 8000, topK = 4 } = {}) {
+export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, topK = 5 } = {}) {
   const rows = await loadKb();
   if (!rows.length) return { text: '', sources: [], mode: 'empty' };
 
