@@ -343,7 +343,7 @@ const KB = [
   {
     category: '账号与安全',
     title: '忘记密码怎么办',
-    keywords: '忘记密码,密码忘了,密码不记得,找回密码,重置密码,收不到验证码,找不回密码,重置口令',
+    keywords: '忘记密码,忘记登录密码,登录密码忘了,密码忘了,密码不记得,找回密码,重置密码,收不到验证码,找不回密码,重置口令',
     content:
       '在登录页点击"忘记密码"，输入账号并确认与账号绑定的邮箱，系统会向该邮箱发送 6 位验证码（10 分钟内有效），校验通过后即可设置新密码。若账号与邮箱不匹配，为防账号枚举，系统会返回统一提示、不会告知哪个填错。重置成功后，该账号全部会话被吊销。频控：同一邮箱 60 秒间隔、每日最多 10 封、同 IP 每小时 3 次——若收不到邮件，请等待后重试并检查垃圾邮件文件夹。',
     sort: 4,
@@ -476,17 +476,10 @@ const conn = await mysql.createConnection({
 // 会把"未变化"误报成"新增"。因此先查存在性再决定 insert / update。
 let inserted = 0;
 let updated = 0;
+let unchanged = 0;
 for (const e of KB) {
-  const [exist] = await conn.query('SELECT id FROM ai_kb WHERE category = ? AND title = ?', [e.category, e.title]);
-  if (exist.length) {
-    await conn.query('UPDATE ai_kb SET keywords = ?, content = ?, sort = ?, status = 1 WHERE id = ?', [
-      e.keywords,
-      e.content,
-      e.sort,
-      exist[0].id,
-    ]);
-    updated += 1;
-  } else {
+  const [exist] = await conn.query('SELECT id, keywords, content, sort, status FROM ai_kb WHERE category = ? AND title = ?', [e.category, e.title]);
+  if (!exist.length) {
     await conn.query('INSERT INTO ai_kb (category, title, keywords, content, sort, status) VALUES (?, ?, ?, ?, ?, 1)', [
       e.category,
       e.title,
@@ -495,14 +488,34 @@ for (const e of KB) {
       e.sort,
     ]);
     inserted += 1;
+    continue;
   }
+  // 内容全等则**跳过写库**：既避免每次复跑都刷 updated_at，也让"幂等"这件事
+  // 能被输出直接证明（此前的计数是硬编码的"未变化 0"，等于没验证）
+  const cur = exist[0];
+  if (
+    String(cur.keywords) === String(e.keywords) &&
+    String(cur.content) === String(e.content) &&
+    Number(cur.sort) === Number(e.sort) &&
+    Number(cur.status) === 1
+  ) {
+    unchanged += 1;
+    continue;
+  }
+  await conn.query('UPDATE ai_kb SET keywords = ?, content = ?, sort = ?, status = 1 WHERE id = ?', [
+    e.keywords,
+    e.content,
+    e.sort,
+    cur.id,
+  ]);
+  updated += 1;
 }
 
 const [[stat]] = await conn.query('SELECT COUNT(*) AS n FROM ai_kb WHERE status = 1');
 const [[chars]] = await conn.query('SELECT COALESCE(SUM(CHAR_LENGTH(title) + CHAR_LENGTH(content)), 0) AS c FROM ai_kb WHERE status = 1');
 const cats = (await conn.query('SELECT category, COUNT(*) n FROM ai_kb WHERE status = 1 GROUP BY category ORDER BY n DESC'))[0];
 
-console.log(`\n写入完成：新增 ${inserted} 条、更新 ${updated} 条、未变化 0 条（内容一致时不写库）`);
+console.log(`\n写入完成：新增 ${inserted} 条、更新 ${updated} 条、未变化 ${unchanged} 条（内容一致时不写库）`);
 console.log(`库内启用条目：${stat.n} 条，标题+正文合计 ${chars.c} 字`);
 console.log('分类分布：');
 for (const c of cats) console.log(`  ${c.category}  ${c.n}`);
@@ -510,3 +523,9 @@ const [[thr]] = await conn.query("SELECT cfg_value FROM sys_config WHERE cfg_key
 const threshold = Number(thr?.cfg_value) || 0;
 console.log(`\n注入策略：ai.kb.inline_max_chars = ${threshold} —— 知识库 ${chars.c} 字${threshold && Number(chars.c) <= threshold ? '在阈值内，走全量注入' : '超出阈值，走关键词召回 TopK（更省 token）'}。`);
 await conn.end();
+
+// ★ 必须显式退出（2026-10-09 教训）：mysql2 连接池会持有 handle 让事件循环不空。
+//   不退出的话，进程"跑完了却不结束" → 被外层超时杀掉 → stdout 块缓冲（管道/重定向时
+//   不是 tty，默认 64KB 缓冲）来不及 flush → **一个字都看不到**，看起来像卡死。
+//   实测同一脚本：不加这行输出全空（SIGTERM），加了立刻正常。
+process.exit(0);

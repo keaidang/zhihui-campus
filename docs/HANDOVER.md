@@ -229,6 +229,7 @@
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
 4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，56 项只读断言（2026-10-07 实测合计数，含 M4 增补），覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
+   - **★ 脚本执行纪律（2026-10-09 踩实，用户明确要求"不要再出现"）**：临时 Node 脚本**结尾必须 `process.exit(0)`**。连过 TiDB（mysql2）的脚本即使 `await conn.end()`，连接池仍持有 handle 让事件循环不空 → 命令"跑完了却不结束" → 超时被杀 → 若输出接了 `tail`/`head`/重定向（非 tty，Node 用 64KB 块缓冲）**缓冲区全丢、一个字看不到**，看上去像卡死。判据：**长时间无返回 + 零输出 → 先怀疑"进程未退出 + 输出被缓冲"，而不是"任务太重"**。对策：脚本显式退出；看输出先 `> 文件` 再 `cat`，别接管道；耗时命令（build/安装/e2e/等部署）放后台收通知。另：`npm run build` 前先把 `dist` 改名移走，否则 Vite 的 `emptyDir` 会撞环境删除钩子超时（`[safe-delete] … ETIMEDOUT`）。`scripts/seed-ai-kb.mjs` 已按此规范补上 `process.exit(0)`。
 6. **README 与配图维护**（项目对外门面，界面/功能有变动后同步）：
    - **重截截图**：`npm run shots`（=`scripts/make-readme-shots.mjs`，打线上真实环境，输出 `docs/images/`，JPEG q86 控体积）。可切环境：`SHOT_BASE=http://127.0.0.1:4178 npm run shots`
    - **⚠ 数据驾驶舱截图需 admin/leader 权限**：`admin` 密码已于 2026-09-22 经自助改密功能被用户修改，需以 `E2E_ADMIN_PWD=<密码> npm run shots` 提供；**未提供时脚本跳过该图并保留已有文件**（不用旧图/坏图覆盖）

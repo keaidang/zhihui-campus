@@ -148,8 +148,10 @@ export function dedupeByTopic(scored) {
  * 为什么要相对门槛：TopK 是"取前 N 个"，**不判断这 N 个是否真相关**。
  * 实测中「我是管理员」这类问题会让"管理"这个 2 字词命中十几条条目，TopK=5 便把
  * 「宿舍分配规则」「交易集市发帖要求」一并塞进上下文并列给用户看，用户会以为它们相关。
- * 阈值经 `working/kb-tune.mjs` 在 24 条真实问题 + 67 条库内数据上网格搜索确定：
- * 命中 22/22 不变，平均召回条数 4.50 → 2.33。
+ * 阈值经 `working/kb-tune.mjs` / `working/kb-ratio-check.mjs` 在 26 条真实问题（含线上
+ * 实测漏召用例）× 67 条库内数据上网格搜索确定：命中 26/26 不变，平均召回 3.85 → 2.23 条。
+ * ⚠ 门槛不能一味调高：ratio=0.3 会在「忘记登录密码了怎么办？」上漏召正确条目
+ * （该问句被"登录密码"拉到「邮箱密码和登录密码一样吗？」等高分条目上），已落到 0.25。
  */
 export function rankKb(entries, question, topK = 4, { minScore = 1, minRatio = 0, dedupe = true } = {}) {
   const tokens = extractTokens(question);
@@ -204,10 +206,10 @@ export function renderEntries(entries) {
  * @param {number} [opts.inlineMaxChars=4000] 全量注入阈值
  * @param {number} [opts.topK=5] 召回条数上限
  * @param {number} [opts.minScore=3] 召回绝对门槛（低于此分属噪声，宁可不召回）
- * @param {number} [opts.minRatio=0.3] 召回相对门槛（最高分的 30%）
+ * @param {number} [opts.minRatio=0.25] 召回相对门槛（最高分的 25%）
  * @returns {{ text:string, sources:Array<{id,title,category}>, mode:'inline'|'retrieve'|'empty' }}
  */
-export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, topK = 5, minScore = 3, minRatio = 0.3 } = {}) {
+export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, topK = 5, minScore = 3, minRatio = 0.25 } = {}) {
   const rows = await loadKb();
   if (!rows.length) return { text: '', sources: [], mode: 'empty' };
 
