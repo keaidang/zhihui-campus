@@ -165,15 +165,36 @@ function stripFence(s) {
 
 /**
  * 强制 JSON 输出：解析失败重试 1 次后放弃（ADR-9：不做无限重试）
+ *
+ * ★ totalBudgetMs（总预算）为什么必须有（2026-10-09 线上实测的教训）：
+ *   本函数最多尝试 2 次，若每次都跑满 timeoutMs，总耗时可达 2×timeoutMs（例如 24s）。
+ *   一旦顶到**平台函数超时**，EdgeOne 会重试这次调用，而 HTTP 请求体**已经被消费过**，
+ *   重试必然抛 `Body is unusable: Body has already been read` → 用户看到 500。
+ *   给出总预算后，剩余时间不足就**不再重试**，宁可返回 null 走降级（调用方会回友好文案），
+ *   也不要把请求推到平台墙上。
+ *
+ * @param {object} [o]
+ * @param {number} [o.totalBudgetMs] 整个函数（含重试）的墙钟上限
  * @returns {Promise<object|null>}
  */
-export async function aiJson({ system, user, maxTokens = 512, temperature = 0.1, timeoutMs, thinking = false } = {}) {
+export async function aiJson({ system, user, maxTokens = 512, temperature = 0.1, timeoutMs, thinking = false, totalBudgetMs } = {}) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: String(user ?? '') });
 
+  const t0 = Date.now();
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await aiChat({ messages, json: true, maxTokens, temperature, timeoutMs, thinking });
+    // 剩余预算不足（默认要求至少留 1.2s 给这一次尝试）→ 放弃重试，直接降级
+    let perAttempt = timeoutMs;
+    if (totalBudgetMs) {
+      const left = totalBudgetMs - (Date.now() - t0);
+      if (left < 1200) {
+        await logAiError('json.budget', `重试前剩余预算不足（已用 ${Date.now() - t0}ms / 预算 ${totalBudgetMs}ms）`);
+        return null;
+      }
+      perAttempt = Math.min(timeoutMs ?? TIMEOUT_MS, left);
+    }
+    const r = await aiChat({ messages, json: true, maxTokens, temperature, timeoutMs: perAttempt, thinking });
     if (!r) return null;
     try {
       const obj = JSON.parse(stripFence(r.content));

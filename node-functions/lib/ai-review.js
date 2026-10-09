@@ -86,7 +86,7 @@ export async function reviewContent({ title = '', content = '', boardName = '', 
     }, timeoutMs);
   });
   const raw = await Promise.race([
-    aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs }).catch(() => null),
+    aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs, totalBudgetMs: timeoutMs }).catch(() => null),
     timer,
   ]);
 

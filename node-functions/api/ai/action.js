@@ -94,7 +94,8 @@ export async function onRequestPost(context) {
     });
 
     const t0 = Date.now();
-    const parsed = await aiJson({ system, user: text, maxTokens: 400, temperature: 0, timeoutMs: 12_000 });
+    // 总预算 9s（含重试）：留足余量给平台，避免顶到函数超时后触发平台重试（见 lib/ai.js 注释）
+    const parsed = await aiJson({ system, user: text, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
     if (!parsed) {
       await logAiUsage({ userId: actor.userId, kind: 'action', model: aiModel(), ok: 0, costMs: Date.now() - t0 });
       return fail(49430, '指令解析服务暂时不可用，请稍后再试（你也可以直接在页面上操作）', 503);
