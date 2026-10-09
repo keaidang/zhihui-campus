@@ -114,7 +114,11 @@ export async function aiUpstream(opts = {}) {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(opts.timeoutMs || STREAM_TIMEOUT_MS) });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      await logAiError('upstream.http', `${res.status} ${txt.slice(0, 300)}`);
+      // ★ 分类后落库：这样远程能一眼看出"是欠费"而不是"平台抖动"。
+      //   2026-10-10 阿里云欠费导致连续 400，而用户只看到"暂时不可用"，
+      //   排查绕了一圈才从 sys_op_log 里翻出 Arrearage。
+      const cls = classifyUpstreamError(res.status, txt);
+      await logAiError(`upstream.http.${cls.kind}`, `${res.status} ${cls.userMessage} | ${txt.slice(0, 200)}`);
       return null;
     }
     return { response: res, costMs: Date.now() - t0 };
@@ -122,6 +126,43 @@ export async function aiUpstream(opts = {}) {
     await logAiError(e?.name === 'TimeoutError' ? 'upstream.timeout' : 'upstream.network', String(e?.message || e));
     return null;
   }
+}
+
+
+/**
+ * ★ 上游错误的**可诊断分类**（2026-10-10 起因：阿里云账号欠费导致全面 400，
+ *   而用户看到的只有"智能问答暂时不可用" —— 无法判断是自己的代码问题还是账单问题）
+ *
+ * 为什么重要：把"上游坏了"细分成人能行动的几类：
+ *   arrearage → 账号欠费，去阿里云控制台充值（**最常见也最容易被误判成代码问题**）
+ *   429       → 限流，等会儿再试 / 换模型
+ *   401/403   → 密钥无效或无权限，检查 AI_API_KEY
+ *   timeout   → 上游排队，本地已降级，重试即可
+ * 不可识别的一律归为 unknown（不要臆测原因）。
+ *
+ * @returns {{kind:string, userMessage:string}}
+ */
+export function classifyUpstreamError(status, bodyText = '') {
+  const t = String(bodyText || '');
+  if (t.includes('Arrearage') || t.includes('overdue') || t.includes('欠费')) {
+    return {
+      kind: 'arrearage',
+      userMessage: 'AI 服务账号欠费或状态异常，请联系管理员到阿里云百炼控制台处理（错误码 Arrearage）',
+    };
+  }
+  if (status === 429 || t.includes('Throttling') || t.includes('RateLimit')) {
+    return { kind: 'rate_limit', userMessage: 'AI 服务当前请求过多，请稍后再试' };
+  }
+  if (status === 401 || status === 403) {
+    return { kind: 'auth', userMessage: 'AI 服务密钥无效或无权限，请联系管理员检查配置' };
+  }
+  if (t.includes('Model') && t.includes('not')) {
+    return { kind: 'model_missing', userMessage: '配置的 AI 模型不可用，请联系管理员确认模型名' };
+  }
+  if (t.includes('timeout') || t.includes('Timeout')) {
+    return { kind: 'timeout', userMessage: 'AI 服务响应超时，请稍后再试' };
+  }
+  return { kind: 'unknown', userMessage: 'AI 服务暂时不可用，请稍后再试' };
 }
 
 /**

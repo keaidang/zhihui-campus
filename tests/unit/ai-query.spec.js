@@ -511,3 +511,37 @@ describe('★ 最值文案必须跟排序方向走（线上验收发现"结论�
     expect(compileQuery(admin, descQ).sql).toContain('ORDER BY `绩点` DESC');
   });
 });
+
+describe('★ 上游错误分类（2026-10-10 阿里云欠费导致全面 400 却只显示"暂时不可用"）', () => {
+  it('★ 欠费（Arrearage）必须被识别，并给出可行动的中文提示', async () => {
+    const { classifyUpstreamError } = await import('../../node-functions/lib/ai.js');
+    // 这是线上真实返回的报文
+    const real = '{"error":{"message":"Access denied, please make sure your account is in good standing. For details, see: https://help.aliyun.com/zh/model-studio/error-code#overdue-payment","type":"Arrearage","code":"Arrearage"}}';
+    const r = classifyUpstreamError(400, real);
+    expect(r.kind).toBe('arrearage');
+    expect(r.userMessage).toContain('欠费');
+    expect(r.userMessage).toContain('阿里云');
+  });
+
+  it('限流 / 鉴权 / 超时分别归类，且都不与欠费混淆', async () => {
+    const { classifyUpstreamError } = await import('../../node-functions/lib/ai.js');
+    expect(classifyUpstreamError(429, '{"error":{"code":"Throttling"}}').kind).toBe('rate_limit');
+    expect(classifyUpstreamError(401, 'invalid api key').kind).toBe('auth');
+    expect(classifyUpstreamError(403, 'forbidden').kind).toBe('auth');
+    expect(classifyUpstreamError(400, 'Model xxx does not exist').kind).toBe('model_missing');
+    expect(classifyUpstreamError(400, 'Request timeout').kind).toBe('timeout');
+  });
+
+  it('不可识别的一律归 unknown（不臆测原因）', async () => {
+    const { classifyUpstreamError } = await import('../../node-functions/lib/ai.js');
+    const r = classifyUpstreamError(500, 'something unexpected');
+    expect(r.kind).toBe('unknown');
+    expect(r.userMessage).not.toContain('欠费'); // 绝不能把未知问题说成欠费
+  });
+
+  it('空 body 也能分类（上游有时只给状态码）', async () => {
+    const { classifyUpstreamError } = await import('../../node-functions/lib/ai.js');
+    expect(classifyUpstreamError(429, '').kind).toBe('rate_limit');
+    expect(classifyUpstreamError(500, '').kind).toBe('unknown');
+  });
+});
