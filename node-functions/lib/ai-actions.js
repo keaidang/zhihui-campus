@@ -18,7 +18,7 @@ import jwt from 'jsonwebtoken';
 import { HttpError } from './guard.js';
 import { jwtSecret } from './auth.js';
 import { hasRole, isAdmin } from './services/_actor.js';
-import { findUsers, setUserStatus } from './services/users.js';
+import { findUsers, findUsersByNames, setUserStatus } from './services/users.js';
 import { decideLeave, listLeaves } from './services/leave.js';
 import { listNotices, publishNotice, revokeNotice, setNoticePinned } from './services/notice.js';
 import { handleReview, listReviewQueue } from './ai-review.js';
@@ -47,30 +47,12 @@ async function resolveUserTargets(actor, p = {}) {
   const warnings = [];
   const explicit = Array.isArray(p.usernames) ? p.usernames.map((s) => String(s).trim()).filter(Boolean) : [];
 
-  // ---- 情况 A：模型明确列了账号名 → 逐个精确匹配 ----
+  // ---- 情况 A：模型明确列了账号名 → 按名字**精确 SQL 查**（不能拉一页再内存筛，见该函数注释）----
   if (explicit.length) {
-    const pool = await findUsers(actor, { limit: 200 });
-    const wanted = new Map(explicit.map((n) => [n.toLowerCase(), n]));
-    const found = [];
-    for (const u of pool) {
-      const key = String(u.username).toLowerCase();
-      if (wanted.has(key)) {
-        found.push(u);
-        wanted.delete(key);
-      }
-    }
-    // 也可能给的是姓名
-    for (const u of pool) {
-      if (found.includes(u)) continue;
-      const rn = String(u.real_name || '');
-      for (const [k, orig] of [...wanted]) {
-        if (rn && rn === orig) {
-          found.push(u);
-          wanted.delete(k);
-        }
-      }
-    }
-    if (wanted.size) warnings.push(`未找到账号：${[...wanted.values()].join('、')}`);
+    const found = await findUsersByNames(actor, explicit);
+    const hitNames = new Set(found.flatMap((u) => [String(u.username).toLowerCase(), String(u.real_name || '').toLowerCase()]));
+    const missing = explicit.filter((n) => !hitNames.has(String(n).toLowerCase()));
+    if (missing.length) warnings.push(`未找到账号（或不在你的数据范围内）：${missing.join('、')}`);
     return { targets: found, warnings };
   }
 

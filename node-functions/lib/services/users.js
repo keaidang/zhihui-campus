@@ -402,6 +402,46 @@ export async function setUserRoles(actor, targetId, value) {
   return { data: { userId: target.id, roles: codes }, message: '角色已更新（重新登录后菜单生效）' };
 }
 
+/**
+ * ★ 按账号名/姓名**精确批量**查用户（C5 目标解析专用）
+ *
+ * 为什么不能复用 findUsers 再在内存里筛：
+ *   findUsers 是分页查询（默认按 id 排序、带 LIMIT），而本库有 500+ 账号 ——
+ *   **新建的账号 id 最大、排在最后一页**，"禁用账号 xxx" 会查不到它，
+ *   表现为"预览永远为空"。2026-10-09 线上验收就是踩到这个坑（临时账号刚好是最新的）。
+ *   这里直接 SQL 精确匹配，既正确又便宜。
+ *
+ * 数据范围照旧生效（辅导员只能查到本院的人）。
+ * @param {string[]} names 账号名或真实姓名
+ */
+export async function findUsersByNames(actor, names = []) {
+  const list = [...new Set(names.map((s) => String(s).trim()).filter(Boolean))].slice(0, 100);
+  if (!list.length) return [];
+  const scope = dataScope(actor.roles, actor.deptId);
+  const ph = list.map(() => '?').join(',');
+  const where = [`(u.username IN (${ph}) OR u.real_name IN (${ph}))`];
+  const params = [...list, ...list];
+  if (scope.type === 'dept') {
+    where.push('u.dept_id = ?');
+    params.push(scope.deptId);
+  }
+  const rows = await query(
+    `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id,
+            d.name AS dept_name,
+            GROUP_CONCAT(r.code) AS role_codes
+       FROM sys_user u
+       LEFT JOIN sys_department d ON d.id = u.dept_id
+       LEFT JOIN sys_user_role ur ON ur.user_id = u.id
+       LEFT JOIN sys_role r ON r.id = ur.role_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id, d.name
+      ORDER BY u.id ASC
+      LIMIT 100`,
+    params,
+  );
+  return rows.map((r) => ({ ...r, roles: r.role_codes ? String(r.role_codes).split(',') : [] }));
+}
+
 /** 动作分发（handler 薄壳用） */
 export async function handleUserAction(actor, body = {}) {
   const action = String(body.action || '');
