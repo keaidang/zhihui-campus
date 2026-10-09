@@ -13,6 +13,7 @@ import { aiConfigured, aiModel, aiUpstream, logAiUsage } from '../../lib/ai.js';
 import { getBool, getInt } from '../../lib/ai-config.js';
 import { consumeAiQuota } from '../../lib/ai-guard.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
+import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { variantOf } from '../../lib/ai-variant.js';
 import { openAiToEvents, sseEvent, sseResponse } from '../../lib/sse.js';
 
@@ -24,21 +25,25 @@ const MAX_HISTORY_CHARS = 400; // 单条历史消息截断长度
 
 /** 回答纪律：只依据资料、不编造、简洁、不暴露内部编号 */
 const SYSTEM_RULES = [
-  '你是「智汇校园」一站式智慧校园服务平台的校园智能助手，服务对象是清北大学的师生。',
+  '你是「智汇校园」一站式智慧校园服务平台的校园智能助手，服务对象是清北大学的师生员工。',
   '',
   '【回答纪律】（必须严格遵守）',
   '1. 只能依据下方【资料】回答。资料里没有的，直说"这个问题我暂时没有掌握，建议你到【公告中心】查看或联系辅导员"，绝不编造校规、时间、金额、电话、比例。',
   '2. 涉及平台功能与办事流程时，严格按资料描述，不要自行增减步骤或改换部门。',
-  '3. 语气友好、简洁，像学长学姐答疑；控制在 250 字以内，能分点就分点。',
+  '3. 语气友好、简洁、专业；控制在 250 字以内，能分点就分点。**称呼与口吻服从下方【当前提问者身份】**，不要默认对方是学生。',
   '4. 不要输出「资料1」这类内部编号，也别说"根据资料"——直接给结论。',
   '5. 与清北大学校园学习生活无关的请求（写代码、聊时事、代写作业等）礼貌拒绝，并引导回校园话题。',
+  '6. **先看身份再回答**：系统已经把提问者的真实姓名、角色、数据范围告诉你了，据此直接作答；不要反问"请问你是学生还是老师"，也不要罗列多种角色的可能性。',
 ].join('\n');
 
-/** 组装 messages：system(规则 + L0 档案 + L1 资料) + 历史 + 本次提问 */
-function buildMessages(question, history, kbText) {
-  const parts = [SYSTEM_RULES, '', '【平台基本档案】', KB_PROFILE];
+/** 组装 messages：system(规则 + 身份 + L0 档案 + L1 资料) + 历史 + 本次提问 */
+function buildMessages(question, history, kbText, identityText) {
+  const parts = [SYSTEM_RULES];
+  // 身份块紧随规则之后：它是"怎么回答"的约束，必须比知识资料更靠前、优先级更高
+  if (identityText) parts.push('', identityText);
+  parts.push('', '【平台基本档案】', KB_PROFILE);
   if (kbText) parts.push('', '【资料】', kbText);
-  else parts.push('', '【资料】（本次没有检索到相关条目，请只依据上面的基本档案回答，并如实说明资料不足）');
+  else parts.push('', '【资料】（本次没有检索到相关条目，请只依据上面的基本档案与身份块回答，并如实说明资料不足）');
 
   const messages = [{ role: 'system', content: parts.join('\n') }];
   for (const h of history) {
@@ -81,7 +86,10 @@ export async function onRequestPost(context) {
     const topK = await getInt('ai.kb.top_k', 5);
     const kb = await buildKnowledgeContext(question, { inlineMaxChars, topK });
 
-    const messages = buildMessages(question, history, kb.text);
+    // ---- 提问者身份（只读本人；读不到就按"身份未知"降级，绝不放宽判断）----
+    const identity = await loadIdentity(userId);
+
+    const messages = buildMessages(question, history, kb.text, identityBlock(identity, roles));
 
     // ---- 先拿到上游响应头再决定返回什么：失败时能干净地回 JSON ----
     const t0 = Date.now();
