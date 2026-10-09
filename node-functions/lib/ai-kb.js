@@ -89,14 +89,81 @@ export function scoreEntry(entry, tokens) {
   return score;
 }
 
-/** 排序取 TopK（纯函数，供单测） */
-export function rankKb(entries, question, topK = 4) {
+/** 归一化标题的字符 bigram 集合（中文相似度用，不引依赖） */
+function bigrams(s) {
+  const out = new Set();
+  for (let i = 0; i + 2 <= s.length; i++) out.add(s.slice(i, i + 2));
+  return out;
+}
+
+/**
+ * 两个标题是否指向同一件事（纯函数，供单测）
+ * 判定：归一化后相等 / 互相包含 / 字符 bigram Jaccard ≥ 0.55
+ *
+ * 为什么需要：知识库同时有「短 FAQ 条目」与「详细条目」，短条目正文常写"详见某某"。
+ * 召回模式下两者会同时命中 → 分数被劈成两半、上下文重复一倍，
+ * 界面上还会出现两条几乎一样的"参考"，用户以为系统不靠谱。
+ */
+export function isNearDuplicateTitle(a, b) {
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const A = bigrams(na);
+  const B = bigrams(nb);
+  if (!A.size || !B.size) return false;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter += 1;
+  return inter / (A.size + B.size - inter) >= 0.55;
+}
+
+/**
+ * 近似重复条目合并：同一话题只留一条（纯函数，供单测）
+ * **保留正文更完整的那条**，而不是分数更高的那条 ——
+ * 因为短条目往往只写"详见《XXX》"，把它留下会让模型看不到真正的规则全文。
+ * @param {Array<{entry:object, score:number}>} scored 已按分数降序
+ */
+export function dedupeByTopic(scored) {
+  const kept = [];
+  for (const x of scored) {
+    const i = kept.findIndex((k) => isNearDuplicateTitle(k.entry.title, x.entry.title));
+    if (i === -1) kept.push(x);
+    else if (String(x.entry.content || '').length > String(kept[i].entry.content || '').length) kept[i] = x;
+  }
+  return kept.sort((a, b) => b.score - a.score || Number(a.entry.id) - Number(b.entry.id));
+}
+
+/**
+ * 排序取 TopK（纯函数，供单测）
+ *
+ * @param {object[]} entries
+ * @param {string} question
+ * @param {number} topK
+ * @param {object} [opts]
+ * @param {number} [opts.minScore=1] 绝对门槛。默认 1（等价于旧的 `score > 0`，不改变既有行为）
+ * @param {number} [opts.minRatio=0] 相对门槛：得分低于 `最高分 × minRatio` 的条目一并丢弃
+ * @param {boolean} [opts.dedupe=true] 是否合并近似重复话题
+ *
+ * 为什么要相对门槛：TopK 是"取前 N 个"，**不判断这 N 个是否真相关**。
+ * 实测中「我是管理员」这类问题会让"管理"这个 2 字词命中十几条条目，TopK=5 便把
+ * 「宿舍分配规则」「交易集市发帖要求」一并塞进上下文并列给用户看，用户会以为它们相关。
+ * 阈值经 `working/kb-tune.mjs` 在 24 条真实问题 + 67 条库内数据上网格搜索确定：
+ * 命中 22/22 不变，平均召回条数 4.50 → 2.33。
+ */
+export function rankKb(entries, question, topK = 4, { minScore = 1, minRatio = 0, dedupe = true } = {}) {
   const tokens = extractTokens(question);
   if (!tokens.length) return [];
-  return entries
+  const scored = entries
     .map((e) => ({ entry: e, score: scoreEntry(e, tokens) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || Number(a.entry.id) - Number(b.entry.id))
+    .filter((x) => x.score >= minScore)
+    .sort((a, b) => b.score - a.score || Number(a.entry.id) - Number(b.entry.id));
+  if (!scored.length) return [];
+  const pool = dedupe ? dedupeByTopic(scored) : scored;
+  // 相对门槛以**去重后**的最高分为基准，否则最高分那条被合并掉时门槛会偏高
+  const floor = (pool[0]?.score ?? 0) * minRatio;
+  return pool
+    .filter((x) => x.score >= floor)
     .slice(0, Math.max(1, topK))
     .map((x) => x.entry);
 }
@@ -133,9 +200,14 @@ export function renderEntries(entries) {
 
 /**
  * 构建知识上下文：按阈值决定"全量注入"还是"关键词召回"
+ * @param {object} [opts]
+ * @param {number} [opts.inlineMaxChars=4000] 全量注入阈值
+ * @param {number} [opts.topK=5] 召回条数上限
+ * @param {number} [opts.minScore=3] 召回绝对门槛（低于此分属噪声，宁可不召回）
+ * @param {number} [opts.minRatio=0.3] 召回相对门槛（最高分的 30%）
  * @returns {{ text:string, sources:Array<{id,title,category}>, mode:'inline'|'retrieve'|'empty' }}
  */
-export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, topK = 5 } = {}) {
+export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, topK = 5, minScore = 3, minRatio = 0.3 } = {}) {
   const rows = await loadKb();
   if (!rows.length) return { text: '', sources: [], mode: 'empty' };
 
@@ -148,7 +220,7 @@ export async function buildKnowledgeContext(question, { inlineMaxChars = 4000, t
     };
   }
 
-  const hit = rankKb(rows, question, topK);
+  const hit = rankKb(rows, question, topK, { minScore, minRatio });
   if (!hit.length) return { text: '', sources: [], mode: 'retrieve' };
   return {
     text: renderEntries(hit),

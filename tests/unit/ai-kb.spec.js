@@ -4,7 +4,15 @@
 // 基于无关资料作答，页面上看不出异常。所以打分与排序必须有断言兜住。
 // 不测含 DB 的 loadKb/buildKnowledgeContext（那属于库体检层，见 npm run check:db）。
 import { describe, it, expect } from 'vitest';
-import { normalize, extractTokens, scoreEntry, rankKb, renderEntries } from '../../node-functions/lib/ai-kb.js';
+import {
+  normalize,
+  extractTokens,
+  scoreEntry,
+  rankKb,
+  renderEntries,
+  isNearDuplicateTitle,
+  dedupeByTopic,
+} from '../../node-functions/lib/ai-kb.js';
 
 describe('normalize · 归一化', () => {
   it('去掉标点、空白、全角空格', () => {
@@ -145,5 +153,114 @@ describe('renderEntries · 注入文本渲染', () => {
   });
   it('空数组返回空串', () => {
     expect(renderEntries([])).toBe('');
+  });
+});
+
+// ---------- 话题去重与分数门槛（2026-10-09 线上实测后新增）----------
+// 线上现象：问「student1的有效期」时，"参考"里出现了「宿舍分配规则」「交易集市发帖要求」。
+// 根因：TopK 只取前 N 个，不判断是否真相关；且知识库里同一话题（短 FAQ + 详细条目）
+// 会同时命中，界面上出现两条几乎一样的参考。下面两个函数就是为这两个问题加的。
+
+describe('isNearDuplicateTitle · 同话题判定', () => {
+  it('归一化后完全相同 → 同话题', () => {
+    expect(isNearDuplicateTitle('怎么退课', '怎么退课？')).toBe(true);
+    expect(isNearDuplicateTitle('怎么修改登录密码', '怎么修改登录密码？')).toBe(true);
+  });
+
+  it('互相包含 → 同话题（长标题里套着短标题）', () => {
+    expect(isNearDuplicateTitle('怎么选课：选课规则与流程', '怎么选课？')).toBe(true);
+  });
+
+  it('仅差一两个虚字、bigram 相似 → 同话题', () => {
+    expect(isNearDuplicateTitle('忘记密码怎么办', '忘记密码了怎么办？')).toBe(true);
+  });
+
+  it('★ 不同话题不误判（宁可漏合，不可错合——错合会丢资料）', () => {
+    const pairs = [
+      ['请假谁批？要多久？', '请假后怎么销假'],
+      ['怎么选课：选课规则与流程', '选课时段冲突规则'],
+      ['怎么修改登录密码', '怎么修改邮箱密码'],
+      ['图书借阅规则', '宿舍分配规则'],
+      ['忘记密码怎么办', '忘记用户名怎么办？'],
+    ];
+    for (const [a, b] of pairs) {
+      expect(isNearDuplicateTitle(a, b), `${a} vs ${b}`).toBe(false);
+    }
+  });
+
+  it('空标题不判为重复（避免把脏数据全合并成一条）', () => {
+    expect(isNearDuplicateTitle('', '')).toBe(false);
+    expect(isNearDuplicateTitle('选课', '')).toBe(false);
+  });
+});
+
+describe('dedupeByTopic · 近似重复合并', () => {
+  it('★ 保留正文更完整的那条，而不是分数更高的那条', () => {
+    // 短 FAQ 分更高，但它正文只写"详见…"——留下它会让模型看不到真正的规则全文
+    const scored = [
+      { entry: { id: 43, title: '怎么选课？', content: '详见"怎么选课：选课规则与流程"。' }, score: 56 },
+      { entry: { id: 9, title: '怎么选课：选课规则与流程', content: '每条规则都写清楚了，正文很长很长很长很长。' }, score: 48 },
+    ];
+    const out = dedupeByTopic(scored);
+    expect(out).toHaveLength(1);
+    expect(out[0].entry.id).toBe(9);
+  });
+
+  it('合并后仍按分数降序（排序不能因为替换而乱掉）', () => {
+    const scored = [
+      { entry: { id: 1, title: '甲话题', content: 'x' }, score: 30 },
+      { entry: { id: 2, title: '怎么退课', content: '短' }, score: 20 },
+      { entry: { id: 3, title: '怎么退课？', content: '这条正文更长一些' }, score: 15 },
+      { entry: { id: 4, title: '乙话题', content: 'y' }, score: 10 },
+    ];
+    const out = dedupeByTopic(scored);
+    expect(out.map((x) => x.entry.id)).toEqual([1, 3, 4]);
+    expect(out.map((x) => x.score)).toEqual([30, 15, 10]);
+  });
+
+  it('无重复时原样返回', () => {
+    const scored = [
+      { entry: { id: 1, title: '图书借阅规则', content: 'a' }, score: 5 },
+      { entry: { id: 2, title: '宿舍分配规则', content: 'b' }, score: 3 },
+    ];
+    expect(dedupeByTopic(scored).map((x) => x.entry.id)).toEqual([1, 2]);
+  });
+});
+
+describe('rankKb · 门槛与去重选项', () => {
+  it('minScore 绝对门槛：低于门槛的条目被丢弃', () => {
+    const entries = [
+      { id: 1, keywords: '选课', title: '选课规则', content: '' }, // 3(keywords)+2(title) = 5
+      { id: 2, keywords: '选课', title: '无关条目', content: '选课' }, // 3+1 = 4
+    ];
+    expect(rankKb(entries, '选课', 5).length).toBe(2); // 默认 minScore=1，两条都过
+    expect(rankKb(entries, '选课', 5, { minScore: 5 }).map((e) => e.id)).toEqual([1]);
+  });
+
+  it('★ minRatio 相对门槛：与最高分不在同一量级的"顺带命中"被丢弃', () => {
+    const entries = [
+      { id: 1, keywords: '有效期,账号有效期', title: '账号有效期与停用', content: '' },
+      { id: 2, keywords: '住宿', title: '宿舍分配规则', content: '有效期' }, // 仅正文偶然出现"有效期"
+    ];
+    // 宽松（默认门槛）：两条都召回 —— 这正是线上"参考里混进宿舍分配规则"的成因
+    const loose = rankKb(entries, 'student1的有效期', 5, { dedupe: false });
+    expect(loose.map((e) => e.id)).toEqual([1, 2]);
+    // 加相对门槛后只留同量级的那条
+    const strict = rankKb(entries, 'student1的有效期', 5, { minRatio: 0.3, dedupe: false });
+    expect(strict.map((e) => e.id)).toEqual([1]);
+  });
+
+  it('dedupe 可关闭（对照实验用）', () => {
+    const entries = [
+      { id: 1, keywords: '退课', title: '怎么退课', content: '正文' },
+      { id: 2, keywords: '退课', title: '怎么退课？', content: '更长的正文内容' },
+    ];
+    expect(rankKb(entries, '怎么退课', 5, { dedupe: false })).toHaveLength(2);
+    expect(rankKb(entries, '怎么退课', 5)).toHaveLength(1);
+  });
+
+  it('默认参数与历史行为兼容（minScore=1 等价于旧的 score>0）', () => {
+    const entries = [{ id: 1, keywords: '', title: '', content: '选课' }];
+    expect(rankKb(entries, '选课', 3).map((e) => e.id)).toEqual([1]);
   });
 });

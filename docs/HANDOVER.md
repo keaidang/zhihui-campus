@@ -214,6 +214,12 @@
     - **连带**：ADR-9 原「论坛 AI 审核（图片走视觉能力）」**降级为纯文本审核**；需要图片审核须另立 ADR 并先定预算。
     - **配套**：AI 调用默认 **`enable_thinking: false`**（意图 JSON 快 6.2 倍、输出 token 降 94%，且关思考才解锁 `tool_choice: required`）；每次调用设 `max_tokens` 上限；RAG 走检索 TopK，禁止整篇长文档塞上下文。
     - 违反表现：账单出现 image/audio 类计费项；`working/` 或 `scripts/` 里出现多模态试调脚本。
+37. **★★ Node Functions 的每个 handler 必须 `try/catch` + `jsonError(e)` 兜底（2026-10-09 线上实测确认）**：
+    - **机制**：EdgeOne 对"未捕获异常"不返回 500 JSON，而是换成 **502 HTML 崩溃页**（`FUNCTION_INVOCATION_FAILED`，文案 "This function has crashed"，页面里还会把异常 message 原文显示出来）。因此 **`HttpError`（40103/40301）如果没被 catch，也会变成 502 HTML**。
+    - **后果（2026-10-09 真实故障）**：新写的 3 个 `/api/ai/*` handler 漏了包装（全站 41/44 个 handler 都有，就这 3 个没有）→ ① 令牌过期时 `/api/ai/chat` 返回 502 HTML，前端判不出 SSE 也 `res.json()` 失败，只显示默认兜底文案「智能问答暂时不可用」——**看起来像 AI 服务坏了，实际是鉴权异常穿了**；② 因为状态码是 **502 而不是 401**，前端的"401 自动续期"分支根本没进，用户被硬生生卡住；③ 线上无控制台，异常没落 `sys_op_log`，无法远程定位。
+    - **规范**：handler 体一律 `try { ... } catch (e) { return jsonError(e); }`；`jsonError` 会把 `HttpError` 按其自带 status/code 返回，其余落 `sys_op_log(action='error.500')`。**流式（SSE）接口同样要包**——包住"开始生成之前"的部分即可（响应头一旦发出就无法再改 JSON）。
+    - **自检**：`for f in $(find node-functions/api -name "*.js"); do grep -q jsonError "$f" || echo "缺: $f"; done` 必须无输出。
+    - 违反表现：线上出现 `502 FUNCTION_INVOCATION_FAILED` 的 EdgeOne HTML 错误页；前端收到 HTML 却按 JSON 解析。
 
 ## 6. 交付与验证流程
 
