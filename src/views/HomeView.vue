@@ -106,7 +106,7 @@
           立即体验 AI 助手
         </el-button>
         <span class="zc-ai-note">
-          问答 / 分诊 / 审核 / 问数四类能力已完成效果评估（{{ evalCases }} 条人工标注用例）
+          共 {{ aiTotal }} 项能力（上方为 {{ aiFeatures.length }} 项代表） · 问答 / 分诊 / 审核 / 问数四类已完成效果评估（{{ evalCases }} 条人工标注用例）
         </span>
       </div>
     </section>
@@ -152,11 +152,13 @@ onMounted(() => { fetch('/api/edge/stats').catch(() => {}); });
  * AI 能力展示（首页用）。
  * 只列**真实存在**的能力，措辞与 docs/AI-FEATURES.md 的能力清单一一对应 ——
  * 首页是对外承诺，写了却没实现是最糟糕的情况。
+ * 布局约束：容器 1112px ÷ 栅格 minmax(276px) 正好 3 列，所以这里**保持 6 张**（3×2 满排）。
+ * 能力总数见下方 aiTotal（13），6 张只是代表，不是全部。
  */
 const aiFeatures = [
   {
     title: '校园智能问答',
-    desc: '基于校园知识库回答选课、请假、报修等流程问题，答不出来会如实说明而不是编造',
+    desc: '基于校园知识库回答选课、请假、报修等流程问题，逐字流式输出并标注出处；答不出来会如实说明而不是编造',
     icon: 'ChatDotRound',
   },
   {
@@ -165,8 +167,8 @@ const aiFeatures = [
     icon: 'MagicStick',
   },
   {
-    title: '信息问数',
-    desc: '「这周哪个班请假最多」直接出统计表；模型只负责选模板，全程不接触 SQL',
+    title: '信息问数与自由统计',
+    desc: '「这周哪个班请假最多」出统计表；「账号总数」「各院系人数排名」「绩点最差的学生」也能直接问 —— 模型只产出结构化查询条件，全程不接触 SQL',
     icon: 'DataAnalysis',
   },
   {
@@ -186,8 +188,8 @@ const aiFeatures = [
   },
 ];
 
-/** AI 能力总数（C1~C12）；首页只列 6 项代表，故用常量而不是卡片数推算 */
-const aiTotal = 12;
+/** AI 能力总数（C1~C13）；首页只列 6 项代表，故用常量而不是卡片数推算 */
+const aiTotal = 13;
 /** 评估用例数（与 scripts/seed-ai-eval.mjs 的 42 条一致；写在页面上的数字必须真实可查） */
 const evalCases = 42;
 

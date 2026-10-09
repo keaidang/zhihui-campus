@@ -36,7 +36,8 @@ export const FEATURES = [
   { key: 'study', label: '学业助手', roles: ['student'], config: 'ai.study.enabled', def: '1', mode: 'read' },
   { key: 'triage', label: '报修智能分诊', roles: null, config: 'ai.triage.enabled', def: '0', mode: 'read' },
   { key: 'approvalAdvice', label: 'AI 审批助手', roles: ['counselor', 'admin'], config: 'ai.approval_advice.enabled', def: '0', mode: 'read' },
-  { key: 'insight', label: '信息问数', roles: ['leader', 'admin'], config: 'ai.insight.enabled', def: '1', mode: 'read' },
+  // C6 模板问数 + C13 自由结构化查询共用这一个开关与能力项（两者是同一条链路的两种表达）
+  { key: 'insight', label: '信息问数与自由统计', roles: ['leader', 'admin'], config: 'ai.insight.enabled', def: '1', mode: 'read' },
   { key: 'adminAction', label: '智能系统管理', roles: ['admin'], config: 'ai.admin_console.enabled', def: '1', mode: 'write' },
   { key: 'adminConsole', label: 'AI 管理控制台', roles: ['admin'], config: 'ai.admin_console.enabled', def: '1', mode: 'write' },
 ];

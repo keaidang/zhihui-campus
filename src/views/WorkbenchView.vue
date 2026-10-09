@@ -170,7 +170,7 @@ const greeting = computed(() => {
 import { fmtTime } from '../utils/time';
 
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
-const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答，可直接下指令', icon: 'MagicStick', path: '/ai' };
+const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答，可直接下指令或查统计数据', icon: 'MagicStick', path: '/ai' };
 const AI_CONSOLE_CARD = { title: 'AI 管理控制台', desc: '开关 · 审核队列 · 知识库 · 告警 · 用量', icon: 'Setting', path: '/admin/ai' };
 
 const BY_ROLE = {

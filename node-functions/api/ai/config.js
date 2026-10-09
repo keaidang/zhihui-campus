@@ -34,7 +34,7 @@ export const LABELS = {
   'ai.approval_advice.enabled': { label: 'C4 AI 审批助手（只建议，不自动审批；默认关）', type: 'bool' },
   'ai.approval_advice.timeout_ms': { label: 'C4 建议生成超时', type: 'number' },
   'ai.admin_console.enabled': { label: 'C5 对话式系统管理', type: 'bool' },
-  'ai.insight.enabled': { label: 'C6 信息问数', type: 'bool' },
+  'ai.insight.enabled': { label: 'C6/C13 信息问数与自由统计', type: 'bool' },
   'ai.study.enabled': { label: 'C7 学生学业助手', type: 'bool' },
   'ai.triage.enabled': { label: 'C8 报修智能分诊（默认关）', type: 'bool' },
   'ai.triage.timeout_ms': { label: 'C8 分诊超时（超时 = 不做分诊，工单照常创建）', type: 'number' },
