@@ -47,6 +47,29 @@
       <p class="dlg-sub">
         {{ current?.real_name }} · {{ current?.type }} · {{ fmt(current?.start_at) }} ~ {{ fmt(current?.end_at) }}
       </p>
+      <!-- C4 AI 审批助手：只给建议，绝不代替人工决定（开关未开时不显示） -->
+      <div v-if="adviceOn" class="ai-advice">
+        <div v-if="adviceLoading" class="ai-advice-loading">AI 正在分析该申请…</div>
+        <template v-else-if="advice">
+          <div class="ai-advice-head">
+            <span class="ai-advice-title">AI 建议</span>
+            <el-tag :type="adviceTag(advice.suggestion)" size="small" effect="dark" round>
+              {{ adviceLabel(advice.suggestion) }}
+            </el-tag>
+            <span class="ai-advice-conf">置信度 {{ Math.round((advice.confidence || 0) * 100) }}%</span>
+            <span v-if="advice.degraded" class="ai-advice-deg">（AI 降级结果，仅供参考）</span>
+          </div>
+          <p class="ai-advice-reason">{{ advice.reason }}</p>
+          <ul v-if="advice.risk && advice.risk.length" class="ai-advice-risk">
+            <li v-for="(r, i) in advice.risk" :key="i">{{ r }}</li>
+          </ul>
+          <div class="ai-advice-ops">
+            <el-button link size="small" type="primary" @click="adoptAdvice">采纳建议理由到意见框</el-button>
+            <span class="ai-advice-tip">最终决定权在你 —— AI 不参与审批</span>
+          </div>
+        </template>
+      </div>
+
       <el-input v-model="opinion" type="textarea" :rows="3" maxlength="256" :placeholder="approving ? '审批意见（选填）' : '请填写驳回原因'" />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -63,9 +86,11 @@ import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import PortalShell from '../../components/PortalShell.vue';
 import { useAuthStore } from '../../stores/auth';
+import { useAiStore } from '../../stores/ai';
 import { api } from '../../api/request';
 
 const auth = useAuthStore();
+const ai = useAiStore();
 const isDept = computed(() => !auth.hasRole(['admin']));
 const list = ref([]);
 const loading = ref(false);
@@ -75,6 +100,35 @@ const approving = ref(true);
 const saving = ref(false);
 const current = ref(null);
 const opinion = ref('');
+
+// ---- C4 AI 审批助手（只建议，不自动审批）----
+const adviceOn = computed(() => Boolean(ai.features.approvalAdvice));
+const advice = ref(null);
+const adviceLoading = ref(false);
+
+const adviceLabel = (s2) => ({ approve: '建议通过', reject: '建议驳回', manual: '建议人工核实' }[s2] || '建议人工核实');
+const adviceTag = (s2) => ({ approve: 'success', reject: 'danger', manual: 'warning' }[s2] || 'info');
+
+async function loadAdvice(leaveId) {
+  advice.value = null;
+  if (!adviceOn.value) return;
+  adviceLoading.value = true;
+  try {
+    const res = await api(`/api/ai/approval-advice?leaveId=${leaveId}`);
+    if (res.code === 0 && res.data?.enabled) advice.value = res.data;
+  } catch {
+    /* 建议拿不到不影响审批本身 */
+  } finally {
+    adviceLoading.value = false;
+  }
+}
+
+/** 把 AI 理由填进意见框（仍是人工点确认才生效） */
+function adoptAdvice() {
+  if (!advice.value) return;
+  const prefix = advice.value.suggestion === 'approve' ? '同意' : advice.value.suggestion === 'reject' ? '不同意：' : '';
+  opinion.value = `${prefix}${advice.value.reason}`.slice(0, 256);
+}
 
 const tagType = (s) => ({ 1: 'warning', 2: 'primary', 3: 'danger', 4: 'success' }[s] || 'info');
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
@@ -97,6 +151,8 @@ function open(row, yes) {
   approving.value = yes;
   opinion.value = '';
   dialogVisible.value = true;
+  // 打开对话框时才去请求建议（不给列表页增加 N 次调用）
+  loadAdvice(row.id);
 }
 
 async function confirm() {
@@ -126,7 +182,11 @@ async function confirm() {
   }
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  // 只拉一次能力清单（store 内按用户去重，悬浮球/菜单已拉过就不会重复请求）
+  await ai.load(auth.user?.id ?? null);
+});
 </script>
 
 <style scoped>
@@ -143,4 +203,23 @@ onMounted(load);
 .small { font-size: 12.5px; }
 .muted { color: var(--zc-text-sub); }
 .dlg-sub { margin: 0 0 12px; font-size: 13px; color: var(--zc-text-sub); }
+
+/* C4 AI 建议卡片 */
+.ai-advice {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #1d9e75;
+  border-radius: 8px;
+  background: #f8fbf9;
+}
+.ai-advice-loading { font-size: 12.5px; color: var(--zc-text-sub); }
+.ai-advice-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ai-advice-title { font-size: 13px; font-weight: 600; color: var(--zc-navy); }
+.ai-advice-conf { font-size: 12px; color: var(--zc-text-sub); }
+.ai-advice-deg { font-size: 12px; color: #b45309; }
+.ai-advice-reason { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--zc-text); }
+.ai-advice-risk { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: #9a3412; }
+.ai-advice-ops { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ai-advice-tip { font-size: 11.5px; color: var(--zc-text-sub); }
 </style>

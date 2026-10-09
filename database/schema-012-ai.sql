@@ -108,6 +108,7 @@ INSERT IGNORE INTO sys_config (cfg_key, cfg_value, remark) VALUES
   ('ai.alert.emails',                     '',     'C3 收件人（逗号分隔；留空则取 admin 角色用户的校园邮箱）'),
   ('ai.alert.dedupe_min',                 '30',   'C3 同类告警去重窗口（分钟）'),
   ('ai.approval_advice.enabled',          '0',    'C4 AI 审批助手（只建议，不自动审批）'),
+  ('ai.approval_advice.timeout_ms',       '8000', 'C4 审批建议生成超时（超时=返回"请人工判断"，不阻塞审批页）'),
   ('ai.admin_console.enabled',            '1',    'C5 管理员智能管理'),
   ('ai.insight.enabled',                  '1',    'C6 校领导信息汇总问数'),
   ('ai.study.enabled',                    '1',    'C7 学生学业助手'),

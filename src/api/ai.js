@@ -39,6 +39,11 @@ export function runAiAction(text) {
   return api('/api/ai/action', { method: 'POST', body: { text } });
 }
 
+/** C6 信息问数（校领导/管理员）：模型选模板 + 抽参数 → 服务端参数化查询 */
+export function runAiInsight(text) {
+  return api('/api/ai/insight', { method: 'POST', body: { text } });
+}
+
 /** C5 第二阶段：带确认令牌真正执行 */
 export function confirmAiAction(confirmToken) {
   return api('/api/ai/action', { method: 'POST', body: { confirmToken } });

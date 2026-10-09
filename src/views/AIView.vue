@@ -28,7 +28,7 @@
       <div ref="scroller" class="ai-chat">
         <div v-for="m in msgs" :key="m.id" class="ai-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ai-ava">AI</div>
-          <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' }">
+          <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' || m.kind === 'data' }">
             <div v-if="m.pending && !m.content" class="ai-typing"><i /><i /><i /></div>
 
             <!-- C5 写操作：影响清单 + 二次确认（点确认前一行数据都没改） -->
@@ -63,7 +63,11 @@
             </template>
 
             <!-- C5 只读查询：结果表 -->
-            <template v-else-if="m.kind === 'read'">
+            <template v-else-if="m.kind === 'read' || m.kind === 'data'">
+              <p class="ai-op-head">
+                <b>{{ m.label || '查询结果' }}</b>
+                <span v-if="m.periodLabel" class="ai-op-tip">· {{ m.periodLabel }}</span>
+              </p>
               <p class="ai-text">{{ m.summary || '查询完成' }}</p>
               <div v-if="m.rows && m.rows.length" class="ai-table-wrap">
                 <table class="ai-table">
@@ -77,6 +81,22 @@
                   </tbody>
                 </table>
               </div>
+              <!-- 附加明细（如"最活跃用户""按状态"），key 是子表标题 -->
+              <template v-if="m.extra">
+                <div v-for="(sub, title) in m.extra" :key="title" class="ai-extra">
+                  <p class="ai-op-more">{{ title }}</p>
+                  <div class="ai-table-wrap">
+                    <table class="ai-table">
+                      <thead><tr><th v-for="k in Object.keys(sub[0] || {})" :key="k">{{ k }}</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(r, i) in sub" :key="i">
+                          <td v-for="k in Object.keys(sub[0] || {})" :key="k">{{ r[k] }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </template>
             </template>
 
             <!-- 模型输出经 escape 后再注入有限标签，见 renderLite -->
@@ -137,7 +157,7 @@ import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
-import { streamChat, runAiAction, confirmAiAction } from '../api/ai';
+import { streamChat, runAiAction, runAiInsight, confirmAiAction } from '../api/ai';
 import { useIsMobile } from '../utils/device';
 
 const auth = useAuthStore();
@@ -145,12 +165,18 @@ const ai = useAiStore();
 const isMobile = useIsMobile();
 
 /**
- * 走 C5「对话式执行」还是 C1「知识问答」？
- * 有可执行动作的角色（管理员/辅导员/教师）走 /api/ai/action —— 它是**一条链路两用**：
- * 解析出动作就预览/执行，解析不出就用同一份知识库把问题答掉，不会多花一次调用。
- * 学生与校领导没有动作，直接走问答链路（省一次解析开销）。
+ * 三条链路的选路（优先级从高到低）：
+ *   1. `/api/ai/action`  —— 有可执行动作的角色（管理员/辅导员/教师）。
+ *      **一条链路三用**：解析出动作就预览/执行、解析出问数模板就出统计、都不匹配就用同一份
+ *      知识库把问题答掉。这样管理员问一句普通问题也只付一次费。
+ *   2. `/api/ai/insight` —— 只有问数权限、没有动作的角色（校领导）：模板选择 + 知识问答。
+ *   3. `/api/ai/chat`    —— 其余（学生/教师以外没有管理能力者）：纯流式知识问答。
  */
-const useActionPath = () => (ai.status?.actions?.length || 0) > 0;
+const routeOf = () => {
+  if ((ai.status?.actions?.length || 0) > 0) return 'action';
+  if ((ai.status?.insights?.length || 0) > 0) return 'insight';
+  return 'chat';
+};
 
 /** 模板里用它切换输入框提示语（有可执行动作的角色提示"可以直接下指令"） */
 const canRunActions = computed(() => (ai.status?.actions?.length || 0) > 0);
@@ -215,11 +241,10 @@ async function send() {
   await nextTick();
   scrollToBottom();
 
-  if (useActionPath()) {
-    await sendViaAction(q, reply);
-  } else {
-    await sendViaChat(q, history, reply);
-  }
+  const route = routeOf();
+  if (route === 'action') await sendViaAction(q, reply);
+  else if (route === 'insight') await sendViaInsight(q, reply);
+  else await sendViaChat(q, history, reply);
 
   reply.pending = false;
   reply.streaming = false;
@@ -246,10 +271,19 @@ async function sendViaAction(text, reply) {
   reply.sources = d.sources || [];
 
   if (d.kind === 'read') {
+    reply.label = d.intent?.label || '';
     reply.summary = d.summary || '';
     reply.rows = d.rows || [];
     // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
     reply.content = `${d.intent?.label || ''} ${d.summary || ''}`.trim();
+  } else if (d.kind === 'data') {
+    reply.kind = 'data';
+    reply.label = d.intent?.label || '';
+    reply.periodLabel = d.periodLabel || '';
+    reply.summary = d.summary || '';
+    reply.rows = d.rows || [];
+    reply.extra = d.extra || null;
+    reply.content = `${reply.label} ${reply.summary}`.trim();
   } else if (d.kind === 'write') {
     reply.preview = d.preview;
     reply.confirmToken = d.confirmToken;
@@ -260,6 +294,31 @@ async function sendViaAction(text, reply) {
     if (!reply.content) {
       reply.content = '我没理解这是一条系统管理指令。可以说得更具体些，例如"禁用账号 student01"。';
     }
+  }
+}
+
+/** C6：问数（模板选择 + 参数抽取都在服务端完成） */
+async function sendViaInsight(text, reply) {
+  const res = await runAiInsight(text);
+  reply.pending = false;
+  if (res.code !== 0) {
+    reply.content = res.message || '问数服务暂时不可用，请稍后再试';
+    reply.error = true;
+    return;
+  }
+  const d = res.data || {};
+  if (d.kind === 'data') {
+    reply.kind = 'data';
+    reply.label = d.intent?.label || '';
+    reply.periodLabel = d.periodLabel || '';
+    reply.summary = d.summary || '';
+    reply.rows = d.rows || [];
+    reply.extra = d.extra || null;
+    reply.content = `${reply.label} ${reply.summary}`.trim();
+  } else {
+    reply.kind = 'none';
+    reply.content = d.reply || '我不确定你想看哪项数据。';
+    reply.sources = d.sources || [];
   }
 }
 
@@ -514,6 +573,7 @@ onMounted(async () => {
 }
 .ai-table th { background: #f6f8fb; color: var(--zc-navy); font-weight: 600; }
 .ai-table tbody tr:last-child td { border-bottom: none; }
+.ai-extra { margin-top: 10px; }
 
 /* 等待首字：三点呼吸 */
 .ai-typing { display: flex; gap: 5px; padding: 3px 0; }

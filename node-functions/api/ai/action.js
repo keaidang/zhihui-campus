@@ -20,28 +20,32 @@ import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
 import { ACTIONS, actionCatalog, actionPromptFor, executeConfirmedAction, previewWriteAction, runReadAction } from '../../lib/ai-actions.js';
+import { canInsight, insightPromptFor, runInsight } from '../../lib/ai-insight.js';
 
 export { preflight as onRequestOptions };
 
 const FINAL_JUDGE = [
-  '【最终判定】先判断用户这句话是不是一条**系统管理指令**：',
-  '- 是 → 输出 action（必须是上面列出的 key）+ params，reply 留空；**不要**替用户执行，也**不要**说"已执行"。',
-  '- 不是（提问、闲聊、问制度流程、表述含糊）→ action 填 null，reply 里按上面的回答纪律正常回答用户的问题；',
-  '  若用户意图是操作但信息不足，reply 里明确反问他缺什么（例如"要操作哪一个账号？"）。',
+  '【最终判定】按顺序判断用户的意图属于哪一类：',
+  '1. 要**改动数据**（禁用账号、批准请假、发公告…）→ 输出 action + params，其余留空；',
+  '   **不要**替用户执行，也**不要**说"已执行"。',
+  '2. 要**看统计数据**（哪个班请假最多、各院系排名、入住率…）→ 输出 insight + insightParams，其余留空。',
+  '3. 其余（提问、闲聊、问制度流程、表述含糊）→ action 与 insight 都填 null，',
+  '   reply 里按上面的回答纪律正常回答；若意图是操作但信息不足，明确反问他缺什么。',
 ].join('\n');
 
 const PARSE_RULES = [
   '你是「智汇校园」平台的**管理指令解析器**。你的唯一任务是把用户的一句话解析成结构化操作。',
   '',
   '【输出格式】严格输出 JSON，不要任何解释文字：',
-  '{"action":"<下面列出的 key，或 null>","params":{...},"reply":"<仅当 action=null 时填写的一句话说明>"}',
+  '{"action":"<操作 key 或 null>","params":{...},"insight":"<问数模板 key 或 null>","insightParams":{...},"reply":"<以上都为 null 时的一句话说明>"}',
   '',
   '【硬性规则】',
-  '1. action 必须是下方列出的 key 之一；**不确定就填 null**，绝不编造 key。',
-  '2. 只抽取用户**明确说出**的信息，不要脑补、不要补默认值。',
-  '3. 用户说"全部/所有/所有XX"时，把 all 设为 true，并用 role 或 keyword 标明范围。',
-  '4. 用户只是在提问、闲聊、问制度流程时，action 填 null，reply 里给出简短回答或提示。',
-  '5. 用户的话有歧义（例如只说"处理一下那些"）时，action 填 null，reply 里反问澄清。',
+  '1. action 与 insight **最多只能有一个非 null**（一个是要改数据、一个是要查统计，别同时给）。',
+  '2. action / insight 都必须是下方列出的 key 之一；**不确定就填 null**，绝不编造 key。',
+  '3. 只抽取用户**明确说出**的信息，不要脑补、不要补默认值；枚举值只能取括号里列出的值。',
+  '4. 用户说"全部/所有/所有XX"时，把 all 设为 true，并用 role 或 keyword 标明范围。',
+  '5. 用户只是在提问、闲聊、问制度流程时，两个都填 null，reply 里给出简短回答或提示。',
+  '6. 用户的话有歧义（例如只说"处理一下那些"）时，两个都填 null，reply 里反问澄清。',
 ].join('\n');
 
 export async function onRequestPost(context) {
@@ -90,7 +94,15 @@ export async function onRequestPost(context) {
       identityText: identityBlock(identity, actor.roles),
       kbProfile: KB_PROFILE,
       kbText: kb.text,
-      extraTop: [PARSE_RULES, '', '【可用操作】', actionPromptFor(actor), '', FINAL_JUDGE].join('\n'),
+      extraTop: [
+        PARSE_RULES,
+        '',
+        '【可用操作】',
+        actionPromptFor(actor),
+        '',
+        ...(canInsight(actor) ? ['【可用问数模板】（用户要统计数字时用这个，不要用 action）', insightPromptFor(actor), ''] : []),
+        FINAL_JUDGE,
+      ].join('\n'),
     });
 
     const t0 = Date.now();
@@ -112,6 +124,36 @@ export async function onRequestPost(context) {
 
     const key = parsed.action === null || parsed.action === undefined ? null : String(parsed.action);
     const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
+
+    // ---- 问数分支（C6）：一个调用同时支持"执行/问数/问答"，避免管理员多付一次费 ----
+    const insKey = parsed.insight == null ? null : String(parsed.insight);
+    if (!key || !ACTIONS[key]) {
+      if (insKey && canInsight(actor)) {
+        try {
+          const r = await runInsight(actor, insKey, parsed.insightParams && typeof parsed.insightParams === 'object' ? parsed.insightParams : {});
+          return ok({
+            intent: { template: r.template, label: r.label },
+            kind: 'data',
+            params: r.params,
+            periodLabel: r.periodLabel,
+            rows: r.rows,
+            extra: r.extra,
+            summary: r.summary,
+          });
+        } catch (e) {
+          // 参数不合法/模板不存在 → 不报错，退化成"回答"分支（下面的 reply）
+          if (e?.code === 49402 && !parsed.reply) {
+            return ok({
+              intent: { template: null },
+              kind: 'none',
+              reply: `没能识别要查什么数据（${e.message}）。可以试试"近 7 天哪个班请假最多""各院系请假天数排名"。`,
+              sources: kb.sources || [],
+            });
+          }
+          if (e?.code !== 49402) throw e;
+        }
+      }
+    }
 
     // 模型说"这不是一个操作" → 交给前端当普通回答展示
     if (!key || !ACTIONS[key]) {
