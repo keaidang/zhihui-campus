@@ -87,9 +87,42 @@ export async function jsonError(e) {
   return fail(50000, '服务器内部错误', 500);
 }
 
-/** 解析 JSON body（带大小限制防滥用） */
+/**
+ * 解析 JSON body（带大小限制防滥用）
+ *
+ * ★ 为什么要单独兜住"读不到 body"（2026-10-09 线上实测到的平台行为）：
+ *   边缘平台偶发地会把请求体消费掉（表现为 `Body is unusable: Body has already been read`），
+ *   实测概率约 15%，且**与业务耗时无关**（一个不含任何 AI 调用、毫秒级返回的请求也会中）。
+ *   此前这会穿透成 50000「服务器内部错误」—— 既误导用户，也让我们误以为是自己的 bug。
+ *   这里改成 **503 + 独立错误码**：
+ *     · 前端 `api/request.js` 对非 GET 的 5xx 已有"自动重试一次"的逻辑 → 用户无感恢复
+ *     · 错误码独立，便于在 sys_op_log 里统计平台该行为的真实频率
+ *   注意：不用 import HttpError（http.js ← guard.js ← http.js 会成环），
+ *   直接给 Error 挂 toResponse，jsonError 认得这个形状。
+ */
 export async function readBody(request, maxBytes = 16 * 1024) {
-  const text = await request.text();
+  let text;
+  try {
+    text = await request.text();
+  } catch (e) {
+    console.error('[body-unreadable]', e?.message);
+    import('./db.js')
+      .then(({ getPool }) =>
+        getPool()
+          .query('INSERT INTO sys_op_log (operator_id, action, target, detail) VALUES (0, ?, ?, ?)', [
+            'error.bodyUnreadable',
+            request.method || '',
+            String(e?.message || '').slice(0, 200),
+          ])
+          .catch(() => {}),
+      )
+      .catch(() => {});
+    const err = new Error('请求体不可读');
+    err.code = 49406;
+    err.status = 503;
+    err.toResponse = () => fail(49406, '网络传输不完整，请重试一次', 503);
+    throw err;
+  }
   if (text.length > maxBytes) throw new Error('body too large');
   return text ? JSON.parse(text) : {};
 }

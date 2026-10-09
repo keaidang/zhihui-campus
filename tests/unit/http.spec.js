@@ -77,6 +77,37 @@ describe('clientIp · 客户端真实 IP', () => {
   });
 });
 
+describe('readBody · 请求体不可读（线上实测到的平台行为）', () => {
+  it('★ body 已被平台消费掉时 → 49406/503 可重试，而不是不透明的 500', async () => {
+    // 2026-10-09 线上实测：边缘平台偶发（约 15%）把请求体消费掉，
+    // 二次读取抛 "Body is unusable: Body has already been read"，且与业务耗时无关。
+    // 此前穿透成 50000「服务器内部错误」——用户被误导向"系统坏了"，
+    // 前端也不会自动重试（500 会重试，但文案不对且无法定位）。
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const req = {
+      method: 'POST',
+      text: () => Promise.reject(new Error('Body is unusable: Body has already been read')),
+    };
+    await expect(readBody(req)).rejects.toMatchObject({ code: 49406, status: 503 });
+    spy.mockRestore();
+  });
+
+  it('该错误自带 toResponse，jsonError 会按其 status/code 透出', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const req = { method: 'POST', text: () => Promise.reject(new Error('Body is unusable')) };
+    let err;
+    try {
+      await readBody(req);
+    } catch (e) {
+      err = e;
+    }
+    const res = await jsonError(err);
+    expect(res.status).toBe(503);
+    expect((await read(res)).code).toBe(49406);
+    spy.mockRestore();
+  });
+});
+
 describe('jsonError · 统一错误出口', () => {
   it('业务错误（带 toResponse）按其自带 code/status 透出，不被吞成 500', async () => {
     const res = await jsonError({ toResponse: () => fail(40301, '暂无权限', 403) });
