@@ -40,8 +40,21 @@ export const ROLE_SCOPE = {
 
 /** 称呼：只有学生叫"同学"，其余都称"老师" */
 function appellation(roles = []) {
-  if (roles.includes('admin') || roles.includes('leader') || roles.includes('counselor') || roles.includes('teacher')) return '老师';
-  return '同学';
+  const p = primaryRoleOf(roles);
+  return p && p !== 'student' ? '老师' : '同学';
+}
+
+/**
+ * 角色优先级（**必须与前端 stores/auth.js 的 primaryRole 同序**）：
+ * 一个账号可能同时挂多个角色（例如 admin 演示账号同时有 admin 与 student，
+ * 否则它进不了学生专属页面）。此时**数据范围与权限一律按最高角色计算**
+ * —— 后端 lib/guard.js 的 `dataScope()` 就是这么判的（`roles.includes('admin') → all`）。
+ */
+export const ROLE_PRIORITY = ['admin', 'leader', 'counselor', 'teacher', 'student'];
+
+/** 取权限最高的角色；无角色时返回 ''（不假装是学生） */
+export function primaryRoleOf(roles = []) {
+  return ROLE_PRIORITY.find((r) => roles.includes(r)) || '';
 }
 
 /**
@@ -81,21 +94,33 @@ export function identityBlock(identity, roles = []) {
   const roleLabels = roles.map((r) => `${ROLE_LABEL[r] || r}（${r}）`).join('、') || '未知';
   // ★ 不用 `|| 'student'` 兜底：拿不到角色时**不能假装是学生**（标签会说"未知"、
   //   范围却按学生算，前后矛盾），而应显式退化为最保守描述。
-  const primary = roles[0] || '';
+  const primary = primaryRoleOf(roles);
+  const extras = roles.filter((r) => r !== primary);
   const who = appellation(roles);
+  // 多角色账号必须点明"以最高角色为准"，否则模型看到"学生（student）"就会把
+  // 数据范围答成"本人"（2026-10-09 线上实测：管理员账号含 student 角色，AI 答错）
+  const roleLine = `- 角色：${roleLabels}${
+    extras.length
+      ? ' ★ 这是多角色账号：**数据范围与权限判断一律以' + (ROLE_LABEL[primary] || primary) + '为准**，'
+        + `其余角色（${extras.map((r) => ROLE_LABEL[r] || r).join('、')}）只代表 TA 还能使用这些身份的专属功能，`
+        + '**不得**因此把 TA 当成权限更小的角色。'
+      : ''
+  }`;
   const lines = [
     '【当前提问者身份】（必须据此调整称呼与能力判断）',
     identity?.realName ? `- 姓名：${identity.realName}` : null,
     identity?.username ? `- 账号：${identity.username}` : null,
-    `- 角色：${roleLabels}`,
+    roleLine,
     identity?.deptName ? `- 所属部门/院系：${identity.deptName}` : null,
     `- 数据范围与可用功能：${ROLE_SCOPE[primary] || '未知，按最保守处理'}`,
     '',
     '【据此必须遵守的身份纪律】',
-    `1. 称呼对方为「${who}」，**不要**把非学生用户称为"同学"，也不要假设对方是学生。`,
+    who === '同学'
+      ? '1. 对方是学生，称呼「同学」。不要反问 TA 是什么角色。'
+      : `1. 称呼对方为「${who}」；**不要**把非学生用户称为"同学"，也不要假设对方是学生。`,
     '2. 回答前先判断：这件事是否在该角色的能力范围内。在范围内就直接给针对性的答案（直接说"你可以在…哪里…做什么"），不要绕。',
     '3. 若超出能力范围：直接说明"你是<角色>，无法<某操作>"，并指出**应当由谁做**；**严禁**输出"如果你是学生…如果你是辅导员…"这种并列假设式回答——系统已经知道 TA 是谁，猜身份就是不专业。',
-    '4. 涉及数据时按其数据范围作答（学生/教师=本人，辅导员=本院，校领导/管理员=全校）。',
+    '4. 涉及数据范围时**按其权限最高的角色**回答（学生/教师=本人，辅导员=本院，校领导/管理员=全校）；多角色账号不要说成范围更小的那个。',
     '5. 不要向对方透露、也不要索取其他用户的个人信息。',
   ];
   return lines.filter((x) => x !== null).join('\n');
