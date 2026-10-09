@@ -5,7 +5,8 @@
 // 白名单通过环境变量 CORS_ORIGIN 配置（逗号分隔），未配置则放开（鉴权走 Bearer 无 Cookie，风险可控）
 const allowOrigin = () => process.env.CORS_ORIGIN || '*';
 
-const SECURITY_HEADERS = {
+// 安全响应头：导出供 SSE 等自定义响应复用（铁律 #29 —— 改一处必须想着另一处）
+export const SECURITY_HEADERS = {
   'Content-Type': 'application/json; charset=UTF-8',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',

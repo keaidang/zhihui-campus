@@ -51,6 +51,25 @@ export async function sendVerificationCode(to, code, purpose = '注册') {
   return { ok: true, id: r.data?.id, status: r.data?.status };
 }
 
+/**
+ * 通用发信出口（管理员告警邮件等；验证码之外的所有发信都走这里）
+ * @param {{to:string|string[], subject:string, html?:string, text?:string}} opts
+ */
+export async function sendMail({ to, subject, html, text }) {
+  if (!lanqinConfigured()) return { ok: false, error: '邮件服务未配置' };
+  const rcpt = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter(Boolean);
+  if (!rcpt.length) return { ok: false, error: '缺少收件人' };
+  const r = await call('POST', '/send', {
+    mailboxId: SEND_MAILBOX_ID,
+    to: rcpt,
+    subject: String(subject || '').slice(0, 200),
+    html: html || undefined,
+    text: text || undefined,
+  });
+  if (!r.ok) return { ok: false, error: `HTTP ${r.status}: ${r.data?.error || r.data?.message || '发送失败'}` };
+  return { ok: true, id: r.data?.id, status: r.data?.status };
+}
+
 /** 查询发送状态：relayed+delivered 为成功 */
 export async function querySend(id) {
   const r = await call('GET', `/send/${id}`);
