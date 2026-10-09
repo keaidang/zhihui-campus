@@ -220,6 +220,14 @@
     - **规范**：handler 体一律 `try { ... } catch (e) { return jsonError(e); }`；`jsonError` 会把 `HttpError` 按其自带 status/code 返回，其余落 `sys_op_log(action='error.500')`。**流式（SSE）接口同样要包**——包住"开始生成之前"的部分即可（响应头一旦发出就无法再改 JSON）。
     - **自检**：`for f in $(find node-functions/api -name "*.js"); do grep -q jsonError "$f" || echo "缺: $f"; done` 必须无输出。
     - 违反表现：线上出现 `502 FUNCTION_INVOCATION_FAILED` 的 EdgeOne HTML 错误页；前端收到 HTML 却按 JSON 解析。
+38. **★ 边缘平台会偶发消费请求体（`Body is unusable: Body has already been read`）—— 按可重试错误处理，别当自己的 bug（2026-10-09 查明）**：
+    - **现象**：`readBody` 里 `request.text()` 抛 `Body is unusable: Body has already been read`，穿透成 50000「服务器内部错误」。
+    - **实测结论**：查 `sys_op_log` 发现这是**平台长期行为**，自 **2026-09-17（项目第 2 天）**起累计 **37 次**，且**与业务耗时无关**（一次不含任何 AI 调用、毫秒级返回的请求也会中），密集连打时概率约 15%。**不是超时重试导致的**（曾据此推断过，被数据推翻）。
+    - **处理**：`lib/http.js` 的 `readBody` 单独捕获 → `code=49406` / `HTTP 503` + 落 `sys_op_log(action='error.bodyUnreadable')`；前端 `api/request.js` 对非 GET 的 5xx **本就有自动重试一次**的逻辑 → 用户无感恢复。**不要**改回 500（会误导为"系统坏了"且无法统计）。
+    - **排查提示**：遇到"看起来毫无道理的 500"，先查 `sys_op_log`：`SELECT action, target, detail FROM sys_op_log WHERE action LIKE 'error.%' ORDER BY id DESC LIMIT 20`。历史上这里还躺过 `Unknown column 'r.activity_time'`（7 次）、`Cannot read properties of undefined (reading 'n')`（5 次）等真 bug。
+39. **★ 精确查找一律走 SQL 条件，不要"分页查询 + 内存过滤"（2026-10-09 踩实）**：
+    - 实例：C5 目标解析原实现是 `findUsers(limit 200)` 后按名字内存筛；而库有 500+ 账号、按 id 升序分页 → **新建账号永远落在最后一页之外**，表现为「禁用账号 xxx」预览恒为空。
+    - 规律：这类 bug **只在数据量超过一页、且目标恰好在后面时暴露**，用老数据测像是好的。凡"按标识精确查"（账号名/学号/单号）一律写成 SQL `IN` 条件。
 
 ## 6. 交付与验证流程
 

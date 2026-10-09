@@ -242,6 +242,56 @@
 - **提问者身份注入（`lib/ai-identity.js`）**：system prompt 中位于"回答纪律"之后、"平台档案/资料"之前，含**本人**姓名/账号/角色/所属部门 + 该角色的真实能力边界与数据范围（`ROLE_SCOPE`，须与 PortalShell MENUS 同源）。这是为了让 AI 称呼与能力判断正确——**不要把非学生用户当学生**，也不要输出"如果你是学生…如果你是辅导员…"这类并列假设。身份只来自数据库，绝不接受前端传参
 - 每次调用落 `ai_usage_log`（user_id/kind/model/prompt_tokens/completion_tokens/ok/cost_ms），供频控与论文统计
 
+### 5.16 AI 智能管理（C2 审核 / C5 对话式执行，/api/ai）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | /api/ai/action | admin / counselor / teacher | **C5 对话式执行**。两阶段：`{text}` → 只读动作直接返回结果；写动作返回 `{preview, confirmToken}`（**未改任何数据**）；`{confirmToken}` → 真正执行 |
+| GET | /api/ai/review | admin | **C2** 审核队列 / 日志：`?handled=0\|1\|2\|all&page=` |
+| POST | /api/ai/review | admin | `{ id, action: 'confirm_violation'\|'false_positive', penalty? }` 人工复核处置 |
+
+**`POST /api/ai/action` 协议**
+
+- 第一阶段 `{ text }` → `{ intent:{action,label}, kind, ... }`，`kind` 三种：
+  - `read`  → `{ rows:[...], summary }`（直接返回结果表）
+  - `write` → `{ preview:{count, items:[{id,label}], truncated, skipped:[{label,reason}], warnings[]}, confirmToken }`，**此时一行数据都没改**
+  - `none`  → `{ reply, sources }`（不是一条系统指令，用同一份知识库正常作答）
+- 第二阶段 `{ confirmToken }` → `{ result:{ message, affected[], skipped[] } }`
+
+**安全边界（实现见 `lib/ai-actions.js`，测试见 `tests/unit/ai-actions.spec.js`）**
+
+- 模型只做「意图分类 + 参数抽取」，**永不生成 SQL、永不直接执行**；`action` 必须在白名单注册表内
+- 批量写操作必须由模型明确给出 `all:true` **且**带 `role`/`keyword` 范围；只给模糊描述时拒绝执行（49402）
+- 确认令牌：JWT HS256、5 分钟、`audience=ai-confirm`、**绑定操作者 `sub`**（他人拿到无效）；执行前**重新解析目标**并如实报告"已失效"（49405）
+- 目标解析阶段即剔除"自己""管理员账号""状态已一致"的项，并在确认清单里显示跳过原因
+- 执行一律调 `lib/services/*`（与人工点按钮同一份权限与审计），审计 `detail` 带 `via:ai` 前缀（铁律 #4）
+
+**动作清单（按角色可见；学生与校领导不可见任何动作）**
+
+| kind | action | 角色 |
+|---|---|---|
+| read | `query_users` / `query_leaves` / `query_notices` / `query_review_queue` | admin、counselor（公告查询含 teacher） |
+| write | `disable_users` / `enable_users` | admin、counselor（限本院） |
+| write | `approve_leaves` / `reject_leaves` | counselor、admin |
+| write | `publish_notice` / `revoke_notice` | teacher、counselor、admin |
+| write | `pin_notice` / `confirm_violation` | admin |
+
+### 5.17 AI 模块错误码（49400~49499）
+
+| code | HTTP | 含义 |
+|---|---|---|
+| 49400 | 503 | AI 未配置 |
+| 49401 | 400 | 入参为空或过长 |
+| 49402 | 400 | 意图无法识别 / 未给出可执行范围 |
+| 49403 | 403 | 该角色无权执行该 AI 操作 |
+| 49404 | 400 | 确认令牌无效或已过期 |
+| 49405 | 400 | 待确认操作已失效（目标状态在确认期间变化） |
+| **49406** | **503** | **请求体不可读（平台偶发消费请求体）→ 可重试** |
+| 49429 | 429 | AI 调用过于频繁（DB 流水频控） |
+| 49430 | 503 | AI 服务暂时不可用（已降级） |
+| 49431 | 400 | 知识库/审核记录不存在 |
+
+
 ## 6. 未实现模块端点（规划，实现后在此补充）
 
 ### 外部图书馆系统对接（预留）

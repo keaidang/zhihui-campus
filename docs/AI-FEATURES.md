@@ -518,13 +518,13 @@ export async function sendMail({ to, subject, html, text })  // 复用内部 cal
 | **P3 C1 问答** | 3.1 能力清单接口 | `api/ai/status.js` | 按角色返回能力，前端据此渲染 |
 | | 3.2 问答接口（含流式） | `api/ai/chat.js` | 答学校问题正确 + 返回出处 |
 | | 3.3 前端页面 + 悬浮球 + 路由 + 菜单 | `views/AIView.vue`、`components/AiOrb.vue`、`router`、`PortalShell.vue` | 四角色主色正确，移动端不溢出 |
-| **P4 服务层** | 4.1~4.4 抽 `lib/services/{users,leave,notice,forum}.js`，现有 handler 改薄壳 | 4 个 service + 4 个 handler | `npm run check` 全绿（**回归零破坏**） |
-| **P5 C2+C3** | 5.1 审核判定 + 接入发帖/回复 | `lib/ai-review.js`、`api/forum/threads.js` | 违规帖被拦 + 3s 超时放行标记待复核 |
-| | 5.2 审核队列接口 | `api/ai/review.js` | 处置落 `ai_review_log` |
-| | 5.3 四类告警源接入 | `lib/alert.js`、`api/http.js`（500 触发） | 模拟 500 收到邮件 |
-| **P6 C5 管理** | 6.1 白名单操作注册表 + confirmToken | `lib/ai-actions.js` | 不在表内的 action 一律拒绝 |
-| | 6.2 两阶段接口 | `api/ai/action.js` | 预览→确认→执行→`opLog(via:ai)` |
-| | 6.3 前端确认交互 | `views/AIView.vue` | "禁用全部学生账号"先列清单再确认 |
+| **P4 服务层** ✅ | 4.1~4.4 抽 `lib/services/{_actor,users,leave,notice,forum}.js`，现有 handler 改薄壳 | ✅ 5 个 service + 4 个 handler 改薄壳 | ✅ 线上 e2e **56/56 零回归** |
+| **P5 C2+C3** ✅ | 5.1 审核判定 + 接入发帖/回复 | ✅ `lib/ai-review.js`、`api/forum/threads.js` | ✅ 线上 7/7：违规帖拦 `49006`、3s 硬上限、邮件已发 |
+| | 5.2 审核队列接口 ✅ | ✅ `api/ai/review.js` | ✅ 处置落 `ai_review_log` + `sys_op_log` |
+| | 5.3 四类告警源接入 ✅ | ✅ `lib/alert.js`、`lib/http.js`（500 触发）、`lib/ai.js`、`api/auth/login.js` | ✅ 邮件已收到（content_violation） |
+| **P6 C5 管理** ✅ | 6.1 白名单操作注册表 + confirmToken | ✅ `lib/ai-actions.js`（11 动作） | ✅ 28 项单测：白名单/令牌/范围校验全绿 |
+| | 6.2 两阶段接口 ✅ | ✅ `api/ai/action.js` | ✅ 线上 15 项：预览不改数据→确认→真执行，`via:ai` 审计可见 |
+| | 6.3 前端确认交互 ✅ | ✅ `views/AIView.vue` | ✅ 影响清单+跳过原因+二次确认按钮 |
 | **P7 C4+C6** | 7.1 问数模板库（10 个，参数枚举校验） | `lib/ai-insight.js`、`api/ai/insight.js` | "这周哪个班请假最多"返回正确表格 |
 | | 7.2 审批建议 + 接入审批页 | `api/ai/approval-advice.js`、`af/ApproveView.vue` | 卡片显示风险点，一键采纳意见 |
 | | 7.3 驾驶舱问数入口 | `admin/DashboardView.vue` | leader 可用 |
