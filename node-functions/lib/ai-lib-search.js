@@ -117,7 +117,17 @@ export async function libSearch({ question = '', userId = 0 } = {}) {
 
   // 降级：AI 不可用时把整句当关键词（效果差但可用；图书检索是基础能力）
   const degraded = !parsed;
-  if (!parsed) parsed = { keyword: q.slice(0, 16), category: '', note: '按原标题关键词检索' };
+  if (!parsed) {
+    // ★ 降级路径也必须剔除 LIKE 通配符（2026-10-10 体检）：
+    //   正常路径经 normalizeLibQuery 会去掉 % _ \，但降级分支原实现直接 slice，
+    //   于是"AI 挂掉时"用户反而能靠 % 控制通配（如输入 % 命中全部图书）。
+    //   行为不该因为"走了降级"而改变安全/功能口径。
+    parsed = {
+      keyword: String(q).replace(/[%_\\]/g, '').slice(0, 16),
+      category: '',
+      note: '按原标题关键词检索',
+    };
+  }
 
   const books = await searchBooks(parsed);
   return {

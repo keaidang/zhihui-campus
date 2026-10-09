@@ -7,7 +7,7 @@
 // 失败降级：AI 不可用时退化为整句关键词 LIKE 检索（功能不消失，只是笨一点）。
 import { ok, fail, jsonError, preflight, readBody } from '../../lib/http.js';
 import { requireRoles } from '../../lib/guard.js';
-import { consumeAiQuota } from '../../lib/ai-guard.js';
+import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { libSearch } from '../../lib/ai-lib-search.js';
 
 export { preflight as onRequestOptions };
@@ -24,8 +24,14 @@ export async function onRequestPost(context) {
     const quota = await consumeAiQuota(userId, 'lib_search');
     if (!quota.ok) return fail(49429, quota.message, 429);
 
-    const r = await libSearch({ question, userId });
-    return ok(r, r.books.length ? `找到 ${r.books.length} 本` : '没有找到匹配的图书，换个说法试试');
+    // ★ releaseAiQuota 必须放在 finally：无论成功、抛错还是提前 return 都要释放，
+    //   否则这条在途标记会一直占着额度（虽有 TTL 兜底，但会白占 2 分钟）。
+    try {
+      const r = await libSearch({ question, userId });
+      return ok(r, r.books.length ? `找到 ${r.books.length} 本` : '没有找到匹配的图书，换个说法试试');
+    } finally {
+      releaseAiQuota(userId);
+    }
   } catch (e) {
     return jsonError(e);
   }

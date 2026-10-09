@@ -11,7 +11,7 @@ import { preflight, fail, readBody, jsonError } from '../../lib/http.js';
 import { requireRoles } from '../../lib/guard.js';
 import { aiConfigured, aiModel, aiUpstream, logAiUsage } from '../../lib/ai.js';
 import { getBool, getInt } from '../../lib/ai-config.js';
-import { consumeAiQuota } from '../../lib/ai-guard.js';
+import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
 import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
@@ -43,6 +43,8 @@ export async function onRequestPost(context) {
   //   前端解析不了 JSON 只能显示默认兜底文案 —— 用户看到的就是"智能问答暂时不可用"，
   //   而线上无控制台、无法定位。包装后统一返回 JSON 并落 sys_op_log(error.500)。
   //   生成过程中（SSE 已发出）的异常由 openAiToEvents 转成 error 事件，不会走到这里。
+  // ★ held：是否已占用一次在途额度（供 finally 释放）。见 lib/ai-guard.js 的"在途标记"说明。
+  let held = 0;
   try {
     const { roles, userId } = await requireRoles(context);
 
@@ -62,6 +64,7 @@ export async function onRequestPost(context) {
     // ---- 频控（DB 流水计数，铁律 #23）----
     const quota = await consumeAiQuota(userId, 'chat');
     if (!quota.ok) return fail(49429, quota.message, 429);
+    held = userId;
 
     // ---- 知识注入 + 提问者身份：**并行查询** ----
     // 两条都是独立的 DB 查询（知识库召回 / 本人档案），串行会白白多花一次往返。
@@ -108,5 +111,11 @@ export async function onRequestPost(context) {
     return sseResponse(gen);
   } catch (e) {
     return jsonError(e);
+  } finally {
+    // ★ 释放在途标记。
+    //   注意：流式接口在这里释放的时机是"上游握手完成、响应已交回平台"，
+    //   而不是"整段流生成完毕" —— 这已经足够：并发的重复请求几乎都在同一瞬间到达，
+    //   握手阶段就能被拦住；之后的长时流由 ai_usage_log 的流水计数覆盖。
+    if (held) releaseAiQuota(held);
   }
 }

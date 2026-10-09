@@ -51,6 +51,14 @@ function buildWhere(actor, { keyword = '', role = '', status = '', lastLogin = '
   if (scope.type === 'dept') {
     where.push('u.dept_id = ?');
     params.push(scope.deptId);
+  } else if (scope.type !== 'all') {
+    // ★★ 兜底：与 services/leave.js 同因（2026-10-10 体检）。
+    //   self 时若不限条件 = 全校账号可见（实测直接调 service 得到 total=490）。
+    //   虽然当前的 HTTP 入口有 MANAGER_ROLES 门槛挡住教师/学生，
+    //   但"服务层依赖入口把关"是脆弱的 —— AI、脚本、将来的新接口都可能直接调用。
+    //   退化为"仅本人"，与 dataScope 的 self 语义一致。
+    where.push('u.id = ?');
+    params.push(actor.userId);
   }
   const kw = String(keyword).trim().slice(0, 32);
   if (kw) {
@@ -450,6 +458,12 @@ export async function findUsersByNames(actor, names = []) {
   if (scope.type === 'dept') {
     where.push('u.dept_id = ?');
     params.push(scope.deptId);
+  } else if (scope.type !== 'all') {
+    // ★★ 同 buildWhere 的兜底（2026-10-10 体检）：self 时不加条件 = 全校可见。
+    //   本函数被 AI 的 C5 目标解析调用（角色受限），当前不可达，
+    //   但同一文件里三处 scope 用法必须口径一致 —— 漏一处将来就会被复制出去。
+    where.push('u.id = ?');
+    params.push(actor.userId);
   }
   const rows = await query(
     `SELECT u.id, u.username, u.real_name, u.user_no, u.status, u.dept_id,

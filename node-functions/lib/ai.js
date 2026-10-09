@@ -74,6 +74,38 @@ async function alertAiFailure(kind, detail) {
   }
 }
 
+
+/**
+ * ★ AI 总开关守卫 —— 所有对外 AI 调用的**统一前置**（2026-10-10 体检发现）
+ *
+ * 起因：全项目 9 个会调 AI 的模块里，**只有 ai-study.js 检查了 `ai.enabled`**。
+ * 管理员在控制台关掉"AI 总开关"后，论坛审核 / 公告摘要 / 报修分诊 / 失物匹配 /
+ * 审批助手 / 图书检索**仍然会调 AI** —— 与"总开关"这三个字的承诺不符。
+ *
+ * 为什么放在这里而不是逐个模块加：
+ *   逐个加必然漏（已经漏了 8 个）。本文件是**全项目唯一 AI 调用出口**，
+ *   在这里守一次，等于给所有能力上了同一道闸，且以后新增能力自动受控。
+ *
+ * ★ 关闭时**不落 ai.error 日志**：那不是"失败"，是管理员主动关闭。
+ *   若记成错误，关闭期间会持续写日志，还可能凑满"10 分钟 5 次"的阈值
+ *   触发 AI 失败告警邮件 —— 管理员关个开关却收到告警，是典型的自扰。
+ *
+ * @returns {Promise<boolean>} 是否允许调用上游
+ */
+async function aiAllowed() {
+  if (!aiConfigured()) return false;
+  try {
+    // 动态 import：避免 ai.js 与 ai-config.js 在模块图上形成静态环，
+    // 也避免为"没配密钥"的部署白白拉起配置模块。
+    const { getBool } = await import('./ai-config.js');
+    return await getBool('ai.enabled', true);
+  } catch {
+    // 读不到配置时**放行**：总开关读不出来不该让整个 AI 瘫掉；
+    // 真正的安全边界在各能力自己的开关与角色校验上（那些是默认拒绝）。
+    return true;
+  }
+}
+
 /**
  * 组装上游请求（不发送）
  * @param {object} o
@@ -107,7 +139,7 @@ function buildInit({ messages, json = false, thinking = false, stream = false, m
  * @returns {Promise<{response: Response, costMs: number}|null>}
  */
 export async function aiUpstream(opts = {}) {
-  if (!aiConfigured()) return null;
+  if (!(await aiAllowed())) return null;
   const { url, init } = buildInit({ ...opts, stream: true });
   const t0 = Date.now();
   try {
@@ -170,14 +202,17 @@ export function classifyUpstreamError(status, bodyText = '') {
  * @returns {Promise<{content:string, reasoning:string, usage:object|null, costMs:number}|null>}
  */
 export async function aiChat(opts = {}) {
-  if (!aiConfigured()) return null;
+  if (!(await aiAllowed())) return null;
   const { url, init } = buildInit(opts);
   const t0 = Date.now();
   try {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(opts.timeoutMs || TIMEOUT_MS) });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      await logAiError('chat.http', `${res.status} ${txt.slice(0, 300)}`);
+      // 与 aiUpstream 用同一套分类：欠费/限流/鉴权/模型缺失要能区分，
+      // 否则欠费时记录的是笼统的 chat.http，远程仍看不出是账单问题。
+      const cls = classifyUpstreamError(res.status, txt);
+      await logAiError(`chat.http.${cls.kind}`, `${res.status} ${cls.userMessage} | ${txt.slice(0, 200)}`);
       return null;
     }
     const j = await res.json();

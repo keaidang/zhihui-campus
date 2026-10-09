@@ -31,7 +31,9 @@ export async function onRequestPost(context) {
     const body = await readBody(context.request);
     const action = String(body.action || '');
     if (action !== 'confirm_violation' && action !== 'false_positive') {
-      return fail(49431, '不支持的操作');
+      // 49431 的语义是「记录不存在」，用它表达「不支持的操作」会让排查方向跑偏
+      // （会去查记录，而问题其实在入参）。这里改用 49401（入参错误）——与 docs/API.md 一致。
+      return fail(49401, `不支持的操作「${action}」，可选：confirm_violation / false_positive`);
     }
     const r = await handleReview(actor, { id: body.id, action, penalty: Boolean(body.penalty) });
     return ok(r.data, r.message);

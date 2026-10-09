@@ -94,6 +94,14 @@ export function judgeQa(expect, sources = []) {
 export function judgeTriage(expect, t) {
   const [wantDept, wantUrgency] = String(expect || '').split('|');
   if (!t || !t.dept) return { ok: false, actual: '未返回分诊结果（能力未开启或调用失败）' };
+  // ★★ 降级样本必须单独记为 skipped，不能算"通过"也不能算"错"（2026-10-10 体检发现）：
+  //   降级对象是 `{dept:'其他', urgency:'normal', degraded:true}`，
+  //   原实现只看 dept，于是**期望部门恰为「其他」的用例在超时时会假通过** ——
+  //   而本项目上游抖动率可达 30~50%，评估指标会被网关抖动污染，
+  //   而"可量化、可复现"正是这个模块存在的全部意义。
+  if (t.degraded) {
+    return { ok: false, skipped: true, actual: '（AI 降级未判定，不计入指标）', degraded: true };
+  }
   const actual = `${t.dept}|${t.urgency}`;
   return {
     ok: t.dept === wantDept,
@@ -107,7 +115,14 @@ export function judgeTriage(expect, t) {
 /** review：verdict 完全匹配算通过 */
 export function judgeReview(expect, r) {
   if (!r || !r.verdict) return { ok: false, actual: '未返回判定结果（能力未开启或调用失败）' };
-  return { ok: r.verdict === String(expect || '').trim(), actual: r.verdict, degraded: Boolean(r.degraded) };
+  // ★★ 同 judgeTriage：降级（verdict 恒为 suspect）不计入指标。
+  //   原实现虽然把 degraded 放进了返回值，但 `ok` 仍按 verdict 比对 ——
+  //   期望恰为 suspect 的用例会被"抖动"判成通过，且降级还会被
+  //   falsePositiveRate 计成误报、被 violationRecall 计成漏检。
+  if (r.degraded) {
+    return { ok: false, skipped: true, actual: '（AI 降级未判定，不计入指标）', degraded: true };
+  }
+  return { ok: r.verdict === String(expect || '').trim(), actual: r.verdict };
 }
 
 /** insight：模板 key 完全匹配算通过；返回 null 说明"没识别成问数需求" */
@@ -137,7 +152,13 @@ async function runOne(actor, scene, c) {
   }
   if (scene === 'insight') {
     const p = await pickTemplate(actor, c.input);
-    return judgeInsight(c.expect, p ? p.template : null);
+    // ★ pickTemplate 的返回语义要分清（2026-10-10 体检）：
+    //   · 返回 null          = **上游未响应**（超时/失败）→ 本次无法判定，记 skipped
+    //   · 返回对象 template=null = 模型认为"这不是问数需求" → 那是真实判定，正常比对
+    //   原实现把两者都压成 `p ? p.template : null`，于是上游抖动被算成"模型判断错"，
+    //   准确率被无端拉低，掩盖了真实问题。
+    if (!p) return { ok: false, skipped: true, actual: '（上游未响应，本次不计入）' };
+    return judgeInsight(c.expect, p.template);
   }
   throw new HttpError(49401, `未知的评估场景：${scene}`);
 }
@@ -185,6 +206,8 @@ export async function runScene(actor, scene, { limit = 0, operatorId = 0 } = {})
       expect: c.expect,
       actual: judged.actual ?? '',
       ok: Boolean(judged.ok),
+      // ★ 降级/上游未响应：既不算通过也不算失败，单独统计
+      skipped: Boolean(judged.skipped),
       ms: Date.now() - t0,
       note: c.note || '',
       // 分项（triage 的紧急度一致、review 的降级标记）供页面展示，不参与通过判定
@@ -195,23 +218,30 @@ export async function runScene(actor, scene, { limit = 0, operatorId = 0 } = {})
   }
 
   const total = detail.length;
+  // ★ 准确率的分母是**有效样本**（总样本 − 降级样本），不是总样本（2026-10-10 体检）。
+  //   否则上游抖动会直接压低准确率，让"模型能力"与"网关健康度"混在一起，
+  //   指标既不能反映模型好坏，也不能反映服务可用性。
+  const skipped = detail.filter((d) => d.skipped).length;
+  const effective = total - skipped;
   const passed = detail.filter((d) => d.ok).length;
-  const failed = total - passed;
-  const avgMs = Math.round(detail.reduce((s, d) => s + d.ms, 0) / total);
-  const accuracy = total ? Math.round((passed / total) * 10000) / 10000 : 0;
+  const failed = effective - passed;
+  const avgMs = total ? Math.round(detail.reduce((s, d) => s + d.ms, 0) / total) : 0;
+  const accuracy = effective ? Math.round((passed / effective) * 10000) / 10000 : 0;
 
   await query(
     `INSERT INTO ai_eval_run (scene, total, passed, failed, skipped, avg_ms, accuracy, detail, operator_id)
-     VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-    [scene, total, passed, failed, avgMs, accuracy, JSON.stringify(detail), Number(operatorId) || 0],
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [scene, total, passed, failed, skipped, avgMs, accuracy, JSON.stringify(detail), Number(operatorId) || 0],
   );
 
-  return { scene, label: meta.label, total, passed, failed, skipped: 0, accuracy, avgMs, detail };
+  return { scene, label: meta.label, total, passed, failed, skipped, effective, accuracy, avgMs, detail };
 }
 
 /** 审核场景的误报率：把**正常内容**误判成违规/可疑的比例（越低越好） */
 export function falsePositiveRate(detail = []) {
-  const negatives = detail.filter((d) => String(d.expect).trim() === 'ok');
+  // ★ 排除降级样本（2026-10-10 体检）：降级时 verdict 恒为 suspect，
+  //   会把"上游抖动"算成"把正常内容误判成违规"，误报率被凭空抬高。
+  const negatives = detail.filter((d) => String(d.expect).trim() === 'ok' && !d.skipped);
   if (!negatives.length) return null;
   const wrong = negatives.filter((d) => !d.ok).length;
   return { total: negatives.length, wrong, rate: Math.round((wrong / negatives.length) * 10000) / 10000 };
@@ -219,7 +249,8 @@ export function falsePositiveRate(detail = []) {
 
 /** 审核场景的违规检出率：真正违规的内容被判出 violation 的比例 */
 export function violationRecall(detail = []) {
-  const positives = detail.filter((d) => String(d.expect).trim() === 'violation');
+  // ★ 同上：降级样本不计入召回率分母，否则抖动会被算成"漏检违规内容"。
+  const positives = detail.filter((d) => String(d.expect).trim() === 'violation' && !d.skipped);
   if (!positives.length) return null;
   const hit = positives.filter((d) => String(d.actual).trim() === 'violation').length;
   return { total: positives.length, hit, rate: Math.round((hit / positives.length) * 10000) / 10000 };

@@ -79,16 +79,24 @@ export async function reviewContent({ title = '', content = '', boardName = '', 
   // ★ 硬上限：aiJson 内部解析失败会重试一次（可能 2×timeoutMs），这里再套一层竞速，
   //   保证"发帖接口被审核拖住的时长"绝不超过 timeout_ms —— 宁可放行待复核，不能卡住发帖。
   let timedOut = false;
+  // ★ 保存 timerId 并在竞速结束后清理（2026-10-10 体检）：AI 先返回时若不清，
+  //   每次发帖/回复都会泄漏一个最长 timeout_ms 的挂起定时器。
+  let timerId;
   const timer = new Promise((resolve) => {
-    setTimeout(() => {
+    timerId = setTimeout(() => {
       timedOut = true;
       resolve(null);
     }, timeoutMs);
   });
-  const raw = await Promise.race([
-    aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs, totalBudgetMs: timeoutMs }).catch(() => null),
-    timer,
-  ]);
+  let raw;
+  try {
+    raw = await Promise.race([
+      aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs, totalBudgetMs: timeoutMs }).catch(() => null),
+      timer,
+    ]);
+  } finally {
+    clearTimeout(timerId);
+  }
 
   if (!raw) {
     await logAiUsage({ userId, kind: 'review', ok: 0, costMs: Date.now() - t0 });
@@ -267,7 +275,19 @@ export async function handleReview(actor, { id, action, penalty = false }) {
     if (rec.biz === 'thread') {
       await query('UPDATE forum_thread SET status = 0, review_status = 2 WHERE id = ?', [rec.biz_id]);
     } else {
-      await query('UPDATE forum_reply SET status = 0, review_status = 2 WHERE id = ?', [rec.biz_id]);
+      // ★ 回复软删必须**同步回退帖子的 reply_count**（2026-10-10 体检发现）：
+      //   发帖/回复时 forum.js 会把 reply_count +1，隐藏回复却不减回去，
+      //   列表页显示的回复数就包含了看不见的违规回复 —— 数字与列表对不上。
+      //   ★ 必须幂等：管理员可能对同一条重复点"确认违规"（或先确认再复核），
+      //     若每次都减，计数会被扣到 0 以下。所以只在"确实由可见变为隐藏"时才减。
+      const [rp] = await query('SELECT thread_id AS threadId, status FROM forum_reply WHERE id = ?', [rec.biz_id]);
+      if (rp && Number(rp.status) === 1) {
+        await query('UPDATE forum_reply SET status = 0, review_status = 2 WHERE id = ?', [rec.biz_id]);
+        await query('UPDATE forum_thread SET reply_count = GREATEST(reply_count - 1, 0) WHERE id = ?', [rp.threadId]);
+      } else if (rp) {
+        // 已是隐藏状态：只更新复核标记，不重复扣数
+        await query('UPDATE forum_reply SET review_status = 2 WHERE id = ?', [rec.biz_id]);
+      }
     }
   } else {
     // 误判放行 → 标记为正常，避免列表里一直挂着"待复核"角标

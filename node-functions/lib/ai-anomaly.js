@@ -92,8 +92,11 @@ export async function runChecks({ days = THRESHOLDS.leaveWindowDays } = {}) {
 
   // ---- ③ 图书逾期 ----
   const [ov] = await query(
+    // ★ 日期一律在 SQL 侧 DATE_FORMAT 取字符串（铁律 #40）：mysql2 会把 DATETIME
+    //   返回成 Date 对象，`String(date).slice(0,10)` 得到的是 "Thu Oct 01"
+    //   这种「星期 月 日」片段，而不是 YYYY-MM-DD（2026-10-10 体检发现）。
     `SELECT COUNT(*) AS n, COUNT(DISTINCT user_id) AS users,
-            MIN(due_at) AS oldest
+            DATE_FORMAT(MIN(due_at), '%Y-%m-%d') AS oldest
        FROM lib_loan WHERE status = 0 AND due_at < NOW()`,
   );
   if (WD(ov?.n) >= THRESHOLDS.overdueMin) {
@@ -108,7 +111,9 @@ export async function runChecks({ days = THRESHOLDS.leaveWindowDays } = {}) {
 
   // ---- ④ 论坛待复核积压（AI 审核与人工复核之间的"人工环节"是否被遗漏）----
   const [bk] = await query(
-    `SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM ai_review_log WHERE handled = 0`,
+    // 这里用字符串再 new Date() 解析：库内是 UTC 墙钟，加 Z 才能得到正确时间差
+    `SELECT COUNT(*) AS n, DATE_FORMAT(MIN(created_at), '%Y-%m-%dT%H:%i:%sZ') AS oldest
+       FROM ai_review_log WHERE handled = 0`,
   );
   if (WD(bk?.n) > 0) {
     const hours = bk.oldest ? Math.floor((Date.now() - new Date(bk.oldest).getTime()) / 3600000) : 0;
@@ -125,7 +130,9 @@ export async function runChecks({ days = THRESHOLDS.leaveWindowDays } = {}) {
 
   // ---- ⑤ 报修积压：待受理工单堆太久 ----
   const [rp] = await query(
-    `SELECT COUNT(*) AS n, MIN(created_at) AS oldest
+    // 同上：取字符串，避免 Date 对象的 String() 结果不可读
+    `SELECT COUNT(*) AS n,
+            DATE_FORMAT(MIN(created_at), '%Y-%m-%d %H:%i') AS oldest
        FROM af_repair WHERE status = 0 AND created_at < NOW() - INTERVAL 48 HOUR`,
   );
   if (WD(rp?.n) > 0) {
@@ -133,7 +140,7 @@ export async function runChecks({ days = THRESHOLDS.leaveWindowDays } = {}) {
       key: 'repair_backlog',
       level: 'mid',
       title: '报修工单积压',
-      detail: `有 ${rp.n} 个工单超过 48 小时仍未受理，最早提交于 ${String(rp.oldest || '').slice(0, 16)}`,
+      detail: `有 ${rp.n} 个工单超过 48 小时仍未受理，最早提交于 ${rp.oldest || '（未知）'}`,
       count: WD(rp.n),
     });
   }

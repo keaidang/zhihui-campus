@@ -10,7 +10,7 @@ import { preflight, fail, readBody, jsonError, ok } from '../../lib/http.js';
 import { requireRoles } from '../../lib/guard.js';
 import { aiConfigured, aiModel, aiUpstream, logAiUsage } from '../../lib/ai.js';
 import { getBool } from '../../lib/ai-config.js';
-import { consumeAiQuota } from '../../lib/ai-guard.js';
+import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { buildOverview, buildStudyMessages, buildStudySystem, loadStudyRows, STUDY_TOPICS } from '../../lib/ai-study.js';
 import { sseEvent, sseResponse, openAiToEvents } from '../../lib/sse.js';
 
@@ -36,6 +36,8 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   // 统一错误包装（铁律 #37）：只包"开始生成之前"的部分；
   // SSE 已发出后的异常由 openAiToEvents 转成 error 事件
+  // ★ held：是否已占用一次在途额度（供 finally 释放）。见 lib/ai-guard.js 的"在途标记"说明。
+  let held = 0;
   try {
     const { roles, userId } = await requireRoles(context, ['student']);
 
@@ -51,6 +53,7 @@ export async function onRequestPost(context) {
 
     const quota = await consumeAiQuota(userId, 'chat');
     if (!quota.ok) return fail(49429, quota.message, 429);
+    held = userId;
 
     // 学业事实由服务端算好（口径同成绩页面），模型只做表述
     const { system, overview, sources } = await buildStudySystem({ userId, roles }, question);
@@ -92,5 +95,8 @@ export async function onRequestPost(context) {
     return sseResponse(gen);
   } catch (e) {
     return jsonError(e);
+  } finally {
+    // ★ 释放在途标记（流式接口在此释放的时机是"上游握手完成、响应已交回平台"）
+    if (held) releaseAiQuota(held);
   }
 }

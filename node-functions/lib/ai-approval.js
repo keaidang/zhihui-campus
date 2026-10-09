@@ -92,10 +92,24 @@ async function collectFacts(actor, leaveId) {
   if (rows.length === 0) throw new HttpError(43004, '请假单不存在');
   const lv = rows[0];
 
-  // 数据范围：辅导员只能看本院（与 lib/guard.js 同源，不另写一套）
+  // 数据范围：与 lib/guard.js 同源（不另写一套角色判断，避免漂移）
+  //
+  // ★★ 这里必须是「默认拒绝」的写法（2026-10-10 体检发现越权缺口）：
+  //   原实现只写了 `if (scope.type === 'dept' && 院系不符) → 拒绝`，
+  //   于是 **scope.type 为 'self' 时不检查、直接放行** ——
+  //   而 dataScope 在"辅导员账号的 deptId 为空"时恰好返回 {type:'self'}，
+  //   也就是说一个没分配院系的辅导员可以看**任意学生**的请假详情
+  //   （含姓名、学号、请假原因、近 30 天请假史、课表冲突）。
+  //   当前库内 8 名辅导员都填了 deptId 所以暂不可达，但这是"数据一变就成立"的隐患。
+  //   改为白名单式：只有 all 放行、dept 比对，其余一律拒绝。
   const scope = dataScope(actor.roles, actor.deptId);
-  if (scope.type === 'dept' && Number(lv.dept_id) !== Number(scope.deptId)) {
-    throw new HttpError(40301, '只能审批本院学生的申请', 403);
+  if (scope.type === 'dept') {
+    if (Number(lv.dept_id) !== Number(scope.deptId)) {
+      throw new HttpError(40301, '只能审批本院学生的申请', 403);
+    }
+  } else if (scope.type !== 'all') {
+    // self 及任何未知类型：审批助手本就是给审批人用的，按最保守处理
+    throw new HttpError(40301, '你的数据范围不允许查看该申请', 403);
   }
 
   const [hist] = await query(
@@ -178,7 +192,10 @@ export async function adviseLeave(actor, leaveId, { userId = 0 } = {}) {
   });
   await logAiUsage({
     userId,
-    kind: 'insight',
+    // ★ 必须是 'approval' 而不是 'insight'：用量统计（控制台「用量统计」页）
+    //   与评估都按 kind 分类，"审批助手消耗了多少 token"混进"问数"里会让
+    //   各组数据都失真，且无法回答"哪个能力最贵"（2026-10-10 体检发现）。
+    kind: 'approval',
     ok: r ? 1 : 0,
     costMs: Date.now() - t0,
     promptTokens: r?._usage?.prompt_tokens ?? 0,

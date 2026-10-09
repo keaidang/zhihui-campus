@@ -34,6 +34,14 @@ export async function listLeaves(actor, { status } = {}) {
     if (scope.type === 'dept') {
       where.push('l.dept_id = ?');
       params.push(scope.deptId);
+    } else if (scope.type !== 'all') {
+      // ★★ 兜底：**绝不能不加条件**（2026-10-10 体检发现）。
+      //   dataScope 会在"角色不在 admin/leader/counselor 里"或"辅导员 deptId 为空"时
+      //   返回 {type:'self'}；原实现只写 `if (dept)`，于是 self 落到"不加限制 = 看全校"。
+      //   实测：教师账号能拿到全校 100 条请假单。
+      //   这里退化为"仅本人"——最保守，且与 dataScope 的 self 语义一致。
+      where.push('l.student_id = ?');
+      params.push(actor.userId);
     }
   }
   if (status && ['1', '2', '3', '4'].includes(String(status))) {

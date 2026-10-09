@@ -8,7 +8,7 @@ import { auditDetail, hasRole, isAdmin } from './_actor.js';
 // C9 公告摘要（AI）。服务层引用 AI 的安全前提：ai-summary 内部**先查开关**，
 //   关闭时立刻返回 null（不发请求）；且这里用 `.catch(() => null)` 兜底 →
 //   公告发布**永不因 AI 失败而失败**。这是"AI 可关、业务照常"的具体落实。
-import { summarizeNotice } from '../ai-summary.js';
+import { SUMMARY_MIN_CHARS, summarizeNotice } from '../ai-summary.js';
 
 const STAFF = ['admin', 'counselor', 'teacher', 'leader'];
 const PAGE_MAX = 50;
@@ -91,7 +91,14 @@ export async function publishNotice(actor, body = {}) {
 export async function regenNoticeSummary(actor, id) {
   const n = await loadNoticeForWrite(actor, id);
   const rows = await query('SELECT title, content FROM af_notice WHERE id = ?', [n.id]);
-  const summary = await summarizeNotice({ title: rows[0]?.title, content: rows[0]?.content });
+  const content = String(rows[0]?.content || '').trim();
+  // ★ 先区分"本就不需要摘要"（2026-10-10 体检）：
+  //   summarizeNotice 返回 null 有四种原因，其中"正文太短"与"AI 不可用"完全不同 ——
+  //   原实现一律提示"开关未开启或服务不可用"，会让管理员去查开关（其实只要把公告写长点）。
+  if (content.length < SUMMARY_MIN_CHARS) {
+    throw new HttpError(49401, `公告正文只有 ${content.length} 字，太短了不需要摘要（至少 ${SUMMARY_MIN_CHARS} 字）`, 400);
+  }
+  const summary = await summarizeNotice({ title: rows[0]?.title, content });
   if (!summary) throw new HttpError(49430, '未能生成摘要（AI 摘要开关未开启，或 AI 服务暂时不可用）', 503);
   await query('UPDATE af_notice SET summary = ? WHERE id = ?', [summary, n.id]);
   await opLog(actor.userId, 'notice.summary', `notice:${n.id}`, auditDetail(actor, summary), actor.ip);

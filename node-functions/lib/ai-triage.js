@@ -90,16 +90,25 @@ export async function triageRepair({ description = '', location = '', category =
   const t0 = Date.now();
   // 硬上限：aiJson 内部失败会重试一次，这里再竞速兜死，保证提交报修不会被分诊拖住
   let timedOut = false;
+  // ★ 必须保存 timerId 并在竞速结束后清理（2026-10-10 体检）：
+  //   原实现只 new 了一个 Promise 包 setTimeout，AI 先返回时定时器仍挂着，
+  //   每次报修泄漏一个最长 timeoutMs 的挂起定时器。
+  let timerId;
   const timer = new Promise((resolve) => {
-    setTimeout(() => {
+    timerId = setTimeout(() => {
       timedOut = true;
       resolve(null);
     }, timeoutMs);
   });
-  const raw = await Promise.race([
-    aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs, totalBudgetMs: timeoutMs }).catch(() => null),
-    timer,
-  ]);
+  let raw;
+  try {
+    raw = await Promise.race([
+      aiJson({ system: SYSTEM, user, maxTokens: 200, temperature: 0, timeoutMs, totalBudgetMs: timeoutMs }).catch(() => null),
+      timer,
+    ]);
+  } finally {
+    clearTimeout(timerId);
+  }
 
   if (!raw) {
     await logAiUsage({ userId: 0, kind: 'triage', ok: 0, costMs: Date.now() - t0 });
@@ -128,6 +137,13 @@ export async function triageRepair({ description = '', location = '', category =
 /** 落 `af_repair.ai_triage` 的文本形式（人可读，顺带可 grep） */
 export function formatTriage(t) {
   if (!t) return '';
+  // ★★ 降级时**不落任何分诊结论**（2026-10-10 体检发现静默失败）：
+  //   原实现无条件把对象拼成 `[一般] → 其他`，而 triageRepair 超时/失败时
+  //   返回的正是 `{dept:'其他', urgency:'normal', degraded:true}` ——
+  //   于是"AI 没判断出来"被写进 af_repair.ai_triage，之后 parseTriage 把它解析成
+  //   一条**看起来正常**的分诊（一般／其他部门）展示给后勤，
+  //   与真实结论完全无法区分。宁可留空（= 未分诊），也不写一条假结论。
+  if (t.degraded) return '';
   const s = `[${t.urgencyLabel || t.urgency}] → ${t.dept}${t.selfService ? '（学生可先自行尝试）' : ''}${t.suggestion ? ` · ${t.suggestion}` : ''}`;
   return s.slice(0, 500);
 }

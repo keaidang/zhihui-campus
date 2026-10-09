@@ -15,6 +15,13 @@ import { getBool } from './ai-config.js';
 /** 摘要长度上限（字段 varchar(255)，但展示位只放得下约 80 字） */
 export const SUMMARY_MAX = 80;
 
+/**
+ * 正文短于这个长度就不生成摘要（本身已经够短，摘要没有意义）。
+ * ★ 导出给调用方做前置判断用：否则"补摘要失败"会把"正文太短"误报成
+ *   "AI 开关没开或服务不可用"，提示指向错误的原因（2026-10-10 体检发现）。
+ */
+export const SUMMARY_MIN_CHARS = 40;
+
 const SYSTEM = [
   '你是公告摘要助手。把下面的校园公告压缩成一句话摘要。',
   '',
@@ -39,13 +46,18 @@ export function cleanSummary(s) {
 
 /**
  * 生成公告摘要
- * @returns {Promise<string|null>} null = 未开启/未配置/失败（调用方存空串即可）
+ *
+ * @returns {Promise<string|null>} null 的四种原因：① 开关未开 ② AI 未配置
+ *   ③ AI 调用失败 ④ **正文太短（< SUMMARY_MIN_CHARS，本就不需要摘要）**
+ *
+ * ★ 调用方需要区分 ④ 时必须自己先比对 SUMMARY_MIN_CHARS —— 因此把阈值导出，
+ *   避免"40"这个数字散落到第二处（两处阈值不一致会让提示与行为矛盾）。
  */
 export async function summarizeNotice({ title = '', content = '' } = {}) {
   if (!(await getBool('ai.notice_summary.enabled', false))) return null;
   if (!aiConfigured()) return null;
   const text = String(content || '').trim();
-  if (text.length < 40) return null; // 太短的公告本身不需要摘要
+  if (text.length < SUMMARY_MIN_CHARS) return null; // 太短的公告本身不需要摘要
 
   const t0 = Date.now();
   const r = await aiChat({

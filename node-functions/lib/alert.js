@@ -38,15 +38,33 @@ export async function resolveRecipients() {
   return [...new Set(rows.map((r) => r.email))];
 }
 
+/**
+ * HTML 转义（告警邮件用）
+ *
+ * ★ 为什么必须有（2026-10-10 体检发现）：`contentViolation` 的 detail 里含**用户可控**
+ *   内容（帖子标题与正文摘要、模型基于用户内容生成的理由）。不转义就等于让发帖人
+ *   往发给全体管理员的邮件里注入 HTML —— 可放钓鱼链接、追踪图片、伪造排版。
+ *   邮件正文只有我们自己知道的结构才允许是 HTML，外部数据一律先转义。
+ */
+export function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildHtml(type, title, detail) {
   const label = TYPE_LABEL[type] || TYPE_LABEL.other;
   const now = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
+  // ★ 三个插值点全部转义后再拼进 HTML（label 来自内部映射表，也一并转义以防将来被改）
   return `<div style="max-width:600px;margin:0 auto;font-family:'PingFang SC','Microsoft YaHei',sans-serif;color:#1e293b">
-  <div style="background:#17325c;border-radius:12px 12px 0 0;padding:16px 22px;color:#fff;font-size:15px;letter-spacing:1px">智汇校园 · ${label}告警</div>
+  <div style="background:#17325c;border-radius:12px 12px 0 0;padding:16px 22px;color:#fff;font-size:15px;letter-spacing:1px">智汇校园 · ${escapeHtml(label)}告警</div>
   <div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:22px">
-    <p style="margin:0 0 10px;font-size:15px;font-weight:600">${title}</p>
-    <div style="font-size:13px;line-height:1.8;color:#475569;white-space:pre-wrap;background:#f7f9fc;border-radius:8px;padding:12px">${detail}</div>
-    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8">触发时间（北京时间）：${now}<br/>本邮件由智汇校园系统自动发送，请勿直接回复。</p>
+    <p style="margin:0 0 10px;font-size:15px;font-weight:600">${escapeHtml(title)}</p>
+    <div style="font-size:13px;line-height:1.8;color:#475569;white-space:pre-wrap;background:#f7f9fc;border-radius:8px;padding:12px">${escapeHtml(detail)}</div>
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8">触发时间（北京时间）：${escapeHtml(now)}<br/>本邮件由智汇校园系统自动发送，请勿直接回复。</p>
   </div>
 </div>`;
 }

@@ -15,7 +15,7 @@ import { fail, jsonError, ok, preflight, readBody } from '../../lib/http.js';
 import { actorFrom } from '../../lib/services/_actor.js';
 import { aiConfigured, aiJson, aiModel, logAiUsage } from '../../lib/ai.js';
 import { getBool } from '../../lib/ai-config.js';
-import { consumeAiQuota } from '../../lib/ai-guard.js';
+import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
@@ -24,6 +24,9 @@ import { canInsight, entityPromptSections, insightPromptFor, runInsight } from '
 import { runStructuredQuery } from '../../lib/ai-query.js';
 
 export { preflight as onRequestOptions };
+
+/** 给用户的「换个说法」示例（查询转换失败时用，与默认回复口径一致） */
+const QUERY_EXAMPLES = '"学生账号总数""各院系人数排名""绩点最差的学生"';
 
 const FINAL_JUDGE = [
   '【最终判定】按顺序判断用户的意图属于哪一类：',
@@ -71,6 +74,9 @@ function looksLikeCountIntent(text) {
 }
 
 export async function onRequestPost(context) {
+  // ★ held：是否已占用一次在途额度（供 finally 释放）。见 lib/ai-guard.js 的"在途标记"说明。
+  //   确认执行路径（confirmToken）不消耗频控，held 保持 0，不会被误释放。
+  let held = 0;
   try {
     const actor = await actorFrom(context);
     // ★ 标记"这次操作来自 AI 对话"：服务层审计会在 detail 前缀 via:ai（铁律 #4），
@@ -99,6 +105,7 @@ export async function onRequestPost(context) {
 
     const quota = await consumeAiQuota(actor.userId, 'action');
     if (!quota.ok) return fail(49429, quota.message, 429);
+    held = actor.userId;
 
     const identity = await loadIdentity(actor.userId);
 
@@ -193,18 +200,32 @@ export async function onRequestPost(context) {
     if ((!key || !ACTIONS[key]) && !insKey) {
       const q = parsed.query;
       if (q && typeof q === 'object' && !Array.isArray(q)) {
-        const r = await runStructuredQuery(actor, q, { wanted: Number(parsed.limit) || undefined });
-        return ok({
-          intent: { entity: r.entity, label: `${r.entityLabel}统计` },
-          kind: 'data',
-          viaQuery: true,
-          isAggregate: r.isAggregate,
-          scalar: r.scalar,
-          rows: r.rows,
-          summary: r.summary,
-          metrics: r.metrics,
-          groupBy: r.groupBy,
-        });
+        try {
+          const r = await runStructuredQuery(actor, q, { wanted: Number(parsed.limit) || undefined });
+          return ok({
+            intent: { entity: r.entity, label: `${r.entityLabel}统计` },
+            kind: 'data',
+            viaQuery: true,
+            isAggregate: r.isAggregate,
+            scalar: r.scalar,
+            rows: r.rows,
+            summary: r.summary,
+            metrics: r.metrics,
+            groupBy: r.groupBy,
+          });
+        } catch (e) {
+          // ★ 与 insight 分支保持一致的降级口径（2026-10-10 体检发现两处不一致）：
+          //   49402 = 模型把问题转成了不合法/无法执行的查询（字段名不存在、枚举非法…）
+          //     → 这是"理解偏了"，应该给可操作的提示，而不是把错误码抛给用户看。
+          //   其它（尤其 49403 越权）**必须如实抛** —— 掩盖权限问题比报错危险。
+          if (e?.code !== 49402) throw e;
+          return ok({
+            intent: { action: null },
+            kind: 'none',
+            reply: `没能把这个问题转成查询（${e.message}）。可以换个说法，例如${QUERY_EXAMPLES}。`,
+            sources: kb.sources || [],
+          });
+        }
       }
     }
 
@@ -238,6 +259,9 @@ export async function onRequestPost(context) {
     return ok({ intent: { action: p.action, label: p.label }, kind: 'write', preview: p.preview, confirmToken: p.confirmToken });
   } catch (e) {
     return jsonError(e);
+  } finally {
+    // ★ 释放在途标记（无论成功/失败/提前 return）
+    if (held) releaseAiQuota(held);
   }
 }
 

@@ -103,39 +103,70 @@ export function pipeUpstreamWithTap(upstream, onDone) {
     resolveDone(info);
   };
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      controller.enqueue(chunk); // ① 原样转发（字节级，不改写）
-      try {
-        // ② 旁路解析，仅用于统计
-        buf += decoder.decode(chunk, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const ln of lines) {
-          const s = ln.trim();
-          if (!s.startsWith('data:')) continue;
-          const payload = s.slice(5).trim();
-          if (!payload || payload === '[DONE]') continue;
-          const { delta, reasoning: r, usage: u } = parseUpstreamDelta(payload);
-          if (delta) content += delta;
-          if (r) reasoning += r;
-          if (u) usage = u;
-        }
-      } catch {
-        /* 旁路解析失败不影响转发 */
+  /** 旁路解析（仅用于统计，失败不影响转发） */
+  const tap = (chunk) => {
+    try {
+      buf += decoder.decode(chunk, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const ln of lines) {
+        const s = ln.trim();
+        if (!s.startsWith('data:')) continue;
+        const payload = s.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        const { delta, reasoning: r, usage: u } = parseUpstreamDelta(payload);
+        if (delta) content += delta;
+        if (r) reasoning += r;
+        if (u) usage = u;
       }
-    },
-    flush() {
-      return finish();
-    },
-  });
+    } catch {
+      /* 旁路解析失败不影响转发 */
+    }
+  };
 
-  const body = upstream.body ? upstream.body.pipeThrough(transform) : null;
-  if (!body) {
+  if (!upstream.body) {
     // 上游没有 body（异常情况）：直接收尾，避免 done 悬挂
     finish();
     return { response: new Response(null, { status: 200, headers: SSE_HEADERS }), done };
   }
+
+  // ★ 用手动 pump 而不是 `body.pipeThrough(new TransformStream(...))`（2026-10-10 体检）
+  //
+  //   原因：TransformStream 的 `flush()` **只在源正常结束**时被调用。一旦上游在传输中途
+  //   出错（连接被重置、网关掐断），flush 不会执行 → `finish()` 永不调用 →
+  //   `done` 这个 Promise **永久悬挂**，任何 `await done` 的调用方都会挂死，
+  //   且这次调用的 token 统计与 onDone 副作用（如写 ai_usage_log）全部丢失。
+  //   手动 pump 把"正常结束"和"中途出错"统一收进 finally，两条路径都会 finish。
+  //
+  //   顺带覆盖客户端主动断开（cancel）：同样要 finish，否则 done 悬挂。
+  const body = new ReadableStream({
+    async start(controller) {
+      const reader = upstream.body.getReader();
+      try {
+        for (;;) {
+          const { done: end, value } = await reader.read();
+          if (end) break;
+          controller.enqueue(value); // ① 原样转发（字节级，保持真流式增量）
+          tap(value); // ② 旁路解析，仅用于统计
+        }
+      } catch (e) {
+        // 上游中断：不再向上抛（已转发的字节客户端已收到），走 finally 正常收尾
+        console.error('[sse-upstream-abort]', e?.message);
+      } finally {
+        await finish();
+        try {
+          controller.close();
+        } catch {
+          /* 已 close 或已 cancel */
+        }
+      }
+    },
+    cancel() {
+      // 客户端断开：仍然要收尾，否则 done 悬挂 + 统计丢失
+      finish();
+    },
+  });
+
   return { response: new Response(body, { status: 200, headers: SSE_HEADERS }), done };
 }
 
