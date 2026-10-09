@@ -361,11 +361,18 @@ async function sendViaAction(text, reply) {
   reply.sources = d.sources || [];
 
   if (d.kind === 'read') {
-    reply.label = d.intent?.label || '';
-    reply.summary = d.summary || '';
-    reply.rows = d.rows || [];
-    // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
-    reply.content = `${d.intent?.label || ''} ${d.summary || ''}`.trim();
+    // ★ 同 data 分支：服务端给了 scalar（单值）就只答一句话，不渲染表格。
+    //   场景：辅导员问"一共有多少个账号"→ countOnly 算出 101（本院）
+    //   → 若仍渲染那 1 行表格，就等于没解决用户最初抱怨的问题。
+    if (d.scalar !== null && d.scalar !== undefined) {
+      reply.content = d.summary || String(d.scalar);
+    } else {
+      reply.label = d.intent?.label || '';
+      reply.summary = d.summary || '';
+      reply.rows = d.rows || [];
+      // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
+      reply.content = `${d.intent?.label || ''} ${d.summary || ''}`.trim();
+    }
   } else if (d.kind === 'data') {
     reply.kind = 'data';
     reply.label = d.intent?.label || '';

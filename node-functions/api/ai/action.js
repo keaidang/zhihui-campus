@@ -221,7 +221,16 @@ export async function onRequestPost(context) {
     const def = ACTIONS[key];
     if (def.kind === 'read') {
       const r = await runReadAction(actor, key, params);
-      return ok({ intent: { action: key, label: def.label }, kind: 'read', rows: r.rows || [], summary: r.summary || '' });
+      // ★ 必须透传 scalar：前端据此判断"只答一句话、不渲染表格"。
+      //   漏传时即使服务端算出了总数（如 query_users 的 countOnly → 101），
+      //   前端仍会渲染那 1 行表格 —— 用户问"有多少"却看到表格，正是要修的那个问题。
+      return ok({
+        intent: { action: key, label: def.label },
+        kind: 'read',
+        rows: r.rows || [],
+        summary: r.summary || '',
+        scalar: r.scalar ?? null,
+      });
     }
 
     // 写操作：只预览，不执行
