@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
 > 最后更新：2026-10-09。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据齐全；**AI 融合方向已定版待实施**（模型 GLM-4V-Flash，三路径，唯一口径见 ARCHITECTURE ADR-9，2026-10-09）。
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据齐全；**AI 融合方向已定版待实施**（模型 **qwen3.8-omni-flash**（阿里云 DashScope 聚合网关），四步路径，唯一口径见 ARCHITECTURE ADR-9，2026-10-09）。**⚠ 开发测试期 AI 只用文本输入输出，禁碰多模态（贵）——见铁律 #36。**
 
 ## 1. 项目快照
 
@@ -39,7 +39,7 @@
 ├─ docs/                      # 文档（单一事实来源，先改文档再改代码）
 ├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ 009-m3-modules（M3 十一表）+ 010-dorm（宿舍）+ 011-message（站内信）
 ├─ node-functions/
-│  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装) ai.js(GLM-4V-Flash 统一出口，规划中←ADR-9)
+│  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装) ai.js(qwen3.8-omni-flash 统一出口，规划中←ADR-9)
 │  └─ api/
 │     ├─ auth/                # register(+send-code/prefix-check/domains) login refresh logout me + password/(forgot-send-code/forgot-reset 忘记密码)
 │     ├─ admin/               # meta users(+resetPassword) departments classes courses mailbox(开通/停用/改密/改地址)
@@ -208,6 +208,12 @@
       - 服务端配套：读体后**先把缺失键归一化**（`String(body.x || '')`）再校验，可显著降低该偶发触发率。
     - **加测试的三条规矩**：① 改核心规则先问"这条规则能被单测吗"，不能就把纯逻辑抽成函数（本次 `lib/schedule.js` / `lib/dorm-rules.js` 即这样产出——它们原先内联在事务闭包里，**任何测试都覆盖不到**）；② 写"重构等价性"断言后**必须验证它能失败**（本次用 `Number(null)===0` 反例验证；没验证过的断言可能只是"永远绿"的摆设）；③ 优先只读断言（可随时重跑、不污染演示数据）。
     - **⚠ ESLint 规则强度刻意克制**：只开**错误级**规则（`js recommended` + `vue flat/essential`），**绝不加格式类规则** —— 一旦引入必然产生几百条历史噪音，最终结果是"没人再看 lint"。`ignores` 里排除 `scripts/`、`.shots/`（一次性脚本不强求风格）。
+36. **★★ AI 能力只用文本，禁碰多模态（开发测试期成本红线，2026-10-09 用户指定）**：
+    - **原因**：qwen3.8-omni-flash 是 omni（多模态）模型，但**图片 / 音频 / 视频的计费远高于纯文本**。项目处于开发测试期，成本敏感，任何多模态调用都是白烧额度。
+    - **禁止**：请求体传 `image_url` / 音频 / 视频；做 OCR、图片理解、语音识别与合成、图像/视频生成；**因为"模型支持多模态"就去试多模态接口**。
+    - **连带**：ADR-9 原「论坛 AI 审核（图片走视觉能力）」**降级为纯文本审核**；需要图片审核须另立 ADR 并先定预算。
+    - **配套**：AI 调用默认 **`enable_thinking: false`**（意图 JSON 快 6.2 倍、输出 token 降 94%，且关思考才解锁 `tool_choice: required`）；每次调用设 `max_tokens` 上限；RAG 走检索 TopK，禁止整篇长文档塞上下文。
+    - 违反表现：账单出现 image/audio 类计费项；`working/` 或 `scripts/` 里出现多模态试调脚本。
 
 ## 6. 交付与验证流程
 
@@ -242,7 +248,7 @@
 | **M4 站内信**：消息中心/铃铛未读/审批自动通知 | ✅ 上线（schema-011，/messages） |
 | 限流（登录/发码 DB 流水计数）| ✅ 上线（内存版多实例失效，已改 DB） |
 | Edge 原生轻端点 /api/edge/stats（KV 访问统计） | ✅ 上线 |
-| **AI 融合**（lib/ai.js 出口 / 驾驶舱意图问数 / 论坛 AI 审核 / RAG） | ❌ 未开始——**2026-10-09 方向已定版**：模型 GLM-4V-Flash（免费·视觉+文本·476ms·4K），唯一口径见 ARCHITECTURE ADR-9，实施顺序见 PROGRESS 阶段 6 |
+| **AI 融合**（lib/ai.js 出口 / 驾驶舱意图问数+管理员辅助 / 论坛 AI 审核 / RAG） | ❌ 未开始——**2026-10-09 方向已定版**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关·实测上下文 40 万字·`reasoning_content` 独立字段），唯一口径见 ARCHITECTURE ADR-9，实施顺序见 PROGRESS 阶段 6。**⚠ 只用文本、禁多模态（铁律 #36）；思考模式默认关** |
 | 全站时间口径归一（UTC 库内 + 统一展示工具） | ✅ 上线（2026-09-20 深夜，见铁律 #25） |
 | **对外 README**（19 张线上截图 + 架构/功能/部署详解） | ✅ 完成（2026-09-22，`npm run shots` 可一键重截） |
 | **登录后自助修改登录密码**（原密码校验 + 全端令牌吊销） | ✅ 上线（/api/me/password，2026-09-22） |
@@ -261,7 +267,7 @@
 
 ## 8. 下一步建议（优先级序）
 
-0. **【最高优先·2026-10-09 选题定版】AI 融合实施（未开工）**：毕业设计选题确定为必须与 AI 融合。模型唯一选定 **GLM-4V-Flash**（智谱开放平台，OpenAI 兼容 `/api/paas/v4`；**必须 4V 才免费**；视觉+文本双模；实测 476ms；上下文 4K；配置 `AI_GLM_API_KEY / AI_GLM_BASE_URL / AI_GLM_MODEL` 在 `.env` 与 EdgeOne env，密钥严禁入库入文档）。实施顺序：① `lib/ai.js` 统一出口（照 lib/notify.js：唯一调用点 + try/catch + 超时降级，AI 挂了业务照常）→ ② **驾驶舱意图问数**（优先，答辩演示项：模型只做意图分类+参数抽取、强制 JSON；SQL 走预写白名单参数化模板，**模型永不拼 SQL**；DB 流水频控）→ ③ **论坛 AI 审核**（文本+图片 4V 视觉判定，高风险转人工队列、留痕 sys_op_log）→ ④ RAG 校园问答（可选：TiDB 向量检索）。**唯一口径 = ARCHITECTURE ADR-9**，任务清单见 PROGRESS 阶段 6。⚠ 上下文仅 4K：system prompt 精简、单轮无状态
+0. **【最高优先·2026-10-09 选题定版】AI 融合实施（未开工）**：毕业设计选题确定为必须与 AI 融合。模型 **qwen3.8-omni-flash**（阿里云 DashScope OpenAI 兼容 `https://dashscope.aliyuncs.com/compatible-mode/v1`，⚠ 仅国内站可用；该 key 实为**聚合网关**，`/models` 有 262 个模型，别按官方文档预期配额；配置 `AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER` 在 `.env` 与 EdgeOne env，密钥严禁入库入文档；GLM 三键保留备用）。**★★ 开发测试期只用「文本输入→文本输出」，禁止任何多模态调用（铁律 #36）；思考模式默认 `enable_thinking: false`（意图 JSON 快 6.2×、输出 token 降 94%，且关思考才解锁 `tool_choice: required`）**。实施顺序：① `lib/ai.js` 统一出口（照 lib/notify.js：唯一调用点 + `enable_thinking` 显式参数 + try/catch + 超时降级，AI 挂了业务照常）→ ② **驾驶舱意图问数 + 管理员辅助**（优先，答辩演示项：模型只做意图分类+参数抽取、强制 JSON；路由到预写白名单操作/SQL 参数化模板，**模型永不拼 SQL、永不直接执行**；破坏性操作先列清单再二次确认 + guard.js 鉴权 + sys_op_log 审计；DB 流水频控）→ ③ **论坛 AI 审核（纯文本）**（高风险转人工队列、留痕 sys_op_log；图片审核暂缓，需预算）→ ④ RAG 校园问答（可选：TiDB 向量检索 + 检索 TopK，禁整篇塞上下文）。**唯一口径 = ARCHITECTURE ADR-9**，任务清单见 PROGRESS 阶段 6
 1. **【移动端】H5 适配已完成 ✅，仅剩 App 壳打包**（替代原 uni-app 小程序计划，2026-09-20 用户决策）：
    - **为什么不做小程序**：①个人主体不能用 web-view（微信官方限制"仅支持非个人主体配置业务域名"）②纯 web-view 套壳极易被拒审（驳回原文"首页仅有一个 web-view、无小程序原生功能"，要求原生功能占视口 ≥15%）③小程序自身从 2023-09 起也强制 ICP 备案，教育类目对个人主体限制多
    - **为什么不能直接复用前端**：Element Plus 是 DOM 组件库，小程序无 DOM；Vue Router / Pinia / lucide / 现有 CSS 主题全需替换。**可复用的只有 Node Functions API + TiDB 表结构 + 外部集成**

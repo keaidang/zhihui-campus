@@ -9,7 +9,7 @@
 - 线上：https://c.9o.pw/ （EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可访问）
 - 已交付：统一认证、五角色 RBAC + 组织架构、用户管理、M1 教务、M2 学工、门户 SSO、校园邮箱、M3 生活服务五模块、**M4 数据驾驶舱（schema-009 之上新增 schema-010 宿舍 / 011 站内信，宿舍报修并入宿舍管理）**
 - 质量基线：安全审计完成；M1+M2 线上 16 步、M3 线上 21 步全链路验证通过；邮箱收发/验证码生产验证通过
-- **AI 融合方向已定版（2026-10-09，待实施）**：模型 GLM-4V-Flash（免费·视觉+文本·476ms·4K 上下文），实施顺序 lib/ai.js 统一出口 → 驾驶舱意图问数 → 论坛 AI 审核 → RAG，唯一口径见 **ARCHITECTURE ADR-9**
+- **AI 融合方向已定版（2026-10-09 同日修订，待实施）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关，实测上下文 40 万字、`reasoning_content` 独立字段），实施顺序 lib/ai.js 统一出口 → 驾驶舱意图问数+管理员辅助 → 论坛 AI 审核 → RAG，唯一口径见 **ARCHITECTURE ADR-9**。**⚠ 开发测试期只用文本输入输出、禁碰多模态（计费高）；思考模式默认关**
 - 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
@@ -79,15 +79,18 @@
 - [ ] Element Plus 按需引入（EP 单 chunk 1.09MB 全量引入；分包已完成，非阻塞）
 - [x] 测试账号 zhreg2871（id 12209012）已处理（2026-10-07）：**停用 + 注销对外邮箱 + 吊销全部刷新令牌 + 退宿**（有住宿/邮件引用，硬删会破坏关联，采用可逆的软停用）
 
-### 阶段 6 · AI 融合（2026-10-09 方向定版，未开工）
+### 阶段 6 · AI 融合（2026-10-09 方向定版 + 同日修订选型，未开工）
 
-> 唯一口径 = ARCHITECTURE **ADR-9**（选型依据 / 三路径 / 硬约束）。模型已实测连通：GLM-4V-Flash，HTTP 200 / 476ms / JSON 输出正常。
+> 唯一口径 = ARCHITECTURE **ADR-9**（选型依据 / 四路径 / 硬约束）。模型已实测连通：**qwen3.8-omni-flash**（阿里云 DashScope 兼容网关 `https://dashscope.aliyuncs.com/compatible-mode/v1`，仅国内站可用），HTTP 200 / JSON 正常 / 上下文 40 万字通过。
+> **★ 详细设计方案（v1，2026-10-09 用户已确认，范围 C1~C12 全量一次做完）= [docs/AI-FEATURES.md](AI-FEATURES.md)**：C1 校园问答 / C2 论坛 AI 审核员 / C3 异常告警邮件 / C4 审批助手 / C5 管理员智能管理 / C6 校领导问数 + C7~C12 全部建议项；**累加式能力分级（标准/审批/校领导/管理员四版）+ 浅色调按角色变主标识色**；技术底座 + schema-012 + 接口清单。决定项见其第 8 节（已全部确认）。
+> **★★ 两条硬约束：① 开发测试期只用「文本输入 → 文本输出」，禁止任何多模态调用（图片/音频/视频计费高）；② 思考模式默认关闭（`enable_thinking: false`）。**
 
-- [ ] **lib/ai.js 统一出口**：GLM-4V-Flash 唯一调用点（OpenAI 兼容 `/api/paas/v4`），密钥仅 `.env`/EdgeOne env（`AI_GLM_API_KEY / AI_GLM_BASE_URL / AI_GLM_MODEL`）；try/catch + 超时降级，AI 故障不阻断业务（照 lib/notify.js 模式）
-- [ ] **驾驶舱意图问数**（优先，答辩演示项）：自然语言 → 意图分类+参数抽取（强制 JSON + few-shot）→ **白名单参数化 SQL 模板**（模型永不拼 SQL）→ 结果表格 + 模型摘要；接口加 DB 流水频控
-- [ ] **论坛 AI 审核**：发帖/回复文本 + 图片（4V 视觉）违规判定（分类+置信度），高风险转人工队列、低风险放行、判定留痕 sys_op_log
-- [ ] **RAG 校园问答**（可选，时间富余再做）：制度/FAQ 文档切片向量化入 TiDB 向量列 → TopK 检索 → 带引用生成回答
-- [ ] **论文同步**：补 AI 融合章节（设计 + 实测数据）；实施后回填 ADR-9 与本文件
+- [ ] **lib/ai.js 统一出口**：qwen3.8-omni-flash 唯一调用点（OpenAI 兼容），密钥仅 `.env`/EdgeOne env（`AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER`）；`enable_thinking` 作显式参数（默认 false）；try/catch + 超时降级，AI 故障不阻断业务（照 lib/notify.js 模式）
+- [ ] **驾驶舱意图问数 + 管理员辅助**（优先，答辩演示项）：自然语言 → 意图分类+参数抽取（强制 JSON + few-shot）→ **白名单操作/参数化 SQL 模板**（模型永不拼 SQL、永不直接执行）→ 结果表格 + 模型摘要；**破坏性操作（如"禁用全部账号"）先列影响清单再二次确认**，action 必须再过 guard.js 实时鉴权，写操作进 sys_op_log（标 `via: ai`）；接口加 DB 流水频控
+- [ ] **论坛 AI 审核（纯文本）**：发帖/回复**文本**违规判定（分类+置信度），高风险转人工队列、低风险放行、判定留痕 sys_op_log。⚠ 图片视觉审核**暂缓**（多模态计费高）
+- [ ] **RAG 校园问答**（可选，时间富余再做）：制度/FAQ 文档切片向量化入 TiDB 向量列 → **TopK 检索** → 带引用生成回答（禁整篇长文档塞上下文）
+- [ ] **论文同步**：补 AI 融合章节（设计 + 实测数据：延迟 / token / 准确率）；实施后回填 ADR-9 与本文件
+- [ ] **上线前置**：EdgeOne 控制台补配 `AI_QWEN_*` 环境变量并重新部署（铁律 #5：env 改了不重新部署不生效）
 
 ## 已知坑与备忘
 
@@ -102,7 +105,7 @@
 - **多端独立域名部署时必须配 CORS_ORIGIN 环境变量**（Node Functions 已内置 CORS 响应头与 OPTIONS 预检，未配 CORS_ORIGIN 时默认放行）
 - **★ 移动端表格（2026-09-21 修正）**：**不要给 `.el-table` 加 `max-width`** —— EP 会把所有列按比例压缩到容器宽度内，多列表格（如账号管理 11 列）会被压成一条条按钮堆叠、完全不可读。正解是 `table.el-table__header/__body { width: max-content; min-width: 100% }`，容器不足时由 EP 自带 `.el-scrollbar__wrap` 横向滚动。**移动端表格验收必须同时满足**：① 页面无横向溢出 ② 有数据行时最宽列 > 80px（`node .shots/audit-tables.mjs`）
 - **★ 移动端适配（2026-09-20 深夜）**：`src/mobile.css` 只允许 `@media (max-width: 820px)` 块（PC 零回归保证）；断点须与 `utils/device.js` 的 `MOBILE_MAX_WIDTH` 同值；**覆盖组件 scoped 样式必须三倍类名**（组件 CSS 路由懒加载，`<link>` 运行时插入在本文件之后，双类名同权重会被反超）；窄屏横向溢出两大根因 = grid 的 `1fr`（实为 `minmax(auto,1fr)`，改 `minmax(0,1fr)`）+ flex column 交叉轴被内容 min-content 撑开（须在 `.shell-body` 层就 `overflow-x:hidden`，只在 `.shell-main` 写无效）；内联固定宽度需 `!important`。详见 HANDOVER 铁律 #27/#28
-- **★ AI 融合约束（2026-10-09 定版，写 AI 代码前必读）**：模型只用 GLM-4V-Flash（**必须 4V 才免费**，配置键 `AI_GLM_*` 在 `.env`，密钥不入库不入文档）；上下文仅 **4K**——system prompt 精简、单轮无状态、对话历史不进上下文；所有 AI 调用必须 try/catch + 超时降级（**AI 挂了业务照常**）；模型输出只做意图/参数/判定，**SQL 一律白名单预写模板**；AI 接口加 DB 流水频控（免费档有速率上限，禁内存计数）。完整口径见 ARCHITECTURE ADR-9
+- **★ AI 融合约束（2026-10-09 定版 + 同日修订，写 AI 代码前必读）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关 `https://dashscope.aliyuncs.com/compatible-mode/v1`，**仅国内站可用**；配置键 `AI_QWEN_*` + `AI_PROVIDER` 在 `.env`，密钥不入库不入文档；GLM 三键保留备用）。**★★ ① 开发测试期只用文本输入输出，禁止任何多模态调用（图片/音频/视频计费远高于文本）；② 思考模式默认关闭 `enable_thinking:false`（意图 JSON 快 6.2 倍、输出 token 降 94%，且只有关思考时 `tool_choice: required` 才可用）**。上下文很大（实测 40 万字通过）但 **RAG 仍走检索 TopK，禁整篇塞上下文**；所有 AI 调用必须 try/catch + 超时降级（**AI 挂了业务照常**）；模型输出只做意图/参数/判定，**操作与 SQL 一律白名单预写、模型永不直接执行**；破坏性操作先列清单再二次确认 + guard.js 鉴权 + sys_op_log 审计；AI 接口加 DB 流水频控（禁内存计数）。完整口径见 ARCHITECTURE ADR-9 与 HANDOVER 铁律 #36
 - sys_refresh_token 过期/吊销记录清理：**已有 `scripts/cleanup.mjs`**（dry-run 默认，`--yes` 执行，覆盖 refresh_token / blob / login_log）；另 login.js 登录成功时 5% 概率顺带清理
 - 登录失败限流：**已由内存版改为 DB 流水计数**（sys_login_log 失败流水 + sys_email_code），多实例安全；细节见变更记录"边缘网关试错与回滚"条
 - **db.js query() 直接返回 rows**（项目封装过），不能按 mysql2 原生 `[rows]` 解构——解构会把首行当数组用，随机 500
@@ -156,12 +159,15 @@
 - 2026-09-21（登录后自助改密）：**补上"登录状态下自助修改登录密码"这一缺失能力**——用户提问"修改密码的功能做了吗"时核实发现：系统原有三条路径（忘记密码=未登录邮箱验证码、管理员重置他人密码、登录后改**校园邮箱**密码），**唯独没有"登录后改自己的登录密码"**，且 PRD 从未列入计划（只写了"忘记密码双通道"）。① 新增 `POST /api/me/password`：**必须验原密码**（否则会话被劫持后攻击者可直接改密把真实用户锁在门外）→ 新密码 8~64 位且不得与原密码相同 → 更新 bcrypt hash → **吊销该用户全部 refresh token**（改密即视为口令可能已泄露）→ opLog 留痕；原密码错误 10 分钟 5 次限流（DB 流水计数，与登录限流同范式，多实例安全）。② 抽出 **`lib/password-rules.js`** 作为口令强度唯一来源：原先规则以字面量散落三处（注册 `PASSWORD_MIN`／忘记密码内联 `PWD_OK`／管理员重置 `length < 8`），任一处被改都可能造成"某入口能设弱口令"的静默缺口；现已统一并被单测覆盖。③ 前端入口放在**顶栏用户名下拉**（工作台/返回首页/修改登录密码/退出登录），改密成功后清本地会话并回登录页（服务端已吊销，否则界面还显示"已登录"但任何刷新都失败，用户会以为系统坏了）；同时把工作台那个改**邮箱**密码的按钮文案改为「修改邮箱密码」以消除歧义。④ 测试：新增 `tests/unit/password-rules.spec.js`（12 用例，含 7/8/64/65 边界、非字符串输入、中文按字符计、**与重构前字面量规则的逐例等价断言**）→ 单测总数 **68 → 80**；`e2e-smoke.mjs` 补第 8 节「自助改密安全边界」（未登录 40103 / 新密码过短 43701 / 新旧相同 43702 / 原密码错误 43704 或 42900，**全部是"不该成功"的调用故不改动任何账号**，成功路径由单测+人工一次性验证覆盖）。⑤ 错误码新增 43700~43704（API.md 已登记）。⑥ 已知边界（如实记录）：access token 是 2 小时无状态 JWT，吊销 refresh token 后**其他设备最长 2 小时内仍可能持有有效凭证**——要秒级全端失效需引入令牌版本号，当前规模不做
 
 - 2026-10-09（AI 融合定版）：**毕业设计选题确定为 AI 融合方向，选型与实施路径定版**——模型唯一选定 **GLM-4V-Flash**（用户明确：必须 4V 才免费；OpenAI 兼容 `https://open.bigmodel.cn/api/paas/v4`；视觉+文本双模；实测 HTTP 200 / 476ms / JSON 输出正常；上下文 4K）。配置 `AI_GLM_API_KEY / AI_GLM_BASE_URL / AI_GLM_MODEL=glm-4v-flash` 存 `.env`（密钥不入库不入文档）。实施顺序四步：**lib/ai.js 统一出口**（照 lib/notify.js 降级模式，AI 挂了业务照常）→ **驾驶舱意图问数**（优先，答辩演示项：意图分类+参数抽取强制 JSON，SQL 走白名单参数化模板，模型永不拼 SQL）→ **论坛 AI 审核**（4V 视觉+文本，高风险转人工）→ **RAG 校园问答**（可选，TiDB 向量）。完整口径固化为 **ARCHITECTURE ADR-9**，任务清单见本文件阶段 6。另：docs/README 邮件品牌已全量更名 keaidang mail（7eddf74，LANQIN_* 变量名与 lib/lanqin.js 文件名保留兼容）
+  > ⚠ **本条中的模型选型（GLM-4V-Flash）与"上下文 4K"已于同日被下一条修订取代，以修订条与 ADR-9 为准。**
+
+- 2026-10-09（AI 选型修订 + 多模态成本红线）：**模型由 GLM-4V-Flash 换为阿里云 qwen3.8-omni-flash，并立下"开发测试期只用文本输入输出、禁碰多模态"的硬约束**（用户指定：多模态计费过高，开发测试期成本敏感）。① **接入实测**：走 DashScope OpenAI 兼容 `https://dashscope.aliyuncs.com/compatible-mode/v1`（**仅国内站可用**，国际站 `dashscope-intl` 返回 401 invalid_api_key）；该 key 实为**聚合网关**——`/models` 返回 **262 个模型**（含 kimi-k3 / deepseek-v4-pro / glm-5.3-prime / qwen3.8-max / MiniMax-M3 等），**不可按阿里云官方文档预期配额与价格**。配置 `AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER=qwen` 入 `.env`（密钥不入库不入文档），GLM 三键保留备用。② **模型能力实测（vs glm-4v-flash）**：`reasoning_content` 为**独立字段**（GLM 把 `<think>` 混进正文需清洗）；**上下文 40 万字 / 206962 token 通过**（GLM-4V-Flash 16384 即报错，此前 ADR-9 记的"4K"实为误记）；RAG 长文检索命中率明显更高（40 篇干扰文档下 qwen 答对、glm-4v-flash 答"未找到"）；"全部批准"能返回**数组**多条（GLM 只回单条）；**强制工具调用**：qwen 关思考后 `auto`/`required` 均可、glm-4v-flash 完全不支持。③ **★ 思考模式开关实测**（同为 qwen3.8-omni-flash）：意图 JSON **4117ms → 669ms（快 6.2 倍）**、completion tokens **229（思考 214）→ 13（降 94%）**，而 reasoning token 按输出计费 → **又快又省钱且准确率 5/5 不变**；**额外解锁工具调用**——思考模式下 `tool_choice: required` 直接报错（`does not support being set to required or object in thinking mode`），关思考后可用。三种关闭写法均生效（`enable_thinking:false` / `chat_template_kwargs.enable_thinking:false` / `thinking:{type:"disabled"}`）。因此定为**硬约束二：思考模式默认关闭**。④ **硬约束一（本次核心）**：**开发测试期禁止任何多模态调用**（不传 image/audio/video、不做 OCR/图片理解/语音/图像生成），连带把 ADR-9 第 3 步「论坛 AI 审核」**降级为纯文本审核**；需媒体能力须另立 ADR 并先定预算。已写入 **ARCHITECTURE ADR-9（选型结论 + 两条硬约束 + 实施顺序）**、**HANDOVER 铁律 #36** 与本文档阶段 6 / 已知坑。⑤ 遗留：**EdgeOne 控制台尚未配 `AI_QWEN_*` 环境变量**（上线前必须补，铁律 #5 env 改了要重新部署）；用户提供的 key 系对话明文，已建议其去控制台轮换
 
 ## 下一步
 
 > 详细剩余项与整改建议已收敛到 **docs/AUDIT-2026-09-21.md**（2026-09-21 全面体检报告，含 P0~P2 分级与工作量估计），此处不再重复维护（避免漂移）。
 
-- **[ ] AI 融合实施（2026-10-09 选题方向定版，当前最高优先）**：模型 GLM-4V-Flash（免费·视觉+文本·实测 476ms·4K 上下文，已连通验证）。按 ARCHITECTURE ADR-9 顺序：lib/ai.js 统一出口 → 驾驶舱意图问数 → 论坛 AI 审核 → RAG（可选）；硬约束与降级要求见 PROGRESS「已知坑」AI 条目
+- **[ ] AI 融合实施（2026-10-09 选题方向定版 + 同日修订选型，当前最高优先）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关，实测上下文 40 万字、`reasoning_content` 独立字段，已连通验证）。按 ARCHITECTURE ADR-9 顺序：lib/ai.js 统一出口 → 驾驶舱意图问数+管理员辅助 → 论坛 AI 审核（纯文本）→ RAG（可选）。**两条硬约束：① 开发测试期只用文本、禁多模态；② 思考模式默认关**。硬约束与降级要求见 PROGRESS「已知坑」AI 条目与 HANDOVER 铁律 #36
 - **[x] 移动端 H5 适配**（2026-09-20 完成）；小程序已决策不做（PRD §4 + ARCHITECTURE ADR-8）
 - **[ ] P0（对外前必做）**：演示账号 `admin/admin` 改强密码，并从文档移除明文（见 AUDIT P0-1）
 - **[ ] P1（工程护栏，最值得先做）**：把已有冒烟脚本固化成一条 `npm run check`；再逐步补 ESLint 与关键路径单测（见 AUDIT P1-1）
