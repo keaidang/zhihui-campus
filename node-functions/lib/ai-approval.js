@@ -28,22 +28,37 @@ const SYSTEM = [
   '{"suggestion":"approve|reject|manual","risk":["…"],"reason":"一句话建议理由","confidence":0.0}',
 ].join('\n');
 
+/**
+ * 'YYYY-MM-DD HH:mm:ss'（库内 UTC 墙钟）→ Date
+ * 解析不出来返回 null —— 调用方**必须**把 null 当成"本次无法判断"，而不是"没有冲突"
+ */
+export function parseUtc(s) {
+  if (typeof s !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(s.trim());
+  if (!m) return null;
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** 库内是 UTC 墙钟（铁律 #25）；这里换算成北京时区取星期，用于判断"请假期间是否有课" */
-function beijingWeekday(s) {
-  const d = new Date(`${String(s).replace(' ', 'T')}Z`);
-  if (Number.isNaN(d.getTime())) return 0;
-  d.setTime(d.getTime() + 8 * 3600 * 1000);
-  const w = d.getUTCDay(); // 0=周日
+export function beijingWeekday(s) {
+  const d = parseUtc(s);
+  if (!d) return 0;
+  const bj = new Date(d.getTime() + 8 * 3600 * 1000);
+  const w = bj.getUTCDay(); // 0=周日
   return w === 0 ? 7 : w; // 转成 周一=1 … 周日=7
 }
 
-/** 请假区间内落在哪些星期（去重；最多扫 60 天，避免超长区间把循环拖大） */
-function weekdaysInRange(startAt, endAt) {
-  const s = new Date(`${String(startAt).replace(' ', 'T')}Z`);
-  const e = new Date(`${String(endAt).replace(' ', 'T')}Z`);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return [];
+/**
+ * 请假区间内落在哪些星期（去重；最多扫 60 天，避免超长区间把循环拖大）
+ * @returns {number[]} 空数组表示**无法解析**（调用方必须据此标记"冲突检测不可用"）
+ */
+export function weekdaysInRange(startAt, endAt) {
+  const s = parseUtc(startAt);
+  const e = parseUtc(endAt);
+  if (!s || !e || e < s) return [];
   const set = new Set();
-  const cur = new Date(s);
+  const cur = new Date(s.getTime());
   let guard = 0;
   while (cur <= e && guard < 60) {
     const bj = new Date(cur.getTime() + 8 * 3600 * 1000);
@@ -58,7 +73,14 @@ function weekdaysInRange(startAt, endAt) {
 /** 收集事实（可单测的部分在 weekdaysInRange） */
 async function collectFacts(actor, leaveId) {
   const rows = await query(
-    `SELECT l.id, l.student_id, l.dept_id, l.type, l.reason, l.start_at, l.end_at, l.status,
+    // ★ 时间字段一律用 DATE_FORMAT 取成 'YYYY-MM-DD HH:mm:ss' 字符串：
+    //   mysql2 会把 DATETIME 返回成 **Date 对象**，而它是按连接时区（db.js 里 +08:00）解析的，
+    //   直接 String(Date) 会得到 "Fri Sep 18 2026 …" 这种既无法解析、又带时区歧义的文本 ——
+    //   2026-10-09 线上验收就因此把"时段内是否有课"静默算成了"没有课"（结论完全反了）。
+    //   取字符串后，下面的 parseUtc() 才能按"库内是 UTC 墙钟"（铁律 #25）稳定工作。
+    `SELECT l.id, l.student_id, l.dept_id, l.type, l.reason, l.status,
+            DATE_FORMAT(l.start_at, '%Y-%m-%d %H:%i:%s') AS start_at,
+            DATE_FORMAT(l.end_at,   '%Y-%m-%d %H:%i:%s') AS end_at,
             u.real_name, u.user_no, u.class_id, d.name AS dept_name, cl.name AS class_name
        FROM af_leave l
        JOIN sys_user u ON u.id = l.student_id
@@ -85,8 +107,9 @@ async function collectFacts(actor, leaveId) {
   );
 
   const weekdays = weekdaysInRange(lv.start_at, lv.end_at);
+  const timeParseable = weekdays.length > 0;
   let conflicts = [];
-  if (weekdays.length) {
+  if (timeParseable) {
     conflicts = await query(
       `SELECT c.name AS course, ec.week_day AS weekDay, ec.section, ec.classroom
          FROM edu_elect e
@@ -101,26 +124,32 @@ async function collectFacts(actor, leaveId) {
     );
   }
 
-  return { leave: lv, history: hist, weekdays, conflicts };
+  return { leave: lv, history: hist, weekdays, conflicts, timeParseable };
 }
 
 /** 事实 → 提示词文本（可读、可复核） */
-function factsText({ leave, history, weekdays, conflicts }) {
-  const days = Math.max(0, Math.round((new Date(`${String(leave.end_at).replace(' ', 'T')}Z`) - new Date(`${String(leave.start_at).replace(' ', 'T')}Z`)) / 86400000 * 10) / 10);
+function factsText({ leave, history, weekdays, conflicts, timeParseable }) {
+  const s0 = parseUtc(leave.start_at);
+  const e0 = parseUtc(leave.end_at);
+  const days = s0 && e0 ? Math.round(((e0 - s0) / 86400000) * 10) / 10 : null;
   return [
     `请假单号：${leave.id}`,
     `学生：${leave.real_name}（${leave.user_no || leave.student_id}）`,
     `院系/班级：${leave.dept_name || '-'} / ${leave.class_name || '-'}`,
     `类型：${leave.type}`,
     `事由：${leave.reason}`,
-    `起止（UTC 墙钟）：${leave.start_at} ~ ${leave.end_at}（约 ${days} 天）`,
+    `起止（库内 UTC 墙钟）：${leave.start_at} ~ ${leave.end_at}${days === null ? '（时长无法计算）' : `（约 ${days} 天）`}`,
     `当前状态：${leave.status}（1 审批中 / 2 已批准 / 3 已驳回 / 4 已销假）`,
     '',
     `该生近 30 天请假：${history?.times ?? 0} 次，合计约 ${history?.days ?? 0} 天（含本条）`,
-    `请假区间落在星期：${weekdays.length ? weekdays.map((w) => `周${'一二三四五六日'[w - 1]}`).join('、') : '（无法解析）'}`,
-    conflicts.length
-      ? `该时段内有课的教学班 ${conflicts.length} 个：\n${conflicts.map((c) => `  《${c.course}》周${'一二三四五六日'[c.weekDay - 1]} ${c.section} ${c.classroom || ''}`).join('\n')}`
-      : '该时段内没有已选课程（或未选课）',
+    `请假区间落在星期：${timeParseable ? weekdays.map((w) => `周${'一二三四五六日'[w - 1]}`).join('、') : '⚠ 时间字段无法解析'}`,
+    // ★ 关键：无法解析时必须明说"冲突情况未知"，绝不能输出"没有课" —— 那会把
+    //   "系统算不出来"伪装成"学生没课"，直接误导审批判断（2026-10-09 真实踩坑）
+    !timeParseable
+      ? '⚠ 该请假单的时间字段无法解析，**无法判断时段内是否有课冲突**（请在页面上人工核对课表）'
+      : conflicts.length
+        ? `该时段内有课的教学班 ${conflicts.length} 个：\n${conflicts.map((c) => `  《${c.course}》周${'一二三四五六日'[c.weekDay - 1]} ${c.section} ${c.classroom || ''}`).join('\n')}`
+        : '该时段内没有已选课程（或未选课）',
   ].join('\n');
 }
 
@@ -180,4 +209,3 @@ export async function adviseLeave(actor, leaveId, { userId = 0 } = {}) {
 /** 是否可对某角色展示审批助手（前端据此决定要不要请求） */
 export const canAdvise = (actor) => hasRole(actor, ['counselor', 'admin']);
 
-export { weekdaysInRange, beijingWeekday };

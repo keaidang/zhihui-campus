@@ -11,7 +11,7 @@ import {
   insightPromptFor,
   runInsight,
 } from '../../node-functions/lib/ai-insight.js';
-import { beijingWeekday, canAdvise, weekdaysInRange } from '../../node-functions/lib/ai-approval.js';
+import { beijingWeekday, canAdvise, parseUtc, weekdaysInRange } from '../../node-functions/lib/ai-approval.js';
 
 const leader = { userId: 1, roles: ['leader'], deptId: null, ip: '-' };
 const admin = { userId: 2, roles: ['admin'], deptId: null, ip: '-' };
@@ -111,6 +111,23 @@ describe('ai-approval · 星期计算（决定"请假期间有没有课"）', ()
 
   it('★ 区间上限 60 天：超长请假不会把循环拖爆（结果仍覆盖全部 7 个星期）', () => {
     expect(weekdaysInRange('2026-01-01 00:00:00', '2027-01-01 00:00:00')).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('★ parseUtc 只接受"库内 UTC 墙钟字符串"，其它输入一律 null（不能悄悄给错值）', () => {
+    // 这条锁的是一个真实事故：mysql2 会把 DATETIME 返回成 Date 对象，
+    // 而旧实现用 String(Date) 拼字符串 → "Fri Sep 18 2026 …Z" → Invalid Date → 静默返回 []，
+    // 于是"请假期间有课冲突"被算成"没有课"，结论完全反了。
+    // 现在 SQL 侧统一用 DATE_FORMAT 取字符串，且这里对非字符串显式返回 null，
+    // 由调用方（collectFacts）把它变成"⚠ 冲突情况无法判断"而不是"没有冲突"。
+    expect(parseUtc('2026-10-05 00:00:00')).toBeInstanceOf(Date);
+    expect(parseUtc('2026-10-05T00:00:00')).toBeInstanceOf(Date);
+    for (const bad of [new Date(), null, undefined, 123, {}, 'garbage', '2026-10-05']) {
+      expect(parseUtc(bad), `应该拒绝：${String(bad)}`).toBeNull();
+    }
+  });
+
+  it('传给 weekdaysInRange 的不是墙钟字符串时返回空数组（调用方据此标记"无法判断"）', () => {
+    expect(weekdaysInRange(new Date(), new Date())).toEqual([]);
   });
 
   it('canAdvise 只给辅导员与管理员', () => {
