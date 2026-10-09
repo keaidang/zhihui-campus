@@ -38,17 +38,40 @@
           <img class="school-name-img hero-school-name" src="/name.webp" alt="清北大学" />
           <h1>一站式智慧校园服务平台</h1>
           <p>
-            一个账号打通选课、成绩、课表、请销假、宿舍、图书、失物招领、社团与论坛，
-            让校园事务都在同一个入口里完成。
+            一个账号打通选课、成绩、课表、请销假、宿舍、图书、失物招领、社团与论坛；
+            并以<b>大模型能力</b>贯穿问答、审批、运维与决策 —— AI 不是外挂的聊天框，
+            它长在每一个业务环节里。
           </p>
           <div class="actions">
-            <el-button v-if="!auth.isLoggedIn" type="primary" size="large" round @click="$router.push('/login')">
-              立即开始
+            <el-button
+              v-if="!auth.isLoggedIn"
+              type="primary"
+              size="large"
+              round
+              :icon="MagicStick"
+              class="ai-cta"
+              @click="goAi"
+            >
+              AI 校园助手
             </el-button>
-            <el-button v-else type="primary" size="large" round @click="$router.push('/workbench')">
+            <el-button
+              v-else
+              type="primary"
+              size="large"
+              round
+              :icon="MagicStick"
+              class="ai-cta"
+              @click="goAi"
+            >
+              AI 校园助手
+            </el-button>
+            <el-button v-if="auth.isLoggedIn" size="large" round class="ghost-btn" @click="$router.push('/workbench')">
               进入工作台
             </el-button>
-            <el-button size="large" round class="ghost-btn" @click="scrollToModules">浏览全部服务</el-button>
+            <el-button v-else size="large" round class="ghost-btn" @click="$router.push('/login')">
+              登录 / 注册
+            </el-button>
+            <el-button link class="more-link" @click="scrollToModules">浏览全部服务 ↓</el-button>
           </div>
         </div>
         <div class="hero-preview">
@@ -60,10 +83,31 @@
     <!-- 数据带：用真实规模数字替代空泛形容词 -->
     <section class="zc-container">
       <div class="zc-stats">
+        <div class="stat highlight"><b>{{ aiTotal }}<i>项</i></b><span>AI 能力</span></div>
         <div class="stat"><b>{{ modules.length }}</b><span>服务模块</span></div>
         <div class="stat"><b>400<i>+</i></b><span>在校学生</span></div>
-        <div class="stat"><b>420</b><span>馆藏图书</span></div>
         <div class="stat"><b>5</b><span>角色权限</span></div>
+      </div>
+    </section>
+
+    <!-- AI 能力板块：本年度毕业设计主题是"AI 技术融合"，因此在服务列表之前先讲 AI -->
+    <section class="zc-container zc-ai-section">
+      <h2 class="zc-section-title">AI 能力 · 长在每个业务环节里</h2>
+      <p class="zc-section-sub">模型只做"理解与判断"，权限校验与数据操作仍由服务端按白名单执行</p>
+      <div class="zc-ai-grid">
+        <div v-for="a in aiFeatures" :key="a.title" class="zc-ai-card">
+          <div class="ai-icon"><el-icon :size="20"><component :is="a.icon" /></el-icon></div>
+          <h3>{{ a.title }}</h3>
+          <p>{{ a.desc }}</p>
+        </div>
+      </div>
+      <div class="zc-ai-cta">
+        <el-button type="primary" size="large" round :icon="MagicStick" class="ai-cta" @click="goAi">
+          立即体验 AI 助手
+        </el-button>
+        <span class="zc-ai-note">
+          问答 / 分诊 / 审核 / 问数四类能力已完成效果评估（{{ evalCases }} 条人工标注用例）
+        </span>
       </div>
     </section>
 
@@ -94,7 +138,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { ArrowRight } from '@element-plus/icons-vue';
+import { ArrowRight, MagicStick } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 
 const router = useRouter();
@@ -103,6 +147,49 @@ const modulesRef = ref(null);
 
 // 边缘访问统计：KV 计数在边缘节点毫秒级完成，不回源、不碰数据库（云边协同样板，fire-and-forget）
 onMounted(() => { fetch('/api/edge/stats').catch(() => {}); });
+
+/**
+ * AI 能力展示（首页用）。
+ * 只列**真实存在**的能力，措辞与 docs/AI-FEATURES.md 的能力清单一一对应 ——
+ * 首页是对外承诺，写了却没实现是最糟糕的情况。
+ */
+const aiFeatures = [
+  {
+    title: '校园智能问答',
+    desc: '基于校园知识库回答选课、请假、报修等流程问题，答不出来会如实说明而不是编造',
+    icon: 'ChatDotRound',
+  },
+  {
+    title: '对话式系统管理',
+    desc: '管理员说一句"禁用账号 xxx"，系统先列出影响清单，确认之后才真正执行',
+    icon: 'MagicStick',
+  },
+  {
+    title: '信息问数',
+    desc: '「这周哪个班请假最多」直接出统计表；模型只负责选模板，全程不接触 SQL',
+    icon: 'DataAnalysis',
+  },
+  {
+    title: '学业助手',
+    desc: '只读本人成绩与课表，回答还差多少学分、哪些课不及格、绩点是多少',
+    icon: 'Reading',
+  },
+  {
+    title: '审核与分诊',
+    desc: '论坛帖子自动判定违规内容；报修提交后自动判定责任部门与紧急程度',
+    icon: 'SetUp',
+  },
+  {
+    title: '数据异常监测',
+    desc: '规则扫描请假集中、成绩未录等问题，再由 AI 归纳成一段人话邮件提醒管理员',
+    icon: 'Bell',
+  },
+];
+
+/** AI 能力总数（C1~C12）；首页只列 6 项代表，故用常量而不是卡片数推算 */
+const aiTotal = 12;
+/** 评估用例数（与 scripts/seed-ai-eval.mjs 的 42 条一致；写在页面上的数字必须真实可查） */
+const evalCases = 42;
 
 const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', ready: true, path: '/edu/elect', roles: ['student'] },
@@ -140,6 +227,15 @@ async function onModule(m) {
     return;
   }
   router.push(m.path);
+}
+
+/** 去 AI 助手：未登录先登录，登录后原路跳回（复用 onModule 的 SSO 联动口径） */
+function goAi() {
+  if (!auth.isLoggedIn) {
+    router.push({ name: 'login', query: { redirect: '/ai' } });
+    return;
+  }
+  router.push('/ai');
 }
 
 function scrollToModules() {

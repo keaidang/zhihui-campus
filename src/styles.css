@@ -14,6 +14,8 @@
   --zc-bg: #f0f7ff;
   --zc-card: #ffffff;
   --zc-border: #e2e8f0;
+  /* AI 主标识色：与 src/api/ai.js 的 AI_THEME.standard.accent 同值 */
+  --zc-ai: #4a72c4;
   --zc-radius: 16px;
   --zc-shadow: 0 12px 36px rgba(15, 35, 66, 0.1);
   --zc-glass: rgba(255, 255, 255, 0.82);
@@ -159,6 +161,66 @@ body { background: transparent; }
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.42);
 }
 .zc-hero .actions { display: flex; gap: 14px; }
+/* AI 主按钮：深色底上用渐变 + 光晕，作为首页第一视觉焦点 */
+.el-button.ai-cta {
+  background: linear-gradient(135deg, #4a72c4 0%, #7f77dd 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(86, 122, 220, 0.38);
+  letter-spacing: 0.5px;
+}
+.el-button.ai-cta:hover,
+.el-button.ai-cta:focus {
+  background: linear-gradient(135deg, #416ac0 0%, #6f66d8 100%);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(86, 122, 220, 0.46);
+}
+/* 深色底上的次级链接 */
+.zc-hero .more-link { color: rgba(255, 255, 255, 0.82); font-size: 14px; }
+.zc-hero .more-link:hover { color: #fff; }
+
+/* ---------- 首页 AI 能力板块（2026-10-09 为突出课题主线新增） ---------- */
+.zc-ai-section { margin-top: 48px; }
+.zc-ai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(276px, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+.zc-ai-card {
+  padding: 18px;
+  background: var(--zc-glass);
+  border: 1px solid var(--zc-border);
+  border-radius: 14px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.zc-ai-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--zc-ai);
+  box-shadow: 0 12px 28px rgba(74, 114, 196, 0.16);
+}
+.ai-icon {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--zc-ai);
+  margin-bottom: 12px;
+}
+.zc-ai-card h3 { margin: 0 0 6px; font-size: 15px; color: var(--zc-navy); letter-spacing: 0.3px; }
+.zc-ai-card p { margin: 0; font-size: 13px; line-height: 1.75; color: var(--zc-text-sub); }
+.zc-ai-cta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+.zc-ai-note { font-size: 12.5px; color: var(--zc-text-sub); }
+
 /* 深色底上的次按钮：幽灵样式 */
 .zc-hero .ghost-btn {
   background: rgba(255, 255, 255, 0.12);
@@ -230,6 +292,8 @@ body { background: transparent; }
 }
 .zc-stats .stat b i { font-size: 17px; font-style: normal; vertical-align: super; }
 .zc-stats .stat span { font-size: 13px; color: var(--zc-text-sub); }
+/* 首页第一格是"AI 能力"，用 AI 主色点亮（本年度课题主线是 AI 融合） */
+.zc-stats .stat.highlight b { color: var(--zc-ai); }
 @media (max-width: 640px) {
   .zc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .zc-stats .stat { padding: 16px 10px; }

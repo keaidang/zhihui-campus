@@ -56,7 +56,12 @@
         <div v-for="m in msgs" :key="m.id" class="ai-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ai-ava">AI</div>
           <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' || m.kind === 'data' }">
-            <div v-if="m.pending && !m.content" class="ai-typing"><i /><i /><i /></div>
+            <!-- 等待首字：上游首字延迟实测 3~10 秒，光转三个点会让人以为卡死，
+                 所以给出**有信息量的阶段提示**（先检索、后组织） -->
+            <div v-if="m.pending && !m.content" class="ai-typing">
+              <span class="ai-wait-text">{{ m.waitHint || '正在思考…' }}</span>
+              <span class="ai-dots"><i /><i /><i /></span>
+            </div>
 
             <!-- C5 写操作：影响清单 + 二次确认（点确认前一行数据都没改） -->
             <template v-else-if="m.kind === 'write' && m.preview">
@@ -186,6 +191,8 @@ import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
 import { streamChat, streamStudy, fetchStudyOverview, runAiAction, runAiInsight, confirmAiAction } from '../api/ai';
 import { useIsMobile } from '../utils/device';
+// 流式渲染策略与悬浮面板共用同一实现（见 utils/ai-typewriter.js 顶部注释）
+import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, stopTypewriter, streamHandlers } from '../utils/ai-typewriter';
 
 const auth = useAuthStore();
 const ai = useAiStore();
@@ -304,9 +311,10 @@ async function send() {
   const history = historyForRequest();
   draft.value = '';
   msgs.value.push({ id: nextId(), role: 'user', content: q, sources: [] });
-  const reply = { id: nextId(), role: 'assistant', content: '', sources: [], pending: true, streaming: false };
+  const reply = newReplyMessage(nextId());
   msgs.value.push(reply);
   busy.value = true;
+  setWaitHint(reply);
   await nextTick();
   scrollToBottom();
 
@@ -316,7 +324,9 @@ async function send() {
   else await sendViaStream(route === 'study' ? streamStudy : streamChat, q, history, reply);
 
   reply.pending = false;
-  reply.streaming = false;
+  clearWaitHint(reply);
+  // 流式链路此时打字机可能还在补字，交给它自己收尾（追平后置 streaming=false）
+  if (!reply._typer) reply.streaming = false;
   busy.value = false;
   controller = null;
   scrollToBottom();
@@ -394,6 +404,10 @@ async function sendViaInsight(text, reply) {
 /**
  * C1 / C7 共用的流式渲染（两者的 SSE 协议完全一致：
  * `meta` → `delta`* → `done`，失败则返回普通 JSON）
+ *
+ * 事件处理与打字机策略都在 utils/ai-typewriter.js —— 悬浮面板用的是同一套，
+ * 保证两个入口的流式体验一致（首字等待提示 + 平滑逐字）。
+ *
  * @param {Function} streamFn streamChat 或 streamStudy
  */
 async function sendViaStream(streamFn, question, history, reply) {
@@ -402,43 +416,27 @@ async function sendViaStream(streamFn, question, history, reply) {
     question,
     history,
     signal: controller.signal,
-    handlers: {
-      onMeta: (d) => {
-        reply.sources = d?.sources || [];
-      },
-      onDelta: (d) => {
-        if (reply.pending) reply.pending = false;
-        reply.streaming = true;
-        reply.content += d?.text ?? '';
-        scrollToBottom();
-      },
-      onDone: () => {
-        reply.streaming = false;
-        reply.pending = false;
-      },
-      onError: (d) => {
-        reply.streaming = false;
-        reply.pending = false;
-        if (d?.message && !reply.content) {
-          reply.content = d.message;
-          reply.error = true;
-        }
-      },
-    },
+    handlers: streamHandlers(reply, { onTick: scrollToBottom }),
   });
 
   reply.pending = false;
-  reply.streaming = false;
+  clearWaitHint(reply);
+  reply._streamEnd = true;
 
   if (!res.ok) {
     if (res.aborted) {
       // 用户主动停止：保留已生成的部分，不要清空也不要报错
+      stopTypewriter(reply);
       if (!reply.content) reply.content = '（已停止生成）';
     } else {
+      stopTypewriter(reply);
       reply.content = res.message || '智能问答暂时不可用，请稍后再试';
       reply.error = true;
       if (res.code === 40103) ElMessage.warning(res.message);
     }
+    reply.streaming = false;
+  } else if (!reply._typer) {
+    reply.streaming = false;
   }
 }
 
@@ -484,6 +482,8 @@ function onKeydown(e) {
 }
 
 function clearChat() {
+  // 清空时必须停掉打字机与等待计时器，否则切模式/清空后它们仍在跑（泄漏 + 报错）
+  for (const m of msgs.value) disposeReply(m);
   msgs.value = [{ id: nextId(), role: 'assistant', content: welcomeText(), sources: [] }];
 }
 
@@ -680,18 +680,20 @@ onMounted(async () => {
 .ai-table tbody tr:last-child td { border-bottom: none; }
 .ai-extra { margin-top: 10px; }
 
-/* 等待首字：三点呼吸 */
-.ai-typing { display: flex; gap: 5px; padding: 3px 0; }
-.ai-typing i {
-  width: 6px;
-  height: 6px;
+/* 等待首字：文字提示 + 三点呼吸（上游首字延迟 3~10s，只转圈会让人以为卡死） */
+.ai-typing { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.ai-wait-text { font-size: 12.5px; color: var(--zc-text-sub); letter-spacing: 0.3px; }
+.ai-dots { display: flex; gap: 4px; }
+.ai-dots i {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--ai-accent);
   opacity: 0.35;
   animation: ai-dot 1.2s infinite ease-in-out;
 }
-.ai-typing i:nth-child(2) { animation-delay: 0.18s; }
-.ai-typing i:nth-child(3) { animation-delay: 0.36s; }
+.ai-dots i:nth-child(2) { animation-delay: 0.18s; }
+.ai-dots i:nth-child(3) { animation-delay: 0.36s; }
 @keyframes ai-dot { 0%, 80%, 100% { opacity: 0.28; } 40% { opacity: 1; } }
 
 /* 空态候选问题 */

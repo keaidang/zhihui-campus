@@ -63,13 +63,15 @@ export async function onRequestPost(context) {
     const quota = await consumeAiQuota(userId, 'chat');
     if (!quota.ok) return fail(49429, quota.message, 429);
 
-    // ---- 知识注入 ----
+    // ---- 知识注入 + 提问者身份：**并行查询** ----
+    // 两条都是独立的 DB 查询（知识库召回 / 本人档案），串行会白白多花一次往返。
+    // 首字延迟里我们能控制的部分很小（主要是上游排队），能省一点是一点。
     const inlineMaxChars = await getInt('ai.kb.inline_max_chars', 4000);
     const topK = await getInt('ai.kb.top_k', 5);
-    const kb = await buildKnowledgeContext(question, { inlineMaxChars, topK });
-
-    // ---- 提问者身份（只读本人；读不到就按"身份未知"降级，绝不放宽判断）----
-    const identity = await loadIdentity(userId);
+    const [kb, identity] = await Promise.all([
+      buildKnowledgeContext(question, { inlineMaxChars, topK }),
+      loadIdentity(userId),
+    ]);
 
     const messages = buildMessages(question, history, kb.text, identityBlock(identity, roles));
 
