@@ -36,8 +36,11 @@ export async function onRequestGet(context) {
       `SELECT id, type, title, sent_to, ok, err, created_at FROM ai_alert_log ORDER BY id DESC LIMIT 20`,
     );
 
-    const [rp] = await query("SELECT COUNT(*) AS n FROM ai_review_log WHERE handled = 0");
-    const [rv] = await query(
+    // ⚠ 注意：query() 返回的是**行数组**。`const [rp] = await query(...)` 取的是"第一行"（对象），
+    //   而 `const [rv] = await query(...)` 若当成数组用会得到 undefined 再 .map → 500。
+    //   2026-10-09 线上验收正是踩到这个（/api/ai/usage 返回 50000）。
+    const rpRows = await query("SELECT COUNT(*) AS n FROM ai_review_log WHERE handled = 0");
+    const rv = await query(
       `SELECT verdict, COUNT(*) AS n FROM ai_review_log
         WHERE created_at > NOW() - INTERVAL ? DAY GROUP BY verdict`,
       [days],
@@ -56,7 +59,10 @@ export async function onRequestGet(context) {
       },
       recentCalls,
       alerts,
-      review: { pending: Number(rp?.n || 0), byVerdict: rv.map((x) => ({ verdict: x.verdict, n: Number(x.n) })) },
+      review: {
+        pending: Number(rpRows[0]?.n || 0),
+        byVerdict: (rv || []).map((x) => ({ verdict: x.verdict, n: Number(x.n) })),
+      },
     });
   } catch (e) {
     return jsonError(e);
