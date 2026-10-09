@@ -204,10 +204,17 @@ const MENUS = [
   { key: 'admin-org', label: '系部与班级', icon: 'OfficeBuilding', path: '/admin/org', roles: ['admin', 'counselor'] },
   { key: 'admin-courses', label: '课程与排课', icon: 'Reading', path: '/admin/courses', roles: ['admin'] },
   { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
+  // 仅超管 + AI 管理控制台能力可用时出现
+  { key: 'admin-ai', label: 'AI 管理控制台', icon: 'Setting', path: '/admin/ai', roles: ['admin'], gate: 'aiConsole' },
 ];
 
 const menus = computed(() =>
-  MENUS.filter((m) => (!m.roles || auth.hasRole(m.roles)) && (!m.gate || ai.chatOn)),
+  MENUS.filter((m) => {
+    if (m.roles && !auth.hasRole(m.roles)) return false;
+    if (m.gate === 'ai') return ai.chatOn;
+    if (m.gate === 'aiConsole') return Boolean(ai.features.adminConsole);
+    return true;
+  }),
 );
 
 // 全部模块已上线，不再有"筹备中"占位

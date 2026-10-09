@@ -20,6 +20,13 @@ const router = createRouter({
       component: () => import('../views/AIView.vue'),
       meta: { requiresAuth: true },
     },
+    // ---- AI 管理控制台（仅超管；开关/审核队列/知识库/告警/用量）----
+    {
+      path: '/admin/ai',
+      name: 'admin-ai',
+      component: () => import('../views/admin/AiAdminView.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
     {
       path: '/admin/users',
       name: 'admin-users',

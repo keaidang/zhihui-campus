@@ -525,11 +525,11 @@ export async function sendMail({ to, subject, html, text })  // 复用内部 cal
 | **P6 C5 管理** ✅ | 6.1 白名单操作注册表 + confirmToken | ✅ `lib/ai-actions.js`（11 动作） | ✅ 28 项单测：白名单/令牌/范围校验全绿 |
 | | 6.2 两阶段接口 ✅ | ✅ `api/ai/action.js` | ✅ 线上 15 项：预览不改数据→确认→真执行，`via:ai` 审计可见 |
 | | 6.3 前端确认交互 ✅ | ✅ `views/AIView.vue` | ✅ 影响清单+跳过原因+二次确认按钮 |
-| **P7 C4+C6** | 7.1 问数模板库（10 个，参数枚举校验） | `lib/ai-insight.js`、`api/ai/insight.js` | "这周哪个班请假最多"返回正确表格 |
-| | 7.2 审批建议 + 接入审批页 | `api/ai/approval-advice.js`、`af/ApproveView.vue` | 卡片显示风险点，一键采纳意见 |
-| | 7.3 驾驶舱问数入口 | `admin/DashboardView.vue` | leader 可用 |
+| **P7 C4+C6** ✅ | 7.1 问数模板库（10 个，参数枚举校验） | ✅ `lib/ai-insight.js`、`api/ai/insight.js` | ✅ 线上 5/5 模板正确命中；注入尝试被 enum 白名单兜住 |
+| | 7.2 审批建议 + 接入审批页 ✅ | ✅ `lib/ai-approval.js`、`api/ai/approval-advice.js`、`af/ApproveView.vue` | ✅ 线上 22/22；能检出真实课表冲突（周五第9-10节《高等数学（下）》） |
+| | 7.3 驾驶舱问数入口 | 改为统一走 `/ai` 页（同一套问数，不再单独嵌驾驶舱） | ✅ leader 可用（`/ai` 按角色选路） |
 | **P8 C7~C12** | 8.1~8.6 学业助手 / 报修分诊 / 公告摘要 / 失物匹配 / 异常监测 / 图书检索 | 对应 api 文件 + `af_notice` 加 `summary` | 逐项可用 |
-| **P9 控制台收尾** | 9.1 AI 管理控制台 | `views/admin/AiAdminView.vue` | 开关/知识库/审核队列/告警/用量 五个 Tab |
+| **P9 控制台收尾** 🔶 | 9.1 AI 管理控制台 | ✅ `views/admin/AiAdminView.vue` + `api/ai/{config,kb,usage}.js` | ✅ 五个 Tab（开关/审核队列/知识库/告警/用量）；**此前新 AI 能力默认关但无界面可开，此页是必需品** |
 | | 9.2 全量验证 | — | `npm run check` + `npm run build` + 线上 e2e |
 | | 9.3 文档同步 | `PROGRESS` / `HANDOVER` / `API.md` / `DATABASE.md` / `ADR-9` | 文档与实现一致 |
 | | 9.4 分层提交推送 + 线上验证 | — | 线上真实可对话 |

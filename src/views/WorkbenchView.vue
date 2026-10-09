@@ -170,7 +170,8 @@ const greeting = computed(() => {
 import { fmtTime } from '../utils/time';
 
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
-const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答', icon: 'MagicStick', path: '/ai' };
+const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答，可直接下指令', icon: 'MagicStick', path: '/ai' };
+const AI_CONSOLE_CARD = { title: 'AI 管理控制台', desc: '开关 · 审核队列 · 知识库 · 告警 · 用量', icon: 'Setting', path: '/admin/ai' };
 
 const BY_ROLE = {
   admin: [
@@ -221,7 +222,10 @@ const BY_ROLE = {
 const modules = computed(() => {
   const base = BY_ROLE[auth.primaryRole] || BY_ROLE.student;
   // AI 助手置顶：能力不可用（未配置/被关闭）时整卡不出现，避免点进去看到空页面
-  return ai.chatOn ? [AI_CARD, ...base] : base;
+  const head = [];
+  if (ai.chatOn) head.push(AI_CARD);
+  if (ai.features.adminConsole && auth.hasRole(['admin'])) head.push(AI_CONSOLE_CARD);
+  return [...head, ...base];
 });
 
 function onOpen(m) {
