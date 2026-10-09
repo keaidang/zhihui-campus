@@ -10,7 +10,11 @@ import { query, withTransaction } from './db.js';
 const ACCESS_TTL_SEC = 2 * 60 * 60;      // 2h
 const REFRESH_TTL_SEC = 7 * 24 * 60 * 60; // 7d
 
-function jwtSecret() {
+/**
+ * JWT 密钥（导出供 lib/ai-actions.js 签/验"操作确认令牌"复用同一密钥。
+ * 不要另起一个密钥：多一个密钥就多一处轮换漏掉的风险）
+ */
+export function jwtSecret() {
   const s = process.env.JWT_SECRET;
   if (!s || s.length < 16) throw new Error('JWT_SECRET 未配置或过弱');
   return s;

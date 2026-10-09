@@ -29,6 +29,22 @@ export function fetchAiStatus() {
 }
 
 /**
+ * C5 第一阶段：把一句话交给后端解析。
+ * 返回 `{ kind:'none'|'read'|'write', ... }`：
+ *   · none  → reply 是一句正常回答（可直接当助手消息展示）
+ *   · read  → rows/summary 是查询结果
+ *   · write → preview + confirmToken（**此时一行数据都没改**，需用户点确认）
+ */
+export function runAiAction(text) {
+  return api('/api/ai/action', { method: 'POST', body: { text } });
+}
+
+/** C5 第二阶段：带确认令牌真正执行 */
+export function confirmAiAction(confirmToken) {
+  return api('/api/ai/action', { method: 'POST', body: { confirmToken } });
+}
+
+/**
  * 解析一个 SSE 事件块（`event: x\ndata: {...}`，data 可多行）
  * @returns {{type:string, data:any}|null}
  */

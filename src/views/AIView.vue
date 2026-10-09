@@ -28,10 +28,60 @@
       <div ref="scroller" class="ai-chat">
         <div v-for="m in msgs" :key="m.id" class="ai-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ai-ava">AI</div>
-          <div class="ai-bubble" :class="{ 'is-error': m.error }">
+          <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' }">
             <div v-if="m.pending && !m.content" class="ai-typing"><i /><i /><i /></div>
+
+            <!-- C5 写操作：影响清单 + 二次确认（点确认前一行数据都没改） -->
+            <template v-else-if="m.kind === 'write' && m.preview">
+              <p class="ai-op-head">
+                <b>{{ m.label }}</b> · 将影响 <b class="ai-op-num">{{ m.preview.count }}</b> 项
+                <span class="ai-op-tip">（确认后才会真正执行）</span>
+              </p>
+              <ul class="ai-op-list">
+                <li v-for="it in m.preview.items" :key="it.id">{{ it.label }}</li>
+              </ul>
+              <p v-if="m.preview.truncated" class="ai-op-more">仅列出前 50 项，其余会一并处理</p>
+              <ul v-if="m.preview.warnings && m.preview.warnings.length" class="ai-op-warn">
+                <li v-for="(w, i) in m.preview.warnings" :key="i">{{ w }}</li>
+              </ul>
+              <ul v-if="m.preview.skipped && m.preview.skipped.length" class="ai-op-skip">
+                <li v-for="(s, i) in m.preview.skipped" :key="i">跳过 {{ s.label }}：{{ s.reason }}</li>
+              </ul>
+              <div class="ai-op-btns">
+                <el-button size="small" round :disabled="m.opState === 'done'" @click="cancelOp(m)">取消</el-button>
+                <el-button
+                  size="small"
+                  round
+                  type="primary"
+                  :loading="m.opState === 'running'"
+                  :disabled="m.opState === 'done'"
+                  @click="confirmOp(m)"
+                >
+                  确认执行
+                </el-button>
+              </div>
+            </template>
+
+            <!-- C5 只读查询：结果表 -->
+            <template v-else-if="m.kind === 'read'">
+              <p class="ai-text">{{ m.summary || '查询完成' }}</p>
+              <div v-if="m.rows && m.rows.length" class="ai-table-wrap">
+                <table class="ai-table">
+                  <thead>
+                    <tr><th v-for="k in Object.keys(m.rows[0])" :key="k">{{ k }}</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(r, i) in m.rows" :key="i">
+                      <td v-for="k in Object.keys(m.rows[0])" :key="k">{{ r[k] }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+
             <!-- 模型输出经 escape 后再注入有限标签，见 renderLite -->
             <div v-else class="ai-text" v-html="renderLite(m.content)" />
+
             <span v-if="m.streaming && m.content" class="ai-caret" />
             <div v-if="m.sources && m.sources.length" class="ai-src">
               <span class="ai-src-label">参考</span>
@@ -58,7 +108,7 @@
           :autosize="{ minRows: 1, maxRows: 5 }"
           resize="none"
           maxlength="500"
-          placeholder="问点校园里的问题，例如「怎么选课」「请假要谁批」"
+          :placeholder="canRunActions ? '可以直接下指令，例如「查看所有待审批的请假」「禁用账号 student01」' : '问点校园里的问题，例如「怎么选课」「请假要谁批」'"
           @keydown="onKeydown"
         />
         <div class="ai-actions">
@@ -81,18 +131,29 @@
 //     不命中时 api/ai.js 会自动走"整段返回 + 一次性渲染"，前端代码无需分支
 //   · 同一套页面按角色换主色（--ai-accent），**不按角色复制页面**
 //   · 失败不报错：把服务端的友好文案当成一条助手消息渲染，页面其他功能照常
-import { nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-vue';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
-import { streamChat } from '../api/ai';
+import { streamChat, runAiAction, confirmAiAction } from '../api/ai';
 import { useIsMobile } from '../utils/device';
 
 const auth = useAuthStore();
 const ai = useAiStore();
 const isMobile = useIsMobile();
+
+/**
+ * 走 C5「对话式执行」还是 C1「知识问答」？
+ * 有可执行动作的角色（管理员/辅导员/教师）走 /api/ai/action —— 它是**一条链路两用**：
+ * 解析出动作就预览/执行，解析不出就用同一份知识库把问题答掉，不会多花一次调用。
+ * 学生与校领导没有动作，直接走问答链路（省一次解析开销）。
+ */
+const useActionPath = () => (ai.status?.actions?.length || 0) > 0;
+
+/** 模板里用它切换输入框提示语（有可执行动作的角色提示"可以直接下指令"） */
+const canRunActions = computed(() => (ai.status?.actions?.length || 0) > 0);
 
 let seq = 0;
 const nextId = () => ++seq;
@@ -154,9 +215,59 @@ async function send() {
   await nextTick();
   scrollToBottom();
 
+  if (useActionPath()) {
+    await sendViaAction(q, reply);
+  } else {
+    await sendViaChat(q, history, reply);
+  }
+
+  reply.pending = false;
+  reply.streaming = false;
+  busy.value = false;
+  controller = null;
+  scrollToBottom();
+}
+
+/** C5：一条结构化链路（可执行 / 可查询 / 纯回答） */
+async function sendViaAction(text, reply) {
+  const res = await runAiAction(text);
+  reply.pending = false;
+
+  if (res.code !== 0) {
+    reply.content = res.message || '操作解析失败，请稍后再试';
+    reply.error = true;
+    if (res.code === 40103) ElMessage.warning(res.message);
+    return;
+  }
+  const d = res.data || {};
+  reply.kind = d.kind;
+  reply.opLabel = d.intent?.label || '';
+  reply.label = d.intent?.label || '';
+  reply.sources = d.sources || [];
+
+  if (d.kind === 'read') {
+    reply.summary = d.summary || '';
+    reply.rows = d.rows || [];
+    // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
+    reply.content = `${d.intent?.label || ''} ${d.summary || ''}`.trim();
+  } else if (d.kind === 'write') {
+    reply.preview = d.preview;
+    reply.confirmToken = d.confirmToken;
+    reply.opState = 'idle';
+    reply.label = d.intent?.label || '';
+  } else {
+    reply.content = d.reply || '';
+    if (!reply.content) {
+      reply.content = '我没理解这是一条系统管理指令。可以说得更具体些，例如"禁用账号 student01"。';
+    }
+  }
+}
+
+/** C1：流式知识问答 */
+async function sendViaChat(question, history, reply) {
   controller = new AbortController();
   const res = await streamChat({
-    question: q,
+    question,
     history,
     signal: controller.signal,
     handlers: {
@@ -197,9 +308,35 @@ async function send() {
       if (res.code === 40103) ElMessage.warning(res.message);
     }
   }
-  busy.value = false;
-  controller = null;
+}
+
+/** C5 第二步：用户点"确认执行" */
+async function confirmOp(m) {
+  if (!m.confirmToken || m.opState === 'running') return;
+  m.opState = 'running';
+  const res = await confirmAiAction(m.confirmToken);
+  m.opState = 'done';
+  if (res.code === 0) {
+    const d = res.data?.result || {};
+    m.content = [d.message, ...(d.affected || []).map((x) => `· ${x}`)].join('\n');
+    m.preview = null; // 收起确认卡，换成执行结果
+    m.kind = 'none';
+    ElMessage.success(d.message || '已执行');
+  } else {
+    m.content = res.message || '执行失败';
+    m.error = true;
+    m.preview = null;
+    m.kind = 'none';
+  }
   scrollToBottom();
+}
+
+/** C5 取消：什么都不做，只是收起确认卡（此时服务端从未执行） */
+function cancelOp(m) {
+  m.opState = 'done';
+  m.preview = null;
+  m.kind = 'none';
+  m.content = '已取消，未执行任何操作。';
 }
 
 function stop() {
@@ -313,6 +450,8 @@ onMounted(async () => {
   color: var(--zc-text);
 }
 .ai-bubble.is-error { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
+/* 查询结果表/确认清单需要更宽，否则列被压成竖排 */
+.ai-bubble.is-wide { max-width: min(94%, 860px); }
 .ai-text :deep(strong) { color: var(--zc-navy); }
 .ai-text :deep(code) {
   padding: 1px 5px;
@@ -336,6 +475,45 @@ onMounted(async () => {
   animation: ai-blink 1s steps(2, start) infinite;
 }
 @keyframes ai-blink { to { visibility: hidden; } }
+
+/* ---------- C5 操作卡（查询结果 / 确认执行） ---------- */
+.ai-op-head { margin: 0 0 8px; font-size: 13.5px; }
+.ai-op-num { color: var(--ai-accent); font-size: 15px; }
+.ai-op-tip { color: var(--zc-text-sub); font-size: 12px; }
+.ai-op-list {
+  margin: 0 0 8px;
+  padding: 8px 10px 8px 26px;
+  max-height: 190px;
+  overflow-y: auto;
+  list-style: disc;
+  background: #fff;
+  border: 1px solid var(--zc-border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.ai-op-more { margin: 0 0 6px; font-size: 12px; color: var(--zc-text-sub); }
+.ai-op-warn, .ai-op-skip {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.ai-op-warn { color: #9a6a00; }
+.ai-op-skip { color: var(--zc-text-sub); }
+.ai-op-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.ai-op-btns :deep(.el-button--primary) { background: var(--ai-accent); border-color: var(--ai-accent); }
+
+.ai-table-wrap { max-width: 100%; overflow-x: auto; border-radius: 8px; border: 1px solid var(--zc-border); background: #fff; }
+.ai-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.ai-table th, .ai-table td {
+  padding: 7px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--zc-border);
+}
+.ai-table th { background: #f6f8fb; color: var(--zc-navy); font-weight: 600; }
+.ai-table tbody tr:last-child td { border-bottom: none; }
 
 /* 等待首字：三点呼吸 */
 .ai-typing { display: flex; gap: 5px; padding: 3px 0; }

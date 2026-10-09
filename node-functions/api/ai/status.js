@@ -8,6 +8,7 @@ import { requireRoles } from '../../lib/guard.js';
 import { aiConfigured, aiMeta } from '../../lib/ai.js';
 import { allConfig, getBool } from '../../lib/ai-config.js';
 import { VARIANT_META, featureCatalog, resolveFeatures, suggestionsFor, variantOf } from '../../lib/ai-variant.js';
+import { actionCatalog } from '../../lib/ai-actions.js';
 
 export { preflight as onRequestOptions };
 
@@ -34,6 +35,8 @@ export async function onRequestGet(context) {
       variantDesc: VARIANT_META[variant].desc,
       features,
       catalog: featureCatalog(roles, features),
+      // C5：该角色可用的系统操作白名单（前端据此渲染"能力清单"；无权限时为空数组）
+      actions: features.adminAction ? actionCatalog({ userId: 0, roles }) : [],
       suggestions: features.chat ? suggestionsFor(variant) : [],
       // degraded：入口可展示但没有可用能力时的说明（前端顶部横幅用）
       degraded: !configured || !enabled,
