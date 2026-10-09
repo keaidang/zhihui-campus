@@ -13,6 +13,7 @@ import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/ht
 import { requireRoles, opLog, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
 import { notify } from '../../lib/notify.js';
+import { formatTriage, parseTriage, triageRepair } from '../../lib/ai-triage.js';
 
 export { preflight as onRequestOptions };
 
@@ -48,7 +49,7 @@ export async function onRequestGet(context) {
 
     const rows = await query(
       `SELECT r.id, r.location, r.category, r.description, r.contact, r.status, r.remark,
-              r.created_at, r.updated_at, u.real_name, u.username,
+              r.created_at, r.updated_at, r.ai_triage, u.real_name, u.username,
               h.real_name AS handler_name
          FROM af_repair r
          JOIN sys_user u ON u.id = r.user_id
@@ -58,7 +59,14 @@ export async function onRequestGet(context) {
         LIMIT 100`,
       params,
     );
-    return ok({ list: rows.map((r) => ({ ...r, status_text: STATUS[r.status] })) });
+    return ok({
+      list: rows.map((r) => ({
+        ...r,
+        status_text: STATUS[r.status],
+        // C8：把分诊文本解析成结构（前端好渲染），解析不出来则原样给 raw
+        triage: parseTriage(r.ai_triage),
+      })),
+    });
   } catch (e) {
     return jsonError(e);
   }
@@ -78,11 +86,23 @@ export async function onRequestPost(context) {
       const category = CATEGORY.includes(body.category) ? body.category : '其他';
       if (!location) return fail(44001, '请填写报修位置');
       if (!description) return fail(44001, '请描述故障情况');
+
+      // C8 智能分诊（可关；**超时/失败一律返回 null 并放行**——绝不能让 AI 拖住报修通道）
+      const triage = await triageRepair({ description, location, category });
+
       const r = await query(
-        'INSERT INTO af_repair (user_id, location, category, description, contact) VALUES (?, ?, ?, ?, ?)',
-        [userId, location, category, description, contact],
+        'INSERT INTO af_repair (user_id, location, category, description, contact, ai_triage) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, location, category, description, contact, formatTriage(triage)],
       );
-      return ok({ id: r.insertId }, '报修已提交，后勤会尽快受理');
+      return ok(
+        {
+          id: r.insertId,
+          triage: triage && !triage.degraded
+            ? { dept: triage.dept, urgency: triage.urgency, urgencyLabel: triage.urgencyLabel, selfService: triage.selfService, suggestion: triage.suggestion }
+            : null,
+        },
+        triage?.selfService && triage?.suggestion ? `报修已提交，后勤会尽快受理。提示：${triage.suggestion}` : '报修已提交，后勤会尽快受理',
+      );
     }
 
     // 受理 / 完成 / 无法处理：辅导员或超管（状态机流转，定义见文件头 FLOW）

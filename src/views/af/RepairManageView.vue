@@ -21,6 +21,19 @@
         <el-table-column prop="location" label="位置" min-width="130" show-overflow-tooltip />
         <el-table-column prop="category" label="类型" width="80" align="center" />
         <el-table-column prop="description" label="描述" min-width="170" show-overflow-tooltip />
+        <!-- C8 AI 分诊：紧急度 + 责任部门 + 给学生的一句话（未开启时显示 —，不占视觉重量） -->
+        <el-table-column label="AI 分诊" min-width="190">
+          <template #default="{ row }">
+            <template v-if="row.triage && row.triage.dept">
+              <el-tag :type="urgencyTag(row.triage.urgencyLabel)" size="small" effect="plain" round>
+                {{ row.triage.urgencyLabel }}
+              </el-tag>
+              <span class="tri-dept">{{ row.triage.dept }}</span>
+              <p v-if="row.triage.suggestion" class="tri-sug">{{ row.triage.suggestion }}</p>
+            </template>
+            <span v-else class="small muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="contact" label="电话" width="120" />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
@@ -80,6 +93,8 @@ const saving = ref(false);
 // 工单状态机文案（与后端 af/repair.js 的 FLOW 对齐：「无法处理」为终态，需填原因）
 const DLG_TITLE = { accept: '受理工单', finish: '完成工单', reject: '标记无法处理' };
 const tagType = (s) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'danger' }[s] || 'info');
+// C8 分诊紧急度的标签配色（后端给的是中文标签，这里做展示映射）
+const urgencyTag = (label) => ({ 紧急: 'danger', 较急: 'warning', 一般: 'info', 不急: 'success' }[label] || 'info');
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
 import { fmtTime as fmt } from '../../utils/time';
 
@@ -141,6 +156,9 @@ onMounted(load);
 .pg-head h2 { margin: 0 0 6px; font-size: 19px; color: var(--zc-navy); letter-spacing: 1px; }
 .pg-head p { margin: 0; font-size: 13px; color: var(--zc-text-sub); }
 .small { font-size: 12.5px; }
+/* C8 分诊展示 */
+.tri-dept { margin-left: 6px; font-size: 12.5px; color: var(--zc-navy); }
+.tri-sug { margin: 3px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--zc-text-sub); }
 .muted { color: var(--zc-text-sub); }
 .dlg-sub { margin: 0 0 12px; font-size: 13px; color: var(--zc-text-sub); }
 </style>

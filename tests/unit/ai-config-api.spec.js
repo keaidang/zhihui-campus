@@ -13,7 +13,7 @@ describe('AI 配置类型表', () => {
       'ai.enabled', 'ai.chat.enabled', 'ai.forum_review.enabled', 'ai.forum_review.block_on_violation',
       'ai.alert.enabled', 'ai.approval_advice.enabled', 'ai.admin_console.enabled', 'ai.insight.enabled',
       'ai.study.enabled', 'ai.triage.enabled', 'ai.notice_summary.enabled', 'ai.lf_match.enabled',
-      'ai.anomaly.enabled', 'ai.lib_search.enabled',
+      'ai.anomaly.enabled', 'ai.anomaly.explain', 'ai.lib_search.enabled',
     ];
     for (const k of bools) {
       expect(LABELS[k], k).toBeTruthy();
@@ -25,6 +25,7 @@ describe('AI 配置类型表', () => {
     for (const k of [
       'ai.chat.rate_per_min', 'ai.chat.daily_per_user', 'ai.forum_review.timeout_ms',
       'ai.alert.dedupe_min', 'ai.approval_advice.timeout_ms', 'ai.kb.inline_max_chars', 'ai.kb.top_k',
+      'ai.triage.timeout_ms', 'ai.lf_match.timeout_ms',
     ]) {
       expect(LABELS[k]?.type, k).toBe('number');
     }
@@ -34,9 +35,9 @@ describe('AI 配置类型表', () => {
     expect(LABELS['ai.alert.emails'].type).toBe('text');
   });
 
-  it('★ 22 项配置全部登记且都有中文说明（漏登记会被接口拒绝写入）', () => {
+  it('★ 25 项配置全部登记且都有中文说明（漏登记会被接口拒绝写入）', () => {
     const keys = Object.keys(LABELS);
-    expect(keys.length).toBe(22);
+    expect(keys.length).toBe(25);
     for (const k of keys) {
       expect(k.startsWith('ai.'), k).toBe(true);
       expect(LABELS[k].label, `${k} 缺中文说明`).toBeTruthy();

@@ -6,6 +6,8 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog, ERR_FORBIDDEN } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
+import { notify } from '../../lib/notify.js';
+import { findSimilarItems } from '../../lib/ai-lf-match.js';
 
 export { preflight as onRequestOptions };
 
@@ -86,7 +88,37 @@ export async function onRequestPost(context) {
         [title, description, JSON.stringify(images), contact, userId],
       );
       await opLog(userId, 'lf.create', `lf:${r.insertId}`, title, ip);
-      return ok({ id: r.insertId }, '失物招领已发布');
+
+      // C10 智能匹配：与已有条目比对，命中则**双向**提示（开关关闭时该函数立刻返回 []）
+      // ★ 用 catch 兜底：匹配失败绝不能让"发布"失败
+      const matches = await findSimilarItems({
+        title,
+        description,
+        excludeId: r.insertId,
+        userId,
+      }).catch(() => []);
+
+      if (matches.length) {
+        const top = matches[0];
+        await notify(
+          userId,
+          '可能与已有失物招领重复',
+          `你刚发布的「${title}」与已有条目「${top.title}」（相似度 ${Math.round(top.score * 100)}%，${top.reason}）可能是同一物品。若确为同一件，可在列表中下架本条，避免重复。`,
+          { senderId: userId, biz: 'lf' },
+        );
+        // 双向：也提醒原条目发布者（可能是同一位学工处老师，站内信会自动去重展示）
+        if (top.publisherId && top.publisherId !== userId) {
+          await notify(
+            top.publisherId,
+            '失物招领可能有新线索',
+            `新发布的「${title}」与你的条目「${top.title}」相似（${Math.round(top.score * 100)}%，${top.reason}），可能为同一物品，建议核对。`,
+            { senderId: userId, biz: 'lf' },
+          );
+        }
+        await opLog(userId, 'lf.match', `lf:${r.insertId}`, `matched=${matches.map((m) => m.id).join(',')}`, ip);
+      }
+
+      return ok({ id: r.insertId, matches }, matches.length ? `已发布。发现 ${matches.length} 条相似条目，请到列表中核对。` : '失物招领已发布');
     }
 
     if (action === 'close') {

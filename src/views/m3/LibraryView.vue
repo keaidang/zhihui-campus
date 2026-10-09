@@ -24,6 +24,19 @@
           </el-select>
           <el-button type="primary" @click="load(1)">搜索</el-button>
         </div>
+
+        <!-- C12 自然语言找书：不记得书名也能找到（AI 只负责把口语转成检索条件） -->
+        <div v-if="libSearchOn" class="lib-nl">
+          <el-input
+            v-model="nlQuery"
+            placeholder="也可以直接用大白话说，例如「我想找本讲数据结构的入门书」"
+            clearable
+            @keyup.enter="nlFind"
+          />
+          <el-button :loading="nlLoading" :disabled="!nlQuery.trim()" @click="nlFind">AI 找书</el-button>
+        </div>
+        <p v-if="nlNote" class="lib-nl-note">{{ nlNote }}</p>
+
         <div v-if="loading" class="lib-loading" v-loading="true" element-loading-text="检索中…" style="min-height: 220px"></div>
         <template v-else>
           <p v-if="books.length === 0" class="lib-empty">没有找到相关藏书</p>
@@ -185,10 +198,41 @@ import { ElMessage } from 'element-plus';
 import PortalShell from '../../components/PortalShell.vue';
 import ImgUploader from '../../components/ImgUploader.vue';
 import { useAuthStore } from '../../stores/auth';
+import { useAiStore } from '../../stores/ai';
+import { runLibSearch } from '../../api/ai';
 import { api } from '../../api/request';
 
 const auth = useAuthStore();
+const ai = useAiStore();
 const CATEGORIES = ['计算机', 'AI', '金融', '文学', '历史', '科学', '艺术', '教育', '综合'];
+
+// ---------------- C12 自然语言找书 ----------------
+const libSearchOn = computed(() => Boolean(ai.features.libSearch));
+const nlQuery = ref('');
+const nlLoading = ref(false);
+const nlNote = ref('');
+
+async function nlFind() {
+  const q = nlQuery.value.trim();
+  if (!q) return;
+  nlLoading.value = true;
+  nlNote.value = '';
+  try {
+    const res = await runLibSearch(q);
+    if (res.code === 0) {
+      books.value = res.data.books || [];
+      total.value = books.value.length; // 自然语言检索不分页，结果一次给全
+      nlNote.value = res.data.degraded
+        ? `${res.data.note || ''}（AI 暂时不可用，已退化为关键词检索）`
+        : res.data.note || '';
+      if (!books.value.length) ElMessage.info('没有找到匹配的书，换个说法试试');
+    } else {
+      ElMessage.warning(res.message || 'AI 找书暂时不可用');
+    }
+  } finally {
+    nlLoading.value = false;
+  }
+}
 
 const tab = ref('search');
 const loading = ref(false);
@@ -371,6 +415,8 @@ function exportTemplate() {
 onMounted(() => {
   load(1);
   loadLoans();
+  // C12：能力清单（决定"AI 找书"输入框是否出现）；store 内按用户缓存，切页不会重复请求
+  ai.load(auth.user?.id ?? null);
 });
 </script>
 
@@ -387,6 +433,10 @@ onMounted(() => {
   padding: 18px;
 }
 .lib-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* C12 自然语言找书 */
+.lib-nl { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.lib-nl :deep(.el-input) { max-width: 460px; }
+.lib-nl-note { margin: 8px 0 0; font-size: 12.5px; color: var(--zc-text-sub); }
 .lib-hint { font-size: 12px; color: var(--zc-text-sub); margin: 10px 0 0; line-height: 1.6; }
 .lib-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
 .lib-card {

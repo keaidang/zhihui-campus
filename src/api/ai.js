@@ -44,6 +44,16 @@ export function runAiInsight(text) {
   return api('/api/ai/insight', { method: 'POST', body: { text } });
 }
 
+/** C12 图书自然语言检索："我想找本讲数据结构的入门书" → 结构化书目 */
+export function runLibSearch(question) {
+  return api('/api/ai/lib-search', { method: 'POST', body: { question } });
+}
+
+/** C11 数据异常监测（仅超管）：扫描，notify=true 时同时发告警邮件 */
+export function runAnomalyScan(notify = true) {
+  return api('/api/ai/anomaly', { method: 'POST', body: { notify } });
+}
+
 /** C5 第二阶段：带确认令牌真正执行 */
 export function confirmAiAction(confirmToken) {
   return api('/api/ai/action', { method: 'POST', body: { confirmToken } });
@@ -70,26 +80,20 @@ export function parseSseBlock(block) {
 }
 
 /**
- * 流式问答（C1）
- * @param {object} o
- * @param {string} o.question
- * @param {Array<{role:string,content:string}>} [o.history]
- * @param {AbortSignal} [o.signal]
- * @param {{onMeta?:Function,onDelta?:Function,onDone?:Function,onError?:Function}} [o.handlers]
- * @returns {Promise<{ok:boolean, code?:number, message?:string}>}
- *   ok:false 表示"根本没开始生成"（未登录/限流/未配置/上游失败），调用方把 message
- *   当作一条助手消息展示即可 —— 不要让整页报错（ADR-9：AI 挂了业务照常）。
+ * 流式请求的通用实现（C1 问答与 C7 学业助手共用；两者协议完全一致：
+ * `meta` → `delta`* → `done`，失败则返回普通 JSON）。抽出来是为了避免两处各写一遍
+ * 401 续期与分包解析 —— 那是最容易改漏一处的地方。
  */
-export async function streamChat({ question, history = [], signal, handlers = {} } = {}) {
+async function streamSse(path, payload, { signal, handlers = {} } = {}) {
   const auth = useAuthStore();
   const send = (token) =>
-    fetch('/api/ai/chat', {
+    fetch(path, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify(payload),
       signal,
     });
 
@@ -144,4 +148,29 @@ export async function streamChat({ question, history = [], signal, handlers = {}
     if (e?.name === 'AbortError') return { ok: false, aborted: true };
     return { ok: false, code: -1, message: '网络异常，智能问答暂时不可用' };
   }
+}
+
+/**
+ * 流式问答（C1）
+ * @param {object} o
+ * @param {string} o.question
+ * @param {Array<{role:string,content:string}>} [o.history]
+ * @param {AbortSignal} [o.signal]
+ * @param {{onMeta?:Function,onDelta?:Function,onDone?:Function,onError?:Function}} [o.handlers]
+ * @returns {Promise<{ok:boolean, code?:number, message?:string}>}
+ *   ok:false 表示"根本没开始生成"（未登录/限流/未配置/上游失败），调用方把 message
+ *   当作一条助手消息展示即可 —— 不要让整页报错（ADR-9：AI 挂了业务照常）。
+ */
+export function streamChat({ question, history = [], signal, handlers = {} } = {}) {
+  return streamSse('/api/ai/chat', { question, history }, { signal, handlers });
+}
+
+/** C7 学业助手：协议与 C1 完全相同，只是 system prompt 里注入了本人成绩/课表事实 */
+export function streamStudy({ question, history = [], signal, handlers = {} } = {}) {
+  return streamSse('/api/ai/study', { question, history }, { signal, handlers });
+}
+
+/** C7 学业概览（不耗 AI token：纯 SQL 汇总，口径与成绩页面一致） */
+export function fetchStudyOverview() {
+  return api('/api/ai/study');
 }

@@ -5,6 +5,10 @@
 import { HttpError, opLog } from '../guard.js';
 import { query } from '../db.js';
 import { auditDetail, hasRole, isAdmin } from './_actor.js';
+// C9 公告摘要（AI）。服务层引用 AI 的安全前提：ai-summary 内部**先查开关**，
+//   关闭时立刻返回 null（不发请求）；且这里用 `.catch(() => null)` 兜底 →
+//   公告发布**永不因 AI 失败而失败**。这是"AI 可关、业务照常"的具体落实。
+import { summarizeNotice } from '../ai-summary.js';
 
 const STAFF = ['admin', 'counselor', 'teacher', 'leader'];
 const PAGE_MAX = 50;
@@ -29,7 +33,7 @@ export async function listNotices(actor, { page = 1, pageSize = 10 } = {}) {
 
   const [[{ total }]] = [await query(`SELECT COUNT(*) AS total FROM af_notice n WHERE ${where.join(' AND ')}`, params)];
   const rows = await query(
-    `SELECT n.id, n.title, n.content, n.pinned, n.created_at, n.dept_id,
+    `SELECT n.id, n.title, n.content, n.summary, n.pinned, n.created_at, n.dept_id,
             d.name AS dept_name, COALESCE(u.real_name, '系统管理员') AS publisher_name
        FROM af_notice n
        LEFT JOIN sys_department d ON d.id = n.dept_id
@@ -62,15 +66,36 @@ export async function publishNotice(actor, body = {}) {
   }
   const pinned = admin && Number(body.pinned) === 1 ? 1 : 0;
 
-  const r = await query('INSERT INTO af_notice (title, content, publisher_id, dept_id, pinned) VALUES (?, ?, ?, ?, ?)', [
-    title,
-    content,
+  // C9 公告摘要：开关关闭时 summarizeNotice 内部立刻返回 null（**不发请求、零开销**），
+  //   失败也不抛错 → 公告照常发布，只是列表页没有摘要。AI 不参与"发不发"的决策。
+  const summary = (await summarizeNotice({ title, content }).catch(() => null)) || '';
+
+  const r = await query(
+    'INSERT INTO af_notice (title, content, summary, publisher_id, dept_id, pinned) VALUES (?, ?, ?, ?, ?, ?)',
+    [title, content, summary, actor.userId, targetDept, pinned],
+  );
+  await opLog(
     actor.userId,
-    targetDept,
-    pinned,
-  ]);
-  await opLog(actor.userId, 'notice.publish', `notice:${r.insertId}`, auditDetail(actor, title), actor.ip);
-  return { data: { id: r.insertId }, message: '公告已发布' };
+    'notice.publish',
+    `notice:${r.insertId}`,
+    auditDetail(actor, summary ? `${title} [AI摘要]` : title),
+    actor.ip,
+  );
+  return { data: { id: r.insertId, summary }, message: '公告已发布' };
+}
+
+/**
+ * 给已有公告补摘要（C9；管理员在控制台/公告页手动触发）
+ * @returns {Promise<{data:{id:number, summary:string}, message:string}>}
+ */
+export async function regenNoticeSummary(actor, id) {
+  const n = await loadNoticeForWrite(actor, id);
+  const rows = await query('SELECT title, content FROM af_notice WHERE id = ?', [n.id]);
+  const summary = await summarizeNotice({ title: rows[0]?.title, content: rows[0]?.content });
+  if (!summary) throw new HttpError(49430, '未能生成摘要（AI 摘要开关未开启，或 AI 服务暂时不可用）', 503);
+  await query('UPDATE af_notice SET summary = ? WHERE id = ?', [summary, n.id]);
+  await opLog(actor.userId, 'notice.summary', `notice:${n.id}`, auditDetail(actor, summary), actor.ip);
+  return { data: { id: n.id, summary }, message: '摘要已生成' };
 }
 
 /**
@@ -118,5 +143,6 @@ export async function handleNoticeAction(actor, body = {}) {
   if (action === 'publish') return publishNotice(actor, body);
   if (action === 'revoke') return revokeNotice(actor, body.id);
   if (action === 'pin') return setNoticePinned(actor, body.id);
+  if (action === 'summary') return regenNoticeSummary(actor, body.id); // C9 补摘要
   throw new HttpError(45001, '不支持的操作');
 }

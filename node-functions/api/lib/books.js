@@ -8,10 +8,11 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { requireRoles, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
+// 分类白名单与归一化统一来自 lib/book-meta.js（C12 自然语言检索用同一份，避免漂移）
+import { LIB_CATEGORIES as CATEGORIES, normalizeCategory } from '../../lib/book-meta.js';
 
 export { preflight as onRequestOptions };
 
-const CATEGORIES = ['计算机', 'AI', '金融', '文学', '历史', '科学', '艺术', '教育', '综合'];
 const STR = (v, n) => String(v ?? '').trim().slice(0, n);
 
 function normalizeBook(b) {
@@ -20,7 +21,7 @@ function normalizeBook(b) {
     author: STR(b.author, 64),
     isbn: STR(b.isbn, 20),
     publisher: STR(b.publisher, 64),
-    category: CATEGORIES.includes(b.category) ? b.category : '综合',
+    category: normalizeCategory(b.category),
     coverUrl: STR(b.coverUrl || b.cover_url, 256),
     location: STR(b.location, 64),
     copies: Math.max(1, Math.min(99, Number(b.copies ?? b.total_copies ?? 1) || 1)),

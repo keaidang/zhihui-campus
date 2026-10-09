@@ -4,18 +4,11 @@
 import { ok, fail, jsonError, readBody, preflight } from '../../lib/http.js';
 import { requireRoles, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
 import { query } from '../../lib/db.js';
+// 学级/绩点/学分口径统一来自 lib/edu-stats.js（C7 学业助手用同一份，避免同一系统两个答案）
+import { CURRENT_TERM as TERM, gradeOf, summarizeStudies } from '../../lib/edu-stats.js';
 
 export { preflight as onRequestOptions };
-
-const TERM = '2026-2027-1';
-
-export function gradeOf(score) {
-  if (score >= 90) return '优秀';
-  if (score >= 80) return '良好';
-  if (score >= 70) return '中等';
-  if (score >= 60) return '及格';
-  return '不及格';
-}
+export { gradeOf };
 
 export async function onRequestGet(context) {
   try {
@@ -34,22 +27,16 @@ export async function onRequestGet(context) {
           ORDER BY c.code`,
         [userId, TERM],
       );
-      const graded = rows.filter((r) => r.status === 2 && r.score !== null);
-      const credits = graded.reduce((s, r) => s + Number(r.credit), 0);
-      const earned = graded.filter((r) => Number(r.score) >= 60).reduce((s, r) => s + Number(r.credit), 0);
-      const gpa =
-        credits > 0
-          ? graded
-              .filter((r) => Number(r.score) >= 60)
-              .reduce((s, r) => {
-                const sc = Number(r.score);
-                const gp = sc >= 90 ? 4.0 : sc >= 80 ? 3.0 : sc >= 70 ? 2.0 : 1.0;
-                return s + (gp * Number(r.credit));
-              }, 0) / earned
-          : 0;
+      const s = summarizeStudies(rows);
       return ok({
         list: rows,
-        summary: { courseCount: graded.length, creditsEarned: earned, creditsTotal: credits, gpa: Math.round(gpa * 100) / 100 },
+        // 字段名沿用改造前的响应形状（前端与 e2e 都按这些键取值）
+        summary: {
+          courseCount: s.gradedCount,
+          creditsEarned: s.creditsEarned,
+          creditsTotal: s.creditsAttempted,
+          gpa: s.gpa,
+        },
       });
     }
 

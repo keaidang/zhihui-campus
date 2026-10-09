@@ -113,9 +113,12 @@ INSERT IGNORE INTO sys_config (cfg_key, cfg_value, remark) VALUES
   ('ai.insight.enabled',                  '1',    'C6 校领导信息汇总问数'),
   ('ai.study.enabled',                    '1',    'C7 学生学业助手'),
   ('ai.triage.enabled',                   '0',    'C8 报修智能分诊'),
+  ('ai.triage.timeout_ms',                '3000', 'C8 分诊超时（超时 = 不做分诊，工单照常创建）'),
   ('ai.notice_summary.enabled',           '0',    'C9 公告 AI 摘要'),
   ('ai.lf_match.enabled',                 '0',    'C10 失物招领智能匹配'),
+  ('ai.lf_match.timeout_ms',              '8000', 'C10 相似度判定超时（超时 = 不提示匹配）'),
   ('ai.anomaly.enabled',                  '0',    'C11 数据异常监测'),
+  ('ai.anomaly.explain',                  '1',    'C11 用 AI 把异常清单归纳成一段人话（关掉则只发规则明细）'),
   ('ai.lib_search.enabled',               '1',    'C12 图书自然语言检索'),
   ('ai.kb.inline_max_chars',              '4000', '知识库全量注入阈值（超出则走关键词召回 TopK；实测检索比全量注入省 95% token 且命中率 90%+）'),
   ('ai.kb.top_k',                         '5',    '知识库召回条数上限（仅当超出 inline_max_chars 走检索时生效）');

@@ -10,6 +10,21 @@
           </div>
         </div>
         <div class="ai-head-r">
+          <!-- C7：学生可见「校园问答 / 学业助手」切换。两个模式的 system prompt 完全不同
+               （学业模式注入了本人成绩事实），因此切换时**清空对话**——
+               否则历史消息会带着上一模式的语境让模型困惑（见 switchMode） -->
+          <div v-if="modes.length > 1" class="ai-modes">
+            <button
+              v-for="m in modes"
+              :key="m.key"
+              type="button"
+              class="ai-mode"
+              :class="{ on: mode === m.key }"
+              @click="switchMode(m.key)"
+            >
+              {{ m.label }}
+            </button>
+          </div>
           <el-button link :icon="Delete" :disabled="busy || msgs.length <= 1" @click="clearChat">清空对话</el-button>
         </div>
       </header>
@@ -26,6 +41,18 @@
       />
 
       <div ref="scroller" class="ai-chat">
+        <!-- C7 学业档案：数据由服务端按学生本人算好（口径与成绩页面完全一致），
+             不耗 AI token。放在对话最上方，让"AI 说的数字"和"页面上的数字"一眼可见是同一个 -->
+        <div v-if="mode === 'study' && studyOverview" class="ai-profile">
+          <div class="ai-pf-row">
+            <div class="ai-pf-item"><span>已获学分</span><b>{{ studyOverview.creditsEarned }}</b></div>
+            <div class="ai-pf-item"><span>平均绩点</span><b>{{ studyOverview.gpa }}</b></div>
+            <div class="ai-pf-item"><span>不及格</span><b :class="{ warn: studyOverview.failedCount > 0 }">{{ studyOverview.failedCount }} 门</b></div>
+            <div class="ai-pf-item"><span>本学期在修</span><b>{{ studyOverview.inProgressCount }} 门</b></div>
+          </div>
+          <p class="ai-pf-tip">{{ studyOverview.termLabel }} · 以上数据只对你自己可见</p>
+        </div>
+
         <div v-for="m in msgs" :key="m.id" class="ai-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ai-ava">AI</div>
           <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' || m.kind === 'data' }">
@@ -110,11 +137,11 @@
           </div>
         </div>
 
-        <!-- 空态：给候选问题，避免"不知道能问什么" -->
+        <!-- 空态：给候选问题，避免"不知道能问什么"（学业模式给学业问题） -->
         <div v-if="msgs.length <= 1 && !busy" class="ai-start">
-          <p class="ai-start-t">试试这样问</p>
+          <p class="ai-start-t">{{ mode === 'study' ? '学业助手可以回答' : '试试这样问' }}</p>
           <div class="ai-chips">
-            <button v-for="(q, i) in ai.suggestions" :key="i" class="ai-chip" type="button" @click="ask(q)">
+            <button v-for="(q, i) in chips" :key="i" class="ai-chip" type="button" @click="ask(q)">
               {{ q }}
             </button>
           </div>
@@ -128,7 +155,7 @@
           :autosize="{ minRows: 1, maxRows: 5 }"
           resize="none"
           maxlength="500"
-          :placeholder="canRunActions ? '可以直接下指令，例如「查看所有待审批的请假」「禁用账号 student01」' : '问点校园里的问题，例如「怎么选课」「请假要谁批」'"
+          :placeholder="inputPlaceholder"
           @keydown="onKeydown"
         />
         <div class="ai-actions">
@@ -157,12 +184,49 @@ import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
-import { streamChat, runAiAction, runAiInsight, confirmAiAction } from '../api/ai';
+import { streamChat, streamStudy, fetchStudyOverview, runAiAction, runAiInsight, confirmAiAction } from '../api/ai';
 import { useIsMobile } from '../utils/device';
 
 const auth = useAuthStore();
 const ai = useAiStore();
 const isMobile = useIsMobile();
+
+// ---------------- C7 学业助手模式 ----------------
+// 两个模式共用同一个页面与同一条流式通道，差别只在「system prompt 注入了什么」：
+//   校园问答 = 身份 + 平台档案 + 知识库；学业助手 = 身份 + 平台档案 + 知识库 + **本人成绩与课表事实**。
+// 因此切换时必须清空对话（历史消息会带着上一模式的语境，模型容易串味）。
+const mode = ref('chat');
+const studyOn = computed(() => Boolean(ai.features.study));
+const modes = computed(() => (studyOn.value ? [{ key: 'chat', label: '校园问答' }, { key: 'study', label: '学业助手' }] : []));
+const studyOverview = ref(null);
+const studyTopics = ref([]);
+
+const chips = computed(() => (mode.value === 'study' ? studyTopics.value : ai.suggestions));
+
+const inputPlaceholder = computed(() => {
+  if (mode.value === 'study') return '问学业相关的问题，例如「我还差多少学分」「哪些课挂了」';
+  if (canRunActions.value) return '可以直接下指令，例如「查看所有待审批的请假」「禁用账号 student01」';
+  return '问点校园里的问题，例如「怎么选课」「请假要谁批」';
+});
+
+async function loadStudy() {
+  if (studyOverview.value) return;
+  const res = await fetchStudyOverview().catch(() => null);
+  if (res?.code === 0) {
+    studyOverview.value = res.data.overview;
+    studyTopics.value = res.data.topics || [];
+  }
+}
+
+async function switchMode(m) {
+  if (m === mode.value || busy.value) return;
+  mode.value = m;
+  clearChat();
+  if (m === 'study') {
+    await loadStudy();
+    if (!studyOverview.value) ElMessage.warning('学业数据暂时读不到，你仍可以就学业问题提问');
+  }
+}
 
 /**
  * 三条链路的选路（优先级从高到低）：
@@ -184,9 +248,14 @@ const canRunActions = computed(() => (ai.status?.actions?.length || 0) > 0);
 let seq = 0;
 const nextId = () => ++seq;
 
-const WELCOME = '你好，我是「智汇校园」的 AI 校园助手。\n可以问我学校的院系部门、选课退课、请假审批、报修流程、图书借阅、宿舍管理、校园邮箱等各类问题。';
+const WELCOME_CHAT =
+  '你好，我是「智汇校园」的 AI 校园助手。\n可以问我学校的院系部门、选课退课、请假审批、报修流程、图书借阅、宿舍管理、校园邮箱等各类问题。';
+const WELCOME_STUDY =
+  '你好，我是学业助手。我已经读过你的**成绩单**和**本学期课表**，可以直接问我：\n- 我还差多少学分？\n- 哪些课挂了？\n- 我的绩点是多少？\n- 这学期还有哪些课能选？\n\n你的成绩数据只对你自己可见。';
 
-const msgs = ref([{ id: nextId(), role: 'assistant', content: WELCOME, sources: [] }]);
+const welcomeText = () => (mode.value === 'study' ? WELCOME_STUDY : WELCOME_CHAT);
+
+const msgs = ref([{ id: nextId(), role: 'assistant', content: WELCOME_CHAT, sources: [] }]);
 const draft = ref('');
 const busy = ref(false);
 const scroller = ref(null);
@@ -241,10 +310,10 @@ async function send() {
   await nextTick();
   scrollToBottom();
 
-  const route = routeOf();
+  const route = mode.value === 'study' ? 'study' : routeOf();
   if (route === 'action') await sendViaAction(q, reply);
   else if (route === 'insight') await sendViaInsight(q, reply);
-  else await sendViaChat(q, history, reply);
+  else await sendViaStream(route === 'study' ? streamStudy : streamChat, q, history, reply);
 
   reply.pending = false;
   reply.streaming = false;
@@ -322,10 +391,14 @@ async function sendViaInsight(text, reply) {
   }
 }
 
-/** C1：流式知识问答 */
-async function sendViaChat(question, history, reply) {
+/**
+ * C1 / C7 共用的流式渲染（两者的 SSE 协议完全一致：
+ * `meta` → `delta`* → `done`，失败则返回普通 JSON）
+ * @param {Function} streamFn streamChat 或 streamStudy
+ */
+async function sendViaStream(streamFn, question, history, reply) {
   controller = new AbortController();
-  const res = await streamChat({
+  const res = await streamFn({
     question,
     history,
     signal: controller.signal,
@@ -411,7 +484,7 @@ function onKeydown(e) {
 }
 
 function clearChat() {
-  msgs.value = [{ id: nextId(), role: 'assistant', content: WELCOME, sources: [] }];
+  msgs.value = [{ id: nextId(), role: 'assistant', content: welcomeText(), sources: [] }];
 }
 
 onMounted(async () => {
@@ -467,7 +540,39 @@ onMounted(async () => {
   padding: 1px 8px;
 }
 .ai-head p { margin: 0; font-size: 12.5px; color: var(--zc-text-sub); }
+.ai-head-r { display: flex; align-items: center; gap: 12px; }
 .ai-alert { border-radius: 0; }
+
+/* C7 模式切换（校园问答 / 学业助手） */
+.ai-modes { display: flex; gap: 6px; padding: 3px; background: #eef1f6; border-radius: 999px; }
+.ai-mode {
+  padding: 5px 14px;
+  font-size: 12.5px;
+  color: var(--zc-text-sub);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.ai-mode.on { color: #fff; background: var(--ai-accent); font-weight: 600; }
+.ai-mode:not(.on):hover { color: var(--ai-accent); }
+
+/* C7 学业档案卡 */
+.ai-profile {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--zc-border);
+  border-left: 3px solid var(--ai-accent);
+  border-radius: 10px;
+}
+.ai-pf-row { display: flex; flex-wrap: wrap; gap: 10px 26px; }
+.ai-pf-item { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--zc-text-sub); }
+.ai-pf-item b { font-size: 17px; color: var(--zc-navy); letter-spacing: 0.5px; }
+.ai-pf-item b.warn { color: #c0392b; }
+.ai-pf-tip { margin: 8px 0 0; font-size: 11.5px; color: var(--zc-text-sub); }
 
 /* ---------- 对话区 ---------- */
 .ai-chat {

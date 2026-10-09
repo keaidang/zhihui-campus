@@ -69,6 +69,11 @@
               <span class="rp-loc">{{ r.location }}</span>
             </div>
             <p class="rp-desc">{{ r.description }}</p>
+            <!-- C8 分诊结果：让报修人知道"派给谁了、急不急、可以先试什么" -->
+            <p v-if="r.triage && r.triage.dept" class="rp-triage">
+              <span class="rp-tri-tag">{{ r.triage.urgencyLabel }}</span>
+              {{ r.triage.dept }}<template v-if="r.triage.suggestion"> · {{ r.triage.suggestion }}</template>
+            </p>
             <p v-if="r.remark" class="rp-remark">处理备注：{{ r.remark }}</p>
             <div class="rp-foot">
               <span>提交于 {{ fmt(r.created_at) }}</span>
@@ -305,7 +310,8 @@ async function submitRepair() {
   try {
     const res = await api('/api/af/repair', { method: 'POST', body: { action: 'create', ...form.value } });
     if (res.code === 0) {
-      ElMessage.success(res.message || '已提交');
+      // 分诊给了"可以先试什么"时把提示留久一点（默认 3s 一闪而过，学生看不清）
+      ElMessage.success({ message: res.message || '已提交', duration: res.data?.triage ? 6000 : 3000 });
       form.value = { category: '水电', location: dorm.value ? `${dorm.value.buildingName} ${dorm.value.roomNo}` : '', contact: '', description: '' };
       await loadRepairs();
     } else {
@@ -456,6 +462,17 @@ onMounted(() => {
 .rp-item-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rp-loc { font-weight: 600; font-size: 14px; }
 .rp-desc { margin: 10px 0; font-size: 13.5px; line-height: 1.7; }
+/* C8 分诊结果行 */
+.rp-triage { margin: 0 0 6px; font-size: 12.5px; line-height: 1.7; color: var(--zc-text-sub); }
+.rp-tri-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  font-size: 11.5px;
+  color: #fff;
+  background: var(--zc-navy);
+  border-radius: 999px;
+}
 .rp-remark {
   margin: 0 0 10px;
   font-size: 12.5px;

@@ -21,10 +21,18 @@
             </el-tag>
             <h3>{{ n.title }}</h3>
           </div>
-          <p class="nt-content">{{ n.content }}</p>
+          <!-- C9 AI 摘要：列表页先给一句话，点"展开全文"看正文（没有摘要时保持原样） -->
+          <template v-if="n.summary && !expanded[n.id]">
+            <p class="nt-summary">{{ n.summary }}</p>
+            <el-button link type="primary" size="small" @click="expanded[n.id] = true">展开全文</el-button>
+          </template>
+          <p v-else class="nt-content">{{ n.content }}</p>
           <div class="nt-foot">
             <span>{{ n.publisher_name }} · {{ fmt(n.created_at) }}</span>
             <span v-if="canManage(n)" class="nt-ops">
+              <el-button v-if="!n.summary" link type="primary" size="small" :loading="n._sum" @click="genSummary(n)">
+                生成 AI 摘要
+              </el-button>
               <el-button v-if="isAdmin" link type="primary" size="small" @click="pin(n)">
                 {{ n.pinned ? '取消置顶' : '置顶' }}
               </el-button>
@@ -89,6 +97,25 @@ const pub = reactive({ title: '', content: '', pinned: false, global: true, dept
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
 import { fmtTime as fmt } from '../../utils/time';
 const canManage = (n) => isAdmin.value || n.publisher_name === auth.user?.realName;
+
+// ---------------- C9 公告摘要 ----------------
+// expanded 按公告 id 记录"是否展开看正文"：默认给一句话摘要，长公告不必点进去
+const expanded = reactive({});
+
+async function genSummary(n) {
+  n._sum = true;
+  try {
+    const res = await api('/api/af/notice', { method: 'POST', body: { action: 'summary', id: n.id } });
+    if (res.code === 0) {
+      n.summary = res.data.summary;
+      ElMessage.success('摘要已生成');
+    } else {
+      ElMessage.warning(res.message || '摘要生成失败（可在 AI 管理控制台开启「公告 AI 摘要」）');
+    }
+  } finally {
+    n._sum = false;
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -202,6 +229,17 @@ onMounted(() => {
 .nt-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .nt-top h3 { margin: 0; font-size: 15.5px; color: var(--zc-text); }
 .nt-content { margin: 10px 0; font-size: 13.5px; line-height: 1.8; color: var(--zc-text-sub); }
+/* C9 摘要：与正文区分开（淡底 + 左侧色条），一眼看出"这是概括不是原文" */
+.nt-summary {
+  margin: 10px 0 4px;
+  padding: 8px 11px;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--zc-text);
+  background: #f6f8fb;
+  border-left: 3px solid var(--zc-navy);
+  border-radius: 0 8px 8px 0;
+}
 .nt-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--zc-text-sub); }
 .nt-ops { display: flex; gap: 4px; }
 .nt-page { display: flex; justify-content: center; margin-top: 16px; }

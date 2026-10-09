@@ -140,6 +140,33 @@
           <p class="tab-tip">
             C3 异常告警邮件的发送留痕（去重依据也在这张表）。收件人留空时自动取 admin 角色的校园邮箱。
           </p>
+
+          <!-- C11 数据异常监测：检测是纯 SQL 规则（零模型成本、结论可复现），AI 只把清单归纳成人话 -->
+          <div class="anomaly-box">
+            <div class="anomaly-head">
+              <div>
+                <b>C11 数据异常监测</b>
+                <p class="tab-tip">
+                  用规则扫描业务数据：请假集中、成绩未录完、图书逾期、AI 审核待复核积压、报修超 48 小时未受理。
+                  需先在「功能开关」里开启。
+                </p>
+              </div>
+              <div class="anomaly-ops">
+                <el-button size="small" :loading="anomalyLoading" @click="scanAnomaly(false)">仅扫描</el-button>
+                <el-button size="small" type="primary" :loading="anomalyLoading" @click="scanAnomaly(true)">扫描并邮件通知</el-button>
+              </div>
+            </div>
+            <ul v-if="anomalyFindings.length" class="anomaly-list">
+              <li v-for="(f, i) in anomalyFindings" :key="i">
+                <el-tag :type="f.level === 'high' ? 'danger' : 'warning'" size="small" round>{{ f.level === 'high' ? '高' : '中' }}</el-tag>
+                <b>{{ f.title }}</b>
+                <span>{{ f.detail }}</span>
+              </li>
+            </ul>
+            <p v-else-if="anomalyDone" class="tab-tip">本轮扫描未发现异常。</p>
+            <p v-if="anomalySummary" class="anomaly-sum">{{ anomalySummary }}</p>
+          </div>
+
           <el-table v-loading="loading.usage" :data="alerts" size="small">
             <el-table-column prop="id" label="#" width="60" />
             <el-table-column prop="type" label="类型" width="150" />
@@ -216,11 +243,36 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
+import { runAnomalyScan } from '../../api/ai';
 import { fmtTime as fmt } from '../../utils/time';
 
 const tab = ref('switches');
 const meta = reactive({ model: '', configured: false });
 const loading = reactive({ config: false, review: false, kb: false, usage: false });
+
+// ---- C11 数据异常监测 ----
+const anomalyLoading = ref(false);
+const anomalyFindings = ref([]);
+const anomalySummary = ref('');
+const anomalyDone = ref(false);
+
+async function scanAnomaly(notify) {
+  anomalyLoading.value = true;
+  try {
+    const res = await runAnomalyScan(notify);
+    if (res.code === 0) {
+      anomalyFindings.value = res.data.findings || [];
+      anomalySummary.value = res.data.summary || '';
+      anomalyDone.value = true;
+      ElMessage.success(res.message || '扫描完成');
+      if (notify) loadUsage(); // 发过邮件 → 刷新告警留痕
+    } else {
+      ElMessage.warning(res.message || '扫描失败');
+    }
+  } finally {
+    anomalyLoading.value = false;
+  }
+}
 
 // ---- 开关 ----
 const configItems = ref([]);
@@ -397,6 +449,40 @@ onMounted(reload);
 .warn { color: #b45309; }
 .tab-tip { margin: 0 0 12px; font-size: 12.5px; line-height: 1.8; color: var(--zc-text-sub); }
 .tab-tip code, .k { background: rgba(23, 50, 92, 0.07); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+/* C11 异常监测区 */
+.anomaly-box {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid var(--zc-border);
+  border-radius: 10px;
+}
+.anomaly-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.anomaly-head b { font-size: 13.5px; color: var(--zc-navy); }
+.anomaly-head .tab-tip { margin: 4px 0 0; max-width: 560px; }
+.anomaly-ops { display: flex; gap: 8px; flex: none; }
+.anomaly-list { margin: 10px 0 0; padding: 0; list-style: none; }
+.anomaly-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  border-top: 1px dashed var(--zc-border);
+}
+.anomaly-list li b { flex: none; color: var(--zc-navy); }
+.anomaly-list li span { color: var(--zc-text-sub); }
+.anomaly-sum {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--zc-text);
+  background: #fff;
+  border-left: 3px solid var(--zc-navy);
+  border-radius: 0 8px 8px 0;
+}
 .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
 .muted { color: var(--zc-text-sub); font-size: 12.5px; }
 .mt8 { margin: 8px 0 0; }

@@ -128,6 +128,16 @@ async function doPublish() {
     if (res.code === 0) {
       ElMessage.success(res.message || '已发布');
       publishDlg.value = false;
+      // C10：命中相似条目时用弹窗提示（toast 一闪而过，发布者来不及看是哪一条）
+      const matches = res.data?.matches || [];
+      if (matches.length) {
+        const lines = matches.map((m) => `· 「${m.title}」 相似度 ${Math.round(m.score * 100)}%${m.reason ? `（${m.reason}）` : ''}`);
+        await ElMessageBox.alert(
+          `系统检测到你刚发布的物品与以下条目相似，请核对是否重复：\n\n${lines.join('\n')}\n\n若确为同一件，可在列表中下架本条。`,
+          '可能与已有条目重复',
+          { type: 'warning', confirmButtonText: '知道了' },
+        ).catch(() => {});
+      }
       load();
     } else {
       ElMessage.error(res.message || '发布失败');
