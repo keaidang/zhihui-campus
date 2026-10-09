@@ -15,6 +15,11 @@
 import { HttpError } from './guard.js';
 import { query } from './db.js';
 import { hasRole } from './services/_actor.js';
+// 问法解析要用到模型与知识库（"不是问数需求时用同一份知识库作答"）
+import { aiJson, logAiUsage } from './ai.js';
+import { buildAnswerSystem } from './ai-prompt.js';
+import { KB_PROFILE, buildKnowledgeContext } from './ai-kb.js';
+import { identityBlock, loadIdentity } from './ai-identity.js';
 
 const ROLES = ['leader', 'admin'];
 
@@ -347,5 +352,69 @@ export async function runInsight(actor, key, params = {}) {
     rows: out.rows || [],
     extra: out.extra || null,
     summary: out.summary || '',
+  };
+}
+
+// ============================================================
+// 问法解析（从 api/ai/insight.js 抽到这里）
+//
+// 为什么必须抽出来：**评估要跑真实链路**。若评估脚本自己复制一份解析
+// 提示词，那就变成"测另一套实现"，指标毫无意义（而且两份提示词必然漂移）。
+// 现在接口与评估共用同一个函数，评估量出的就是线上真实的行为。
+// ============================================================
+
+const PARSE_RULES = [
+  '你是「智汇校园」平台的**数据问数解析器**。任务：把用户的问题映射到下方【可用问数模板】。',
+  '',
+  '【输出格式】严格输出 JSON，不要任何解释文字：',
+  '{"template":"<模板 key 或 null>","params":{...},"reply":"<仅当 template=null 时填写>"}',
+  '',
+  '【硬性规则】',
+  '1. template 必须是下方列出的 key 之一；**不确定就填 null**，绝不编造。',
+  '2. params 里的枚举值**只能取括号中列出的值**，不要自造（例如时间范围只能填 7d / 30d / 180d / all）。',
+  '3. 用户只是在问制度、流程、校园情况（不是要统计数据）时，template 填 null，reply 里按下方【资料】回答。',
+  '4. 不要输出 SQL，也不要描述你打算怎么查——只选模板。',
+].join('\n');
+
+const FINAL_JUDGE = [
+  '【最终判定】先判断用户是不是在**要统计数据**：',
+  '- 是 → 输出 template + params，reply 留空。',
+  '- 不是 → template 填 null，reply 里正常回答用户的问题（当作校园助手）。',
+].join('\n');
+
+/**
+ * 把一句话解析成"模板 + 参数"（失败返回 null）
+ *
+ * @returns {Promise<{template:string|null, params:object, reply:string, sources:Array}|null>}
+ *   `null` = 上游未响应（调用方应回"稍后再试"）；`template: null` = 这不是问数需求，
+ *   此时 `reply` 是正常回答、`sources` 是引用到的知识条目。
+ */
+export async function pickTemplate(actor, text) {
+  const identity = await loadIdentity(actor.userId);
+  const kb = await buildKnowledgeContext(text, { inlineMaxChars: 4000, topK: 5, minScore: 3, minRatio: 0.25 });
+  const system = buildAnswerSystem({
+    identityText: identityBlock(identity, actor.roles),
+    kbProfile: KB_PROFILE,
+    kbText: kb.text,
+    extraTop: [PARSE_RULES, '', '【可用问数模板】', insightPromptFor(actor), '', FINAL_JUDGE].join('\n'),
+  });
+
+  const t0 = Date.now();
+  const parsed = await aiJson({ system, user: text, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
+  await logAiUsage({
+    userId: actor.userId,
+    kind: 'insight',
+    promptTokens: parsed?._usage?.prompt_tokens ?? 0,
+    completionTokens: parsed?._usage?.completion_tokens ?? 0,
+    ok: parsed ? 1 : 0,
+    costMs: Date.now() - t0,
+  });
+  if (!parsed) return null;
+
+  return {
+    template: parsed.template == null ? null : String(parsed.template),
+    params: parsed.params && typeof parsed.params === 'object' ? parsed.params : {},
+    reply: String(parsed.reply || ''),
+    sources: kb.sources || [],
   };
 }

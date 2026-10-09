@@ -6,36 +6,18 @@
 //
 // ★ 安全：模型**只选模板 + 抽参数**，参数还要过 enum 白名单，SQL 全程由服务端参数化拼装。
 //   （见 lib/ai-insight.js 顶部注释）
+//
+// ★ "问法 → 模板"的解析已抽到 lib/ai-insight.js 的 `pickTemplate()`：
+//   因为 AI 效果评估（api/ai/eval.js）要跑**同一条真实链路**。若评估脚本自己复制
+//   一份提示词，量出来的就不是线上行为，指标没有意义。
 import { fail, jsonError, ok, preflight, readBody } from '../../lib/http.js';
 import { actorFrom } from '../../lib/services/_actor.js';
-import { aiConfigured, aiJson, aiModel, logAiUsage } from '../../lib/ai.js';
+import { aiConfigured } from '../../lib/ai.js';
 import { getBool } from '../../lib/ai-config.js';
 import { consumeAiQuota } from '../../lib/ai-guard.js';
-import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
-import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
-import { buildAnswerSystem } from '../../lib/ai-prompt.js';
-import { canInsight, insightPromptFor, runInsight } from '../../lib/ai-insight.js';
+import { canInsight, pickTemplate, runInsight } from '../../lib/ai-insight.js';
 
 export { preflight as onRequestOptions };
-
-const PARSE_RULES = [
-  '你是「智汇校园」平台的**数据问数解析器**。任务：把用户的问题映射到下方【可用问数模板】。',
-  '',
-  '【输出格式】严格输出 JSON，不要任何解释文字：',
-  '{"template":"<模板 key 或 null>","params":{...},"reply":"<仅当 template=null 时填写>"}',
-  '',
-  '【硬性规则】',
-  '1. template 必须是下方列出的 key 之一；**不确定就填 null**，绝不编造。',
-  '2. params 里的枚举值**只能取括号中列出的值**，不要自造（例如时间范围只能填 7d / 30d / 180d / all）。',
-  '3. 用户只是在问制度、流程、校园情况（不是要统计数据）时，template 填 null，reply 里按下方【资料】回答。',
-  '4. 不要输出 SQL，也不要描述你打算怎么查——只选模板。',
-].join('\n');
-
-const FINAL_JUDGE = [
-  '【最终判定】先判断用户是不是在**要统计数据**：',
-  '- 是 → 输出 template + params，reply 留空。',
-  '- 不是 → template 填 null，reply 里正常回答用户的问题（当作校园助手）。',
-].join('\n');
 
 export async function onRequestPost(context) {
   try {
@@ -53,43 +35,21 @@ export async function onRequestPost(context) {
     const quota = await consumeAiQuota(actor.userId, 'insight');
     if (!quota.ok) return fail(49429, quota.message, 429);
 
-    const identity = await loadIdentity(actor.userId);
-    const kb = await buildKnowledgeContext(text, { inlineMaxChars: 4000, topK: 5, minScore: 3, minRatio: 0.25 });
-    const system = buildAnswerSystem({
-      identityText: identityBlock(identity, actor.roles),
-      kbProfile: KB_PROFILE,
-      kbText: kb.text,
-      extraTop: [PARSE_RULES, '', '【可用问数模板】', insightPromptFor(actor), '', FINAL_JUDGE].join('\n'),
-    });
+    const parsed = await pickTemplate(actor, text);
+    if (!parsed) return fail(49430, '问数服务暂时不可用，请稍后再试', 503);
 
-    const t0 = Date.now();
-    const parsed = await aiJson({ system, user: text, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
-    if (!parsed) {
-      await logAiUsage({ userId: actor.userId, kind: 'insight', model: aiModel(), ok: 0, costMs: Date.now() - t0 });
-      return fail(49430, '问数服务暂时不可用，请稍后再试', 503);
-    }
-    await logAiUsage({
-      userId: actor.userId,
-      kind: 'insight',
-      model: aiModel(),
-      promptTokens: parsed._usage?.prompt_tokens ?? 0,
-      completionTokens: parsed._usage?.completion_tokens ?? 0,
-      ok: 1,
-      costMs: Date.now() - t0,
-    });
-
-    const key = parsed.template == null ? null : String(parsed.template);
-    if (!key) {
+    if (!parsed.template) {
       return ok({
         intent: { template: null },
         kind: 'none',
-        reply: String(parsed.reply || '我不确定你想看哪项数据。可以试试"近 7 天哪个班请假最多""各院系请假天数排名""选课人数最多的课"。').slice(0, 800),
-        sources: kb.sources || [],
+        reply:
+          parsed.reply ||
+          '我不确定你想看哪项数据。可以试试"近 7 天哪个班请假最多""各院系请假天数排名""选课人数最多的课"。',
+        sources: parsed.sources,
       });
     }
 
-    const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
-    const r = await runInsight(actor, key, params);
+    const r = await runInsight(actor, parsed.template, parsed.params);
     return ok({
       intent: { template: r.template, label: r.label },
       kind: 'data',

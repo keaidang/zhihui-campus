@@ -217,8 +217,60 @@
               <template #default="{ row }">{{ fmt(row.created_at) }}</template>
             </el-table-column>
           </el-table>
+
+        </el-tab-pane>
+
+        <!-- ========== 效果评估（AI 能力的量化指标） ========== -->
+        <el-tab-pane label="效果评估" name="eval">
+          <p class="tab-tip">
+            AI 能力的<b>量化指标</b>（准确率 / 误报率 / 响应耗时），由 <code>scripts/ai-eval.mjs</code>
+            在<b>同一条真实判定链路</b>上跑出并落库。本页<b>只读结果</b>：一轮完整评估约 30 次模型调用、
+            耗时 1~2 分钟，超出边缘函数单次执行预算 —— 所以跑分放本地脚本、结果落库供展示与答辩引用。
+          </p>
+
+          <div class="eval-scale">
+            <b>{{ evalData.cases?.total || 0 }}</b>
+            <span>条人工标注用例</span>
+            <span class="muted">
+              <template v-for="(n, k) in evalData.cases?.byScene || {}" :key="k">{{ evalLabel(k) }} {{ n }} 条 · </template>
+            </span>
+          </div>
+
+          <el-empty v-if="!evalData.runs.length" description="还没有评估记录，先在项目目录执行 npm run eval:ai" />
+
+          <div v-else class="eval-grid">
+            <div v-for="r in evalData.runs" :key="r.scene" class="eval-card">
+              <div class="eval-head">
+                <span class="eval-name">{{ evalLabel(r.scene) }}</span>
+                <el-tag v-if="r.never" type="info" size="small" round>尚未运行</el-tag>
+                <el-tag v-else :type="accTag(r.accuracy)" size="small" effect="dark" round>
+                  准确率 {{ (r.accuracy * 100).toFixed(1) }}%
+                </el-tag>
+              </div>
+              <template v-if="!r.never">
+                <div class="eval-nums">
+                  <span>通过 <b>{{ r.passed }}</b>/{{ r.total }}</span>
+                  <span>平均 <b>{{ r.avgMs }}</b> ms</span>
+                  <span v-if="r.falsePositive">误报率 <b>{{ (r.falsePositive.rate * 100).toFixed(1) }}%</b></span>
+                  <span v-if="r.violationRecall">违规检出 <b>{{ (r.violationRecall.rate * 100).toFixed(0) }}%</b></span>
+                </div>
+                <p class="eval-time">运行于 {{ fmt(r.createdAt) }}</p>
+                <el-collapse v-if="r.failed > 0">
+                  <el-collapse-item :title="`查看 ${r.failed} 条未通过用例`">
+                    <ul class="eval-fails">
+                      <li v-for="(d, i) in r.detail.filter((x) => !x.ok)" :key="i">
+                        <span class="eval-in">{{ d.input }}</span>
+                        <span class="eval-exp">期望：{{ d.expect }}｜实际：{{ d.actual }}</span>
+                      </li>
+                    </ul>
+                  </el-collapse-item>
+                </el-collapse>
+              </template>
+            </div>
+          </div>
         </el-tab-pane>
       </el-tabs>
+
     </section>
 
     <!-- 数值/文本配置修改 -->
@@ -243,12 +295,31 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
-import { runAnomalyScan } from '../../api/ai';
+import { fetchAiEval, runAnomalyScan } from '../../api/ai';
 import { fmtTime as fmt } from '../../utils/time';
 
 const tab = ref('switches');
 const meta = reactive({ model: '', configured: false });
 const loading = reactive({ config: false, review: false, kb: false, usage: false });
+
+// ---- AI 效果评估（只读展示；跑分见 scripts/ai-eval.mjs） ----
+const evalData = reactive({ cases: null, runs: [] });
+const EVAL_LABEL = {
+  qa: '知识问答（检索层）',
+  triage: '报修智能分诊',
+  review: '论坛内容审核',
+  insight: '信息问数',
+};
+const evalLabel = (k) => EVAL_LABEL[k] || k;
+const accTag = (a) => (a >= 0.95 ? 'success' : a >= 0.8 ? 'warning' : 'danger');
+
+async function loadEval() {
+  const res = await fetchAiEval();
+  if (res.code === 0) {
+    evalData.cases = res.data.cases;
+    evalData.runs = res.data.runs || [];
+  }
+}
 
 // ---- C11 数据异常监测 ----
 const anomalyLoading = ref(false);
@@ -428,7 +499,7 @@ async function loadUsage() {
 }
 
 async function reload() {
-  await Promise.all([loadConfig(), loadReview(), loadKb(), loadUsage()]);
+  await Promise.all([loadConfig(), loadReview(), loadKb(), loadUsage(), loadEval()]);
   ElMessage.success('已刷新');
 }
 
@@ -449,6 +520,20 @@ onMounted(reload);
 .warn { color: #b45309; }
 .tab-tip { margin: 0 0 12px; font-size: 12.5px; line-height: 1.8; color: var(--zc-text-sub); }
 .tab-tip code, .k { background: rgba(23, 50, 92, 0.07); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+/* 效果评估卡片 */
+.eval-scale { margin: 0 0 14px; font-size: 13px; color: var(--zc-text-sub); }
+.eval-scale b { font-size: 19px; color: var(--zc-navy); margin-right: 4px; }
+.eval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.eval-card { padding: 14px; border: 1px solid var(--zc-border); border-radius: 10px; background: #fff; }
+.eval-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.eval-name { font-size: 13.5px; font-weight: 600; color: var(--zc-navy); }
+.eval-nums { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12.5px; color: var(--zc-text-sub); }
+.eval-nums b { color: var(--zc-navy); font-size: 14px; }
+.eval-time { margin: 8px 0 0; font-size: 11.5px; color: var(--zc-text-sub); }
+.eval-fails { margin: 6px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.8; }
+.eval-in { display: block; color: var(--zc-text); }
+.eval-exp { display: block; color: #9a3412; }
+
 /* C11 异常监测区 */
 .anomaly-box {
   margin: 0 0 16px;

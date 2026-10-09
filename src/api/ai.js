@@ -54,6 +54,11 @@ export function runAnomalyScan(notify = true) {
   return api('/api/ai/anomaly', { method: 'POST', body: { notify } });
 }
 
+/** AI 效果评估结果（仅超管，只读）：跑分由 scripts/ai-eval.mjs 执行，此接口只取结果 */
+export function fetchAiEval() {
+  return api('/api/ai/eval');
+}
+
 /** C5 第二阶段：带确认令牌真正执行 */
 export function confirmAiAction(confirmToken) {
   return api('/api/ai/action', { method: 'POST', body: { confirmToken } });
