@@ -47,6 +47,9 @@ const PARSE_RULES = [
 export async function onRequestPost(context) {
   try {
     const actor = await actorFrom(context);
+    // ★ 标记"这次操作来自 AI 对话"：服务层审计会在 detail 前缀 via:ai（铁律 #4），
+    //   这样才能从 sys_op_log 里区分"人工点的按钮"和"AI 按指令执行的"（论文可统计）
+    actor.viaAi = true;
     const body = await readBody(context.request, 8 * 1024);
 
     // ---- 第二阶段：带确认令牌执行 ----

@@ -32,6 +32,13 @@ const canTrigger = (actor, action) => (action.roles || []).some((r) => hasRole(a
 /** 目标精简展示（确认清单里给人看的） */
 const brief = (u) => `${u.real_name || u.username}（${u.username}）${u.dept_name ? ` · ${u.dept_name}` : ''}`;
 
+/**
+ * ★ 给目标补上 `label`：确认清单直接渲染 `label`，
+ *   若解析结果只有 username/real_name，前端拿到的就是一堆 null ——
+ *   而"能看清将被影响的是谁"正是二次确认存在的意义（2026-10-09 线上验收暴露）。
+ */
+const withLabel = (list) => (list || []).map((u) => ({ ...u, label: brief(u) }));
+
 /** 把"学生姓名/账号"这类关键字统一成 findUsers 的筛选 */
 const userFilters = (p = {}) => ({
   keyword: p.keyword ? String(p.keyword).slice(0, 32) : '',
@@ -53,7 +60,7 @@ async function resolveUserTargets(actor, p = {}) {
     const hitNames = new Set(found.flatMap((u) => [String(u.username).toLowerCase(), String(u.real_name || '').toLowerCase()]));
     const missing = explicit.filter((n) => !hitNames.has(String(n).toLowerCase()));
     if (missing.length) warnings.push(`未找到账号（或不在你的数据范围内）：${missing.join('、')}`);
-    return { targets: found, warnings };
+    return { targets: withLabel(found), warnings };
   }
 
   // ---- 情况 B：按筛选批量 → 必须显式 all:true ----
@@ -69,7 +76,7 @@ async function resolveUserTargets(actor, p = {}) {
     throw new HttpError(49402, '范围太大：请指明角色（如"所有学生"）或关键字，或直接给出账号名');
   }
   const targets = await findUsers(actor, { ...filters, limit: 200 });
-  return { targets, warnings };
+  return { targets: withLabel(targets), warnings };
 }
 
 /** 过滤掉不可操作的目标（自己 / 管理员账号），并说明原因 */
