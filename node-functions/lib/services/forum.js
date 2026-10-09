@@ -24,7 +24,8 @@ export async function getThread(actor, id) {
   const threads = await query(
     `SELECT t.id, t.board_id AS boardId, t.author_id AS authorId, t.title, t.content, t.images,
             t.is_trade AS isTrade, t.item_name AS itemName, t.price, t.contact,
-            t.pinned, t.locked, t.status, t.reply_count AS replyCount, t.created_at AS createdAt,
+            t.pinned, t.locked, t.status, t.review_status AS reviewStatus,
+            t.reply_count AS replyCount, t.created_at AS createdAt,
             b.name AS boardName, u.real_name AS authorName, u.username
        FROM forum_thread t
        JOIN forum_board b ON b.id = t.board_id
@@ -84,7 +85,8 @@ export async function listThreads(actor, { boardId = 0, keyword = '', page = 1, 
   const total = await query(`SELECT COUNT(*) n FROM forum_thread t ${whereSql}`, params);
   const rows = await query(
     `SELECT t.id, t.board_id AS boardId, t.title, t.is_trade AS isTrade, t.item_name AS itemName,
-            t.price, t.contact, t.pinned, t.locked, t.reply_count AS replyCount, t.created_at AS createdAt,
+            t.price, t.contact, t.pinned, t.locked, t.review_status AS reviewStatus,
+            t.reply_count AS replyCount, t.created_at AS createdAt,
             t.last_reply_at AS lastReplyAt,
             b.name AS boardName, u.real_name AS authorName, u.username,
             (SELECT r.content FROM forum_reply r WHERE r.thread_id = t.id AND r.status = 1 ORDER BY r.id DESC LIMIT 1) AS lastReply
@@ -143,7 +145,7 @@ export async function createThread(actor, body = {}, { onBeforeInsert } = {}) {
   // ---- 审核钩子（AI 审核员；未开启时 h 为 undefined，行为与改造前一致）----
   let reviewStatus = REVIEW_STATUS.NORMAL;
   if (onBeforeInsert) {
-    const h = await onBeforeInsert({ title, content, board });
+    const h = await onBeforeInsert({ title, content, board, userId: actor.userId });
     if (h?.block) throw new HttpError(49006, h.message || '内容未通过审核，请修改后重试');
     if (Number.isInteger(h?.reviewStatus)) reviewStatus = h.reviewStatus;
   }
@@ -171,7 +173,7 @@ export async function replyThread(actor, body = {}, { onBeforeInsert } = {}) {
 
   let reviewStatus = REVIEW_STATUS.NORMAL;
   if (onBeforeInsert) {
-    const h = await onBeforeInsert({ title: threads[0].title, content });
+    const h = await onBeforeInsert({ title: threads[0].title, content, userId: actor.userId });
     if (h?.block) throw new HttpError(49006, h.message || '内容未通过审核，请修改后重试');
     if (Number.isInteger(h?.reviewStatus)) reviewStatus = h.reviewStatus;
   }

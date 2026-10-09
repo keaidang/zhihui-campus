@@ -79,7 +79,7 @@ describe('clientIp · 客户端真实 IP', () => {
 
 describe('jsonError · 统一错误出口', () => {
   it('业务错误（带 toResponse）按其自带 code/status 透出，不被吞成 500', async () => {
-    const res = jsonError({ toResponse: () => fail(40301, '暂无权限', 403) });
+    const res = await jsonError({ toResponse: () => fail(40301, '暂无权限', 403) });
     expect(res.status).toBe(403);
     expect((await read(res)).code).toBe(40301);
   });
@@ -87,9 +87,19 @@ describe('jsonError · 统一错误出口', () => {
   it('未知错误 → 50000 / HTTP 500（并尽力落库，落库失败不影响返回）', async () => {
     // 抑制预期内的错误打印；落库走 import('./db.js') 的失败路径（测试环境无库），已被 catch
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const res = jsonError(new Error('boom'));
+    const res = await jsonError(new Error('boom'));
     expect(res.status).toBe(500);
     expect((await read(res)).code).toBe(50000);
     expect(spy).toHaveBeenCalled();
+  });
+
+  it('★ jsonError 是 async 且永不抛出：告警/落库基础设施不可用时仍要返回 500 响应', async () => {
+    // 这条是 2026-10-09 加告警邮件后必须锁住的契约：
+    // 500 出口一旦自己抛异常，调用方 try/catch 接不住（它就在 catch 里），整页会变成平台错误页
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await jsonError({ name: 'TypeError', code: 'X_ERR', message: 'undefined is not a function' });
+    expect(res.status).toBe(500);
+    expect((await read(res)).code).toBe(50000);
+    spy.mockRestore();
   });
 });

@@ -25,20 +25,53 @@ export function aiMeta() {
   return { provider: aiProvider(), model: aiModel(), configured: aiConfigured() };
 }
 
-/** 失败落库（尽力而为，动态 import 避免模块级循环依赖；与 lib/http.js 的 500 落库同思路） */
-function logAiError(kind, detail) {
+/**
+ * 失败落库（与 lib/http.js 的 500 落库同思路）——**必须 await**：
+ *   · Serverless/边缘运行时**不保证**响应之后的后台 Promise 还会执行完，fire-and-forget 会丢
+ *   · 这里同时承担「AI 连续失败 → 告警管理员」的计数依据，丢一条就可能永远凑不满阈值
+ * 落库失败或告警失败都不影响降级（本函数自身不抛）。
+ */
+async function logAiError(kind, detail) {
   console.error('[ai-error]', kind, detail);
-  import('./db.js')
-    .then(({ getPool }) =>
-      getPool()
-        .query('INSERT INTO sys_op_log (operator_id, action, target, detail) VALUES (0, ?, ?, ?)', [
-          'ai.error',
-          String(kind).slice(0, 128),
-          String(detail || '').slice(0, 500),
-        ])
-        .catch(() => {}),
-    )
-    .catch(() => {});
+  try {
+    await query('INSERT INTO sys_op_log (operator_id, action, target, detail) VALUES (0, ?, ?, ?)', [
+      'ai.error',
+      String(kind).slice(0, 128),
+      String(detail || '').slice(0, 500),
+    ]);
+  } catch {
+    /* 落库失败不影响降级 */
+  }
+  await alertAiFailure(kind, detail);
+}
+
+/** AI 连续失败告警（C3）：10 分钟内 ai.error ≥ 5 次 → 每自然小时最多一封 */
+async function alertAiFailure(kind, detail) {
+  try {
+    const [r] = await query(
+      "SELECT COUNT(*) AS n FROM sys_op_log WHERE action = 'ai.error' AND created_at > NOW() - INTERVAL 10 MINUTE",
+    );
+    const n = Number(r?.n || 0);
+    if (n < 5) return;
+    const hour = new Date().toISOString().slice(0, 13);
+    // 动态 import：让 alert/邮件链路不进入每次 AI 调用的静态依赖图（缩冷启动）
+    const { alert } = await import('./alert.js');
+    await alert.aiFailure({
+      title: `AI 服务近期连续失败 ${n} 次（10 分钟内）`,
+      detail: [
+        `失败类型：${kind}`,
+        `失败次数（10 分钟）：${n}`,
+        `最近一次详情：${String(detail || '').slice(0, 300)}`,
+        '',
+        '可能原因：上游额度/限流、网关抖动、密钥失效、知识库或库连接异常。',
+        '建议动作：查看 sys_op_log 中 action=ai.error 的记录；必要时在【AI 管理控制台】临时关闭 AI 功能，',
+        '业务本身不受影响（所有 AI 能力均为降级设计，失败返回友好文案）。',
+      ].join('\n'),
+      dedupeKey: `ai_fail:${hour}`,
+    });
+  } catch {
+    /* 告警失败不影响 AI 降级 */
+  }
 }
 
 /**
@@ -81,12 +114,12 @@ export async function aiUpstream(opts = {}) {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(opts.timeoutMs || STREAM_TIMEOUT_MS) });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      logAiError('upstream.http', `${res.status} ${txt.slice(0, 300)}`);
+      await logAiError('upstream.http', `${res.status} ${txt.slice(0, 300)}`);
       return null;
     }
     return { response: res, costMs: Date.now() - t0 };
   } catch (e) {
-    logAiError(e?.name === 'TimeoutError' ? 'upstream.timeout' : 'upstream.network', String(e?.message || e));
+    await logAiError(e?.name === 'TimeoutError' ? 'upstream.timeout' : 'upstream.network', String(e?.message || e));
     return null;
   }
 }
@@ -103,7 +136,7 @@ export async function aiChat(opts = {}) {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(opts.timeoutMs || TIMEOUT_MS) });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      logAiError('chat.http', `${res.status} ${txt.slice(0, 300)}`);
+      await logAiError('chat.http', `${res.status} ${txt.slice(0, 300)}`);
       return null;
     }
     const j = await res.json();
@@ -115,7 +148,7 @@ export async function aiChat(opts = {}) {
       costMs: Date.now() - t0,
     };
   } catch (e) {
-    logAiError(e?.name === 'TimeoutError' ? 'chat.timeout' : 'chat.network', String(e?.message || e));
+    await logAiError(e?.name === 'TimeoutError' ? 'chat.timeout' : 'chat.network', String(e?.message || e));
     return null;
   }
 }
@@ -148,9 +181,9 @@ export async function aiJson({ system, user, maxTokens = 512, temperature = 0.1,
     } catch {
       /* 落到重试 */
     }
-    if (attempt === 0) logAiError('json.retry', String(r.content || '').slice(0, 200));
+    if (attempt === 0) await logAiError('json.retry', String(r.content || '').slice(0, 200));
   }
-  logAiError('json.parse', '重试后仍无法解析为 JSON');
+  await logAiError('json.parse', '重试后仍无法解析为 JSON');
   return null;
 }
 

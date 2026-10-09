@@ -37,7 +37,38 @@ export function fail(code, message, status = 400) {
   });
 }
 
-export function jsonError(e) {
+/**
+ * 系统异常（500）告警：按「错误码 + 分钟」去重，避免一次故障刷出几十封邮件。
+ * 动态 import 规避循环依赖（http.js ← guard.js ← ai-config.js ← alert.js ← http.js）。
+ */
+async function alertSystem500(e) {
+  try {
+    const { alert } = await import('./alert.js');
+    const minute = new Date().toISOString().slice(0, 16); // UTC 分钟粒度，仅作去重键
+    await alert.system500({
+      title: `系统异常：${String(e?.code || e?.name || 'Error')}`,
+      detail: [
+        `错误类型：${String(e?.name || 'Error')}`,
+        `错误码：${String(e?.code ?? '-')}`,
+        `信息：${String(e?.message || '').slice(0, 400)}`,
+        `时间（UTC）：${minute}`,
+        '',
+        '该异常已落 sys_op_log(action=error.500)，可在库中检索同时段的完整上下文。',
+      ].join('\n'),
+      dedupeKey: `500:${String(e?.code ?? e?.name ?? 'Error')}:${minute}`,
+    });
+  } catch {
+    /* 告警失败绝不能影响 500 响应本身 */
+  }
+}
+
+/**
+ * 统一错误响应。
+ * ★ 为什么是 async：需要 `await` 告警邮件 —— Serverless/边缘运行时**不保证**响应返回后
+ *   后台 Promise 还会跑完，fire-and-forget 会丢掉告警。告警内部带去重，且总开关默认关，
+ *   因此常态下这条 await 只多一次"开关查询"，不会拖慢响应。
+ */
+export async function jsonError(e) {
   // 业务性错误（guard.js HttpError）按其自带 code/status 返回，不吞成 500
   if (e && typeof e.toResponse === 'function') return e.toResponse();
   console.error('[api-error]', e);
@@ -52,6 +83,7 @@ export function jsonError(e) {
         .catch(() => {}),
     )
     .catch(() => {});
+  await alertSystem500(e);
   return fail(50000, '服务器内部错误', 500);
 }
 

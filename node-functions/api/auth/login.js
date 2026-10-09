@@ -4,8 +4,42 @@ import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
 import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
 import { preflight } from '../../lib/http.js';
+import { alert } from '../../lib/alert.js';
 
 export { preflight as onRequestOptions };
+
+/**
+ * 疑似撞库告警（C3）：同一账号 10 分钟内失败 ≥ 10 次。
+ * · 按"账号"维度统计（撞库的本质就是按账号爆破；Node 侧 x-forwarded-for 是出口代理池 IP，不可靠）
+ * · 去重键带小时粒度 → 同一账号每小时最多一封邮件
+ * · alertAdmins 内部吞掉所有异常，不会影响登录响应
+ */
+async function alertBruteforce(username, ip) {
+  try {
+    const [r] = await query(
+      'SELECT COUNT(*) AS n FROM sys_login_log WHERE username = ? AND success = 0 AND created_at > NOW() - INTERVAL 10 MINUTE',
+      [username],
+    );
+    const n = Number(r?.n || 0);
+    if (n < 10) return;
+    const hour = new Date().toISOString().slice(0, 13);
+    await alert.loginBruteforce({
+      title: `账号 ${username} 10 分钟内登录失败 ${n} 次，疑似撞库`,
+      detail: [
+        `目标账号：${username}`,
+        `10 分钟内失败次数：${n}`,
+        `最近来源 IP（可能为出口代理）：${ip}`,
+        '',
+        '建议动作：确认该账号是否正常；如确为攻击，可在【账号管理】中改密或临时禁用该账号，',
+        '并检查 sys_login_log 中同 IP 是否还在试探其他账号。',
+      ].join('\n'),
+      dedupeKey: `brute:${username}:${hour}`,
+    });
+  } catch (e) {
+    // 告警链路异常绝不能影响登录本身
+    console.error('[bruteforce-alert-fail]', e?.message);
+  }
+}
 
 export async function onRequestPost(context) {
   try {
@@ -49,6 +83,7 @@ export async function onRequestPost(context) {
         'INSERT INTO sys_login_log (user_id, username, ip, user_agent, success) VALUES (?, ?, ?, ?, 0)',
         [user ? user.id : null, username, ip, ua],
       );
+      await alertBruteforce(username, ip);
       // 模糊提示，不暴露"用户存在与否"
       return fail(40101, '用户名或密码错误');
     }
