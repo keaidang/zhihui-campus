@@ -147,6 +147,32 @@ export async function exportUsersCsv(actor) {
 }
 
 /**
+ * ★ 统计账号条数（与 findUsers 共用同一套 where → 数据范围完全一致）
+ *
+ * 为什么必须单独写一个 COUNT 函数：
+ *   findUsers 返回的是**分页后的数组**，没有 total 字段。曾想用
+ *   `findUsers(limit:1).total` 取总数 —— 那是想当然，它返回 1 条数组、
+ *   `.total` 是 undefined，于是计数结果恒为 NaN。
+ *   而且"拉明细再数长度"在超过上限时必然错（FIND_MAX 截断）。
+ *   复用 buildWhere 保证：辅导员查到的个数与他查到的列表来自同一范围。
+ *
+ * @returns {Promise<number>}
+ */
+export async function countUsers(actor, filters = {}) {
+  const { whereSql, params } = buildWhere(actor, { ...filters, page: 1 });
+  const rows = await query(
+    `SELECT COUNT(*) AS n
+       FROM sys_user u
+       LEFT JOIN sys_department d ON d.id = u.dept_id
+       LEFT JOIN sys_user_role ur ON ur.user_id = u.id
+       LEFT JOIN sys_role r ON r.id = ur.role_id
+      WHERE ${whereSql}`,
+    params,
+  );
+  return Number(rows[0]?.n || 0);
+}
+
+/**
  * ★ 供 AI（C5）与预览用的候选查询：只读、受限、不带分页
  * 与 listUsers 共用同一套 where 构造（含数据范围），因此**辅导员查不到外院的人**。
  * @returns {Promise<object[]>} 精简字段（AI 只需这些就能生成影响清单）

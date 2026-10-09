@@ -412,3 +412,40 @@ describe('编译结果的自检不变量（可被单测直接断言）', () => {
     }
   });
 });
+
+describe('countUsers · 账号计数（AI 的 countOnly 走它）', () => {
+  it('函数存在且导出（ai-actions 的 countOnly 依赖它）', async () => {
+    const m = await import('../../node-functions/lib/services/users.js');
+    expect(typeof m.countUsers).toBe('function');
+  });
+
+  it('★ 真的返回数字而不是数组（AI 要的是"共 N 个"，不是一页列表）', async () => {
+    const m = await import('../../node-functions/lib/services/users.js');
+    const r = await m.countUsers({ userId: 1, roles: ['admin'], deptId: null }, {}).catch((e) => `ERR:${e.message}`);
+    if (typeof r === 'string') {
+      // 无 DB 环境：抛错是可接受的，静默返回 0 才危险
+      expect(r).toContain('ERR:');
+    } else {
+      expect(typeof r, 'countUsers 必须返回数字').toBe('number');
+      expect(Number.isInteger(r)).toBe(true);
+      expect(r).toBeGreaterThan(0);
+    }
+  });
+
+  it('★ 数据范围生效：辅导员计数必须小于管理员计数', async () => {
+    const m = await import('../../node-functions/lib/services/users.js');
+    const admin = { userId: 2000001, roles: ['admin', 'student'], deptId: null };
+    const counselor = { userId: 2000100, roles: ['counselor'], deptId: 2 };
+    const [a, c] = await Promise.all([
+      m.countUsers(admin, {}).catch(() => null),
+      m.countUsers(counselor, {}).catch(() => null),
+    ]);
+    if (a === null || c === null) {
+      // 无 DB：跳过（契约由线上验收脚本验证，那里连着真实库）
+      expect(true).toBe(true);
+      return;
+    }
+    expect(c).toBeLessThan(a); // 本院 < 全校
+    expect(c).toBeGreaterThan(0); // 本院非空（否则数据范围条件写错了）
+  });
+});

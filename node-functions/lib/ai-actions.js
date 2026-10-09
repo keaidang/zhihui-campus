@@ -18,7 +18,7 @@ import jwt from 'jsonwebtoken';
 import { HttpError } from './guard.js';
 import { jwtSecret } from './auth.js';
 import { hasRole, isAdmin } from './services/_actor.js';
-import { findUsers, findUsersByNames, setUserStatus } from './services/users.js';
+import { countUsers, findUsers, findUsersByNames, setUserStatus } from './services/users.js';
 import { decideLeave, listLeaves } from './services/leave.js';
 import { listNotices, publishNotice, revokeNotice, setNoticePinned } from './services/notice.js';
 import { handleReview, listReviewQueue } from './ai-review.js';
@@ -117,14 +117,35 @@ export const ACTIONS = {
     label: '查询账号',
     roles: ['admin', 'counselor'],
     kind: 'read',
-    desc: '查询账号列表，可按角色/关键字/状态筛选',
+    desc: '查询账号列表或**只统计个数**。用户只关心数量时务必传 countOnly=true，否则会列出明细',
     params: {
       keyword: { type: 'string', desc: '账号名/姓名/学号/邮箱关键字' },
       role: { type: 'enum', values: ['student', 'teacher', 'counselor', 'leader', 'admin'], desc: '按角色筛选' },
       status: { type: 'enum', values: ['0', '1'], desc: '0=已禁用 1=正常，不填为全部' },
+      countOnly: {
+        type: 'enum',
+        values: ['1'],
+        desc: '**只要个数时传 "1"**（如"有多少个学生账号"），不要列明细',
+      },
     },
     run: async (actor, p) => {
-      const rows = await findUsers(actor, { ...userFilters(p), limit: 50 });
+      const filters = userFilters(p);
+      // ★ 只要个数 → 直接给总数，不拉明细。
+      //   2026-10-10 用户原话「每次提问账号问题就是输出 50 个账号和死的一样」——
+      //   根因之一是模型选了本动作却不传计数意图，于是必定返回 50 行。
+      //   做法：动作支持 countOnly，提示词里也写明"只关心数量时用它"。
+      if (String(p.countOnly) === '1') {
+        // ★ 用 countUsers 而非 findUsers：后者是分页数组、没有 total，
+        //   且超过 FIND_MAX 时长度会被截断，计数必然错。
+        const n = await countUsers(actor, filters);
+        const scope = filters.role ? `${filters.role} 角色的` : '';
+        return {
+          rows: [{ 账号总数: n }],
+          scalar: n,
+          summary: scope ? `共 ${n} 个${scope}账号。` : `共 ${n} 个账号。`,
+        };
+      }
+      const rows = await findUsers(actor, { ...filters, limit: 50 });
       return {
         rows: rows.map((u) => ({
           账号: u.username,
@@ -133,7 +154,11 @@ export const ACTIONS = {
           院系: u.dept_name || '-',
           状态: Number(u.status) === 1 ? '正常' : '已禁用',
         })),
-        summary: `共找到 ${rows.length} 个账号（最多显示 50 条）`,
+        scalar: rows.length < 50 ? rows.length : null,
+        summary:
+          rows.length >= 50
+            ? `账号较多，只列出前 50 条（共 ${rows.length}+ 条）。想看总数可以说"有多少个账号"。`
+            : `共找到 ${rows.length} 个账号`,
       };
     },
   },

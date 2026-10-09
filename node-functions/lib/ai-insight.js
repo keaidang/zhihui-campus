@@ -383,7 +383,7 @@ const FINAL_JUDGE = [
   '【最终判定】按顺序判断用户是不是在**要统计数据**：',
   '1. 先看【可用问数模板】能否直接回答 → 能就输出 template + params。',
   '2. 模板做不到 → 输出 query（用【可自由组合查询的对象】里的 key 自己组）。',
-  '   · "有多少 / 总数" → 只给 metrics，不要 groupBy（这样直接返回一个数字）',
+  '   ★ "有多少 / 总数" → 只给 metrics，**不要 groupBy、不要拉明细**（这样直接返回一个数字）',
   '   · "按某维度排名" → groupBy 那个维度 + orderBy 排序',
   '   · "谁最差/最好/最多" → groupBy 人或类 + orderBy:{field:"<指标>",dir:"asc|desc"}',
   '3. 不是要统计数据 → template 与 query 都填 null，reply 里正常回答（当作校园助手）。',
