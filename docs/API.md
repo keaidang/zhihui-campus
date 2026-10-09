@@ -345,6 +345,63 @@ npm run eval:ai -- --scene triage       # 只跑某个场景
 方法与结果见 **`docs/AI-EVAL.md`**。
 
 
+### 5.20 通用结构化查询（C13）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | /api/ai/action | admin / counselor / teacher | 第四类意图 `query`（与 action / insight / 问答共用一次调用） |
+| POST | /api/ai/insight | leader / admin | 同上，供校领导使用 |
+
+**为什么需要它**：改造前只有 10 个问数模板，「学生账号总数」只能退化成"列出 50 条明细" ——
+能力上限 = 模板数量。C13 让模型输出**结构化查询描述**，服务端编译成参数化 SQL，
+表达力接近 SQL，而安全边界一点没松。
+
+**协议（`query` 字段）**
+
+```json
+{ "entity": "score",
+  "metrics": { "gpa": 1 },
+  "groupBy": ["realName"],
+  "filters": [{ "field": "createdAt", "days": 90 }],
+  "orderBy": { "field": "gpa", "dir": "asc" },
+  "limit": 5 }
+```
+
+**响应（`kind: "data"`，`viaQuery: true`）**
+
+```json
+{ "isAggregate": true, "scalar": null,
+  "rows": [{ "姓名": "程泽晓", "绩点": 1.17 }],
+  "summary": "共 5 个姓名分组，其中姓名「程泽晓」的绩点最高（1.17）。",
+  "metrics": ["绩点"], "groupBy": ["姓名"] }
+```
+
+`scalar` 非空时前端**只显示一句话、不渲染表格**（问"总数"时用户要的是一个数字）。
+
+**可查实体（6 个）**
+
+| entity | label | 可用角色 | 特色指标 |
+|---|---|---|---|
+| `user` | 账号 | admin / counselor / leader / teacher | 人数 |
+| `score` | 成绩 | admin / counselor / leader | **绩点**（口径引用 `lib/edu-stats.js`，不及格不计入分母）、不及格门数、不及格率 |
+| `leave` | 请假单 | admin / counselor / leader | 总天数、平均天数、涉及人数 |
+| `repair` | 报修工单 | admin / counselor / leader | 待受理数 |
+| `loan` | 图书借阅 | admin / counselor / leader | 逾期未还数 |
+| `forum` | 论坛 | admin / counselor / leader | 回复总数 |
+
+**安全边界（实现见 `lib/ai-query.js`，测试见 `tests/unit/ai-query.spec.js`）**
+
+1. 标识符（SELECT / GROUP BY / ORDER BY）全部来自白名单，SQL 片段由 `lib/ai-entity.js` 写死
+2. 筛选值一律 `?` 占位符；`LIKE` 的 `% _ \` 被剔除（不让模型控制通配行为）
+3. **数据范围强制注入**：scope 由服务端按角色拼进 WHERE，模型既看不到也改不掉；
+   模型即使输出 `filters` 指定别的院系，注入条件仍与之 AND —— 越权语法上不可能
+4. `LIMIT` 硬夹：明细 20 / 聚合 10 / 绝对上限 50
+5. `JOIN` 片段写死在注册表，模型不能新增表或改连接条件
+6. `ORDER BY` 只能按数值/时间字段或指标别名（文本排序无意义且慢）
+7. 一次最多 2 个分组维度、6 个筛选条件（防组合爆炸与慢查询）
+8. 角色无权 → `49403`（在 scope 之前就拒，不靠错误码探测实体是否存在）
+
+
 ## 6. 未实现模块端点（规划，实现后在此补充）
 
 ### 外部图书馆系统对接（预留）

@@ -252,6 +252,33 @@
       ```
     - 通用判据：**凡是把对象放进响应式容器，之后要持续改它的字段，就必须用容器里取回来的那个引用**。改完如果"数据明明变了但界面不动"，第一个怀疑对象就是它。
     - 衍生的坑：光标这类"由布尔值控制显隐"的元素，一旦该布尔值写在非代理对象上就会**永久留在 DOM**（CSS 动画照跑，看起来像还在加载）。所以凡控制显隐的状态，务必额外加一个与流无关的**兜底收尾**（本项目用 `WATCHDOG_MS=90s` 看门狗 + 发送结束时的 200ms 保险）。
+45. **★ 这台机器上 `git push` 报 `terminal prompts disabled` 的真因是凭据助手路径含空格（2026-10-09 查明）**：
+    - **别误判**：不是凭据失效、不是网络问题、也不是权限问题。用户在自己终端里能正常 push。
+    - **真因**：`credential.helper` 指向 `C:/Program Files/WorkBuddy/.../git-credential-manager.exe`，Git 通过 `sh -c` 调用外部 helper 时会在空格处截断成 `C:/Program`（报 `No such file or directory`）→ 拿不到凭据 → 退回终端提示 → 被非交互环境禁用 → `fatal: could not read Username`。
+    - **已修**（仓库级 `.git/config`，不污染全局）：
+      ```bash
+      git config --local --unset-all credential.helper
+      git config --local --add credential.helper "C:/Users/Administrator/.workbuddy/binaries/PortableGit/versions/1.2.0/mingw64/bin/git-credential-manager.exe"
+      ```
+    - **诊断顺序**（照着走，别跳步）：① `git ls-remote` 验网络（不需要凭据）② `printf 'protocol=https\nhost=github.com\n\n' | git-credential-manager.exe get` 验凭据（值不要打印到日志）③ `GIT_TRACE=1 git push --dry-run` 抓真实报错。
+    - **两个坑**：单独把 exe 复制到别处会抛 `FileNotFoundException: 找不到程序集 gcmcore`（依赖同目录程序集）；配置里已有多条 helper 时必须先 `--unset-all` 再 `--add`，否则报 `cannot overwrite multiple values`。
+    - **非交互环境**跑 git/脚本一律加 `GIT_TERMINAL_PROMPT=0`，任何回落到交互提示的路径都会挂起。
+46. **★ 权限/范围判断必须「默认拒绝」，漏一个分支就是越权（2026-10-10 踩实）**：
+    - 实例：`lib/ai-query.js` 的 `scopeWhere`，辅导员分支只写了 `af_leave` 与 `edu_elect`
+      的本院条件，**其余实体落到 `return { sql: '' }`** —— 也就是"不加任何限制 = 全校可见"。
+      本地实测「辅导员查账号数」返回 **490（全校）**，应为 58（本院）。
+    - 修复：改成白名单式。明确支持的实体给本院条件；**未登记的实体退化为"只看本人"（最保守），
+      绝不退化为"不加限制"**。
+    - 通用写法：写 `if (allowed(x)) return ...;` 之后，**末尾必须有一条兜底**，
+      且兜底要与"拒绝"语义一致 —— 越权方向上永远不能有 fall-through。
+    - 配套测试：单测里必须有"用无权角色/缺参数的用户去查，断言拿到的是范围限制条件而非全集"。
+47. **★ 给模型看的字段目录只给「语义层」，绝不给 SQL 片段（2026-10-10 设计决定）**：
+    - 原因：模型一旦看到列名与表达式，它就会开始写 SQL 式的东西（自定义别名、拼函数、
+      要求 JOIN），白名单随即失效。
+    - 做法：注册表里的 `sql` 片段**只存在于服务端**；给模型的只有
+      `{对象, 字段key, 中文label, 类型, 枚举可选值, 能否分组, hint}`。
+    - 同一份渲染逻辑被两个端点复用（`entityPromptSections`）：两份提示词必然漂移，
+      改注册表说明时只改一处才对。
 42. **★ 推送前必须跑 `npm run check:import`（部署前导入自检，2026-10-09 踩实）**：
     - **现象**：P8 推送后新端点迟迟不生效、一直回落到 SPA，**从外部看不到任何报错**。
     - **根因**：`api/ai/anomaly.js` 写了 `import { clientIp } from '../../lib/guard.js'`，而该导出实际在 `lib/http.js`。**导入一个不存在的导出会让 EdgeOne 构建失败**，而 EdgeOne Pages 只在**构建日志**里提示 → 外部表现只是"部署没生效"，极易误判为"平台慢"或"业务逻辑错"。
