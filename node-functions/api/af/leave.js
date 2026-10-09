@@ -1,55 +1,20 @@
-// /api/af/leave — 请销假（审批流驱动: flow_instance + flow_node）
+// /api/af/leave — 请销假（HTTP 薄壳，审批流驱动 flow_instance + flow_node）
 // GET  学生: 本人请假单; counselor/admin/leader: 本院/全校单据
 // POST { action: 'apply' | 'approve' | 'reject' | 'back', ... }
-import { ok, fail, jsonError, readBody, preflight, clientIp } from '../../lib/http.js';
-import { requireRoles, dataScope, ERR_FORBIDDEN, opLog } from '../../lib/guard.js';
-import { query, withTransaction } from '../../lib/db.js';
-import { notify } from '../../lib/notify.js';
+//
+// ★ P4 服务层重构（2026-10-09）：业务逻辑在 lib/services/leave.js。
+import { ok, jsonError, readBody, preflight } from '../../lib/http.js';
+import { actorFrom } from '../../lib/services/_actor.js';
+import { handleLeaveAction, listLeaves } from '../../lib/services/leave.js';
 
 export { preflight as onRequestOptions };
 
-const STATUS = { 1: '审批中', 2: '已批准', 3: '已驳回', 4: '已销假' };
-
 export async function onRequestGet(context) {
   try {
-    const { userId, roles, deptId } = await requireRoles(context);
+    const actor = await actorFrom(context);
     const url = new URL(context.request.url);
-    const status = url.searchParams.get('status');
-
-    const isStudentOnly = !roles.some((r) => ['admin', 'counselor', 'teacher', 'leader'].includes(r));
-    const where = ['1 = 1'];
-    const params = [];
-    if (isStudentOnly) {
-      where.push('l.student_id = ?');
-      params.push(userId);
-    } else {
-      const scope = dataScope(roles, deptId);
-      if (scope.type === 'dept') {
-        where.push('l.dept_id = ?');
-        params.push(scope.deptId);
-      }
-    }
-    if (status && ['1', '2', '3', '4'].includes(status)) {
-      where.push('l.status = ?');
-      params.push(Number(status));
-    }
-
-    const rows = await query(
-      `SELECT l.id, l.type, l.reason, l.start_at, l.end_at, l.status, l.back_at, l.created_at,
-              u.real_name, u.user_no, u.username, d.name AS dept_name, cl.name AS class_name,
-              fn.opinion, fn.handled_at
-         FROM af_leave l
-         JOIN sys_user u ON u.id = l.student_id
-         LEFT JOIN sys_department d ON d.id = l.dept_id
-         LEFT JOIN sys_class cl ON cl.id = u.class_id
-         LEFT JOIN flow_instance fi ON fi.biz_type = 'leave' AND fi.biz_id = l.id
-         LEFT JOIN flow_node fn ON fn.instance_id = fi.id AND fn.node_order = fi.current_node
-        WHERE ${where.join(' AND ')}
-        ORDER BY l.id DESC
-        LIMIT 100`,
-      params,
-    );
-    return ok({ list: rows.map((r) => ({ ...r, status_text: STATUS[r.status] })) });
+    const r = await listLeaves(actor, { status: url.searchParams.get('status') });
+    return ok(r.data);
   } catch (e) {
     return jsonError(e);
   }
@@ -57,106 +22,10 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   try {
-    const { userId, roles, deptId } = await requireRoles(context);
-    const ip = clientIp(context.request);
+    const actor = await actorFrom(context);
     const body = await readBody(context.request);
-    const action = String(body.action || '');
-
-    // 学生申请：建单 + 建流程实例 + 建辅导员审批节点
-    if (action === 'apply') {
-      const type = ['事假', '病假', '其他'].includes(body.type) ? body.type : '事假';
-      const reason = String(body.reason || '').trim().slice(0, 500);
-      const startAt = String(body.startAt || '').slice(0, 19);
-      const endAt = String(body.endAt || '').slice(0, 19);
-      if (!reason) return fail(43001, '请填写请假事由');
-      // 日期选择器给的是北京墙钟（无时区），库内统一存 UTC → 落库前显式 -8h，展示端统一 fmtTime() 还原
-      const toUtc = (s) => {
-        const d = new Date(`${s.replace(' ', 'T')}Z`);
-        if (Number.isNaN(d.getTime())) return null;
-        d.setTime(d.getTime() - 8 * 3600 * 1000);
-        return d;
-      };
-      const start = toUtc(startAt);
-      const end = toUtc(endAt);
-      if (!start || !end || end <= start) {
-        return fail(43001, '请假时间不合法（结束须晚于开始）');
-      }
-      if (end - start > 30 * 24 * 3600 * 1000) return fail(43001, '单次请假不能超过 30 天');
-      const startUtc = start.toISOString().slice(0, 19).replace('T', ' ');
-      const endUtc = end.toISOString().slice(0, 19).replace('T', ' ');
-
-      let leaveId = null;
-      await withTransaction(async (conn) => {
-        const [ins] = await conn.query(
-          'INSERT INTO af_leave (student_id, dept_id, type, reason, start_at, end_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [userId, deptId, type, reason, startUtc, endUtc],
-        );
-        leaveId = ins.insertId;
-        const [fi] = await conn.query(
-          `INSERT INTO flow_instance (biz_type, biz_id, title, applicant_id, dept_id, status, current_node)
-           VALUES ('leave', ?, ?, ?, ?, 1, 1)`,
-          [leaveId, `${type}申请`, userId, deptId],
-        );
-        await conn.query(
-          `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status)
-           VALUES (?, 1, '辅导员审批', 'counselor', 0)`,
-          [fi.insertId],
-        );
-        await conn.query('UPDATE af_leave SET instance_id = ? WHERE id = ?', [fi.insertId, leaveId]);
-      });
-      return ok({ leaveId }, '请假申请已提交，等待辅导员审批');
-    }
-
-    // 审批（通过/驳回）：辅导员（本院）或超管
-    if (action === 'approve' || action === 'reject') {
-      if (!roles.some((r) => ['counselor', 'admin'].includes(r))) throw ERR_FORBIDDEN('仅辅导员可审批');
-      const leaveId = Number(body.leaveId);
-      const opinion = String(body.opinion || '').trim().slice(0, 256);
-      const leaves = await query('SELECT id, dept_id, status, instance_id FROM af_leave WHERE id = ?', [leaveId]);
-      if (leaves.length === 0) return fail(43004, '请假单不存在');
-      const lv = leaves[0];
-      if (lv.status !== 1) return fail(43002, '该申请不在审批中');
-      if (roles.includes('counselor') && !roles.includes('admin')) {
-        if (!deptId || lv.dept_id !== deptId) throw ERR_FORBIDDEN('只能审批本院学生的申请');
-      }
-      const approved = action === 'approve';
-      await withTransaction(async (conn) => {
-        await conn.query(
-          'UPDATE flow_node SET status = ?, handler_id = ?, opinion = ?, handled_at = NOW() WHERE instance_id = ? AND node_order = 1 AND status = 0',
-          [approved ? 1 : 2, userId, opinion || (approved ? '同意' : '驳回'), lv.instance_id],
-        );
-        await conn.query('UPDATE flow_instance SET status = ?, updated_at = NOW() WHERE id = ?', [approved ? 2 : 3, lv.instance_id]);
-        await conn.query('UPDATE af_leave SET status = ? WHERE id = ?', [approved ? 2 : 3, leaveId]);
-      });
-      await opLog(userId, `leave.${action}`, `leave:${leaveId}`, opinion, ip);
-      // 站内通知：审批结果推送给申请人
-      const applicant = await query('SELECT student_id FROM af_leave WHERE id = ?', [leaveId]);
-      await notify(
-        applicant[0]?.student_id,
-        approved ? '你的请假申请已批准' : '你的请假申请被驳回',
-        approved
-          ? `你的请假申请已通过审批${opinion ? `，意见：${opinion}` : ''}。请按时返校并在返校后完成销假。`
-          : `你的请假申请未通过${opinion ? `，原因：${opinion}` : ''}。如有疑问请联系辅导员。`,
-        { senderId: userId, biz: 'leave' },
-      );
-      return ok({ leaveId, status: approved ? 2 : 3 }, approved ? '已批准' : '已驳回');
-    }
-
-    // 销假：学生本人，已批准 -> 已销假
-    if (action === 'back') {
-      const leaveId = Number(body.leaveId);
-      const leaves = await query('SELECT id, student_id, status, instance_id FROM af_leave WHERE id = ?', [leaveId]);
-      if (leaves.length === 0) return fail(43004, '请假单不存在');
-      if (leaves[0].student_id !== userId) throw ERR_FORBIDDEN('只能销自己的假');
-      if (leaves[0].status !== 2) return fail(43003, '仅已批准的请假单可销假');
-      await withTransaction(async (conn) => {
-        await conn.query('UPDATE af_leave SET status = 4, back_at = NOW() WHERE id = ?', [leaveId]);
-        await conn.query('UPDATE flow_instance SET status = 4, updated_at = NOW() WHERE id = ?', [leaves[0].instance_id]);
-      });
-      return ok({ leaveId }, '销假成功，欢迎返校');
-    }
-
-    return fail(43001, '不支持的操作');
+    const r = await handleLeaveAction(actor, body);
+    return ok(r.data, r.message);
   } catch (e) {
     return jsonError(e);
   }
