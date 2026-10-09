@@ -528,7 +528,7 @@ export async function sendMail({ to, subject, html, text })  // 复用内部 cal
 | **P7 C4+C6** ✅ | 7.1 问数模板库（10 个，参数枚举校验） | ✅ `lib/ai-insight.js`、`api/ai/insight.js` | ✅ 线上 5/5 模板正确命中；注入尝试被 enum 白名单兜住 |
 | | 7.2 审批建议 + 接入审批页 ✅ | ✅ `lib/ai-approval.js`、`api/ai/approval-advice.js`、`af/ApproveView.vue` | ✅ 线上 22/22；能检出真实课表冲突（周五第9-10节《高等数学（下）》） |
 | | 7.3 驾驶舱问数入口 | 改为统一走 `/ai` 页（同一套问数，不再单独嵌驾驶舱） | ✅ leader 可用（`/ai` 按角色选路） |
-| **P8 C7~C12** | 8.1~8.6 学业助手 / 报修分诊 / 公告摘要 / 失物匹配 / 异常监测 / 图书检索 | 对应 api 文件 + `af_notice` 加 `summary` | 逐项可用 |
+| **P8 C7~C12** ✅ | 8.1~8.6 学业助手 / 报修分诊 / 公告摘要 / 失物匹配 / 异常监测 / 图书检索 | ✅ `lib/ai-{study,triage,summary,lf-match,anomaly,lib-search}.js` + `lib/edu-stats.js` + `lib/book-meta.js` + 对应 api | ✅ 六项全部落地，单测 287 全绿 |
 | **P9 控制台收尾** 🔶 | 9.1 AI 管理控制台 | ✅ `views/admin/AiAdminView.vue` + `api/ai/{config,kb,usage}.js` | ✅ 五个 Tab（开关/审核队列/知识库/告警/用量）；**此前新 AI 能力默认关但无界面可开，此页是必需品** |
 | | 9.2 全量验证 | — | `npm run check` + `npm run build` + 线上 e2e |
 | | 9.3 文档同步 | `PROGRESS` / `HANDOVER` / `API.md` / `DATABASE.md` / `ADR-9` | 文档与实现一致 |

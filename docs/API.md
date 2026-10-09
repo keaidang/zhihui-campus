@@ -292,6 +292,39 @@
 | 49431 | 400 | 知识库/审核记录不存在 |
 
 
+### 5.18 AI 能力接口（P8：C7~C12）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /api/ai/study | student | **C7 学业概览**（学分/绩点/挂科/本学期课表）。纯 SQL 汇总，**不消耗 AI token** |
+| POST | /api/ai/study | student | **C7 学业问答**。`{ question, history? }` → SSE（协议同 5.15 的 `/api/ai/chat`） |
+| POST | /api/ai/lib-search | 全员 | **C12 图书自然语言检索**。`{ question }` → `{ books[], parsed:{keyword,category}, note, degraded }`（**不生成自然语言答案，只回结构化书目**） |
+| GET | /api/ai/anomaly | admin | **C11 立即扫描**。纯 SQL 规则检测，返回 `{ findings[], checkedAt }`，**不发邮件** |
+| POST | /api/ai/anomaly | admin | `{ notify?:boolean=true }` 扫描并按需邮件通知；`notify=false` 时只返回结果 |
+
+**被 AI 增强的既有端点（开关关闭时行为与改造前完全一致）**
+
+| 端点 | 增强点 |
+|---|---|
+| `POST /api/af/repair`（create） | 响应多返回 `data.triage = { dept, urgency, urgencyLabel, selfService, suggestion }`；写入 `af_repair.ai_triage`。**分诊超时/失败 → 返回 null，工单照常创建** |
+| `GET /api/af/repair` | 每条工单多返回 `triage`（由 `ai_triage` 文本解析；解析不出则给 `{raw}`） |
+| `POST /api/af/notice`（publish） | 响应多返回 `data.summary`；写入 `af_notice.summary` |
+| `POST /api/af/notice`（**新增 action=summary**） | `{ action:'summary', id }` 为已有公告补摘要（作者本人或超管） |
+| `GET /api/af/notice` | 列表多返回 `summary` 字段 |
+| `POST /api/lf/items`（create） | 响应多返回 `data.matches = [{ id, title, score, reason }]`（≥0.6 才返回）；命中产生**双向**站内信 |
+
+**安全与降级边界（实现见各 `lib/ai-*.js`，测试见 `tests/unit/ai-p8.spec.js`）**
+
+- **C7 零越权入口**：`student_id` 在 SQL 里硬编码为当前登录用户，请求体**不接受** `studentId` 参数（不是"判断了权限"，而是"没有可越权的入口"）
+- **C7 口径唯一**：学分/绩点来自 `lib/edu-stats.js`，与成绩页面 `/api/edu/score` **同源**（口径不一致会让同一系统给出两个答案）
+- **C8 白名单**：责任部门只能是 `TRIAGE_DEPTS` 之一，非法值归「其他」；紧急度非法值降级为 `normal`
+- **C8 不阻塞**：`ai.triage.timeout_ms`（默认 3000）为硬上限，超时即放弃分诊
+- **C9 不阻塞**：摘要生成失败只留空串，公告照常发布；摘要硬截断 80 字
+- **C10 服务端二次校验**：模型给的 id 必须存在于候选清单（模型会编 id）、score 夹到 [0,1]、低于阈值丢弃
+- **C11 规则优先**：检测全用 SQL（确定性、可复现、零 token），模型只做摘要归纳；findings 为空不发邮件；邮件按天去重
+- **C12 不生成 SQL**：模型只输出「关键词 + 分类」，分类过 `LIB_CATEGORIES` 白名单，`% _ \` 一律剔除；AI 不可用时退化为整句关键词检索
+
+
 ## 6. 未实现模块端点（规划，实现后在此补充）
 
 ### 外部图书馆系统对接（预留）
