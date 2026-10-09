@@ -263,7 +263,20 @@ export function compileQuery(actor, q = {}) {
     wheres.length ? ` WHERE ${wheres.join(' AND ')}` : ''
   }${groupSql}${havingSql}${orderSql}${limitSql}`;
 
-  return { sql, params, select: selectParts, groupBy: groups, metrics, isAggregate, limit, orderMetricAlias };
+  return {
+    sql,
+    params,
+    select: selectParts,
+    groupBy: groups,
+    metrics,
+    isAggregate,
+    limit,
+    orderMetricAlias,
+    // ★ 把排序方向与被排序的指标一起透出：summarize 要靠它决定说"最高"还是"最低"。
+    //   漏了它就会硬编码"最高"，于是问"最差"时也会说"最高" —— 结论与数据相反，
+    //   比报错严重得多（用户会照着错误结论做判断）。2026-10-10 线上验收发现。
+    order: order?.field ? { field: String(order.field), dir: String(order.dir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc' } : null,
+  };
 }
 
 /** 生成人话总结：单值直接给数，多行给"共 N 条 + 首行要点" */
@@ -272,7 +285,7 @@ export function compileQuery(actor, q = {}) {
 //   → 运行时 `groups` 为 undefined → `groups.length` 抛 "Cannot read properties of
 //   undefined"，13 个用例全挂（2026-10-10）。这种"解构一个不存在的字段"不会在
 //   编译期报错，只能靠测试发现 —— 故此处显式注释。
-function summarize(entity, { rows, isAggregate, metrics, groupBy }, wanted = 10) {
+function summarize(entity, { rows, isAggregate, metrics, groupBy, order }, wanted = 10) {
   const groups = groupBy;
   if (!rows.length) {
     return `没有符合条件的${entity.label}记录。`;
@@ -289,7 +302,18 @@ function summarize(entity, { rows, isAggregate, metrics, groupBy }, wanted = 10)
     const g = groups[0];
     const m = metrics[0];
     const top = rows[0];
-    return `共 ${rows.length} 个${g.label}分组，其中${g.label}「${top[g.label]}」的${m.label}最高（${top[m.label]}）。`;
+    // ★ 「最高/最低」必须跟排序方向走。原实现硬编码"最高"，于是
+    //   问「绩点最差的学生」（ORDER BY 绩点 ASC）也会说"最高" ——
+    //   **结论与数据完全相反**，用户照着错结论做判断，比报错更有害。
+    //   2026-10-10 线上验收实测：返回林宁蓉 2.57 并称"最高"，而真正的最差是程泽晓 1.17。
+    const ascending = order?.dir === 'asc';
+    const orderedByThisMetric = order && (order.field === m.key || order.field === metrics[0].key);
+    // 只有"确实按这个指标排"才能断言最值；否则只描述第一行，不下结论
+    if (!orderedByThisMetric) {
+      return `共 ${rows.length} 个${g.label}分组，已列出${rows.length >= (wanted || 10) ? `前 ${wanted} 条` : '全部'}。`;
+    }
+    const word = ascending ? '最低' : '最高';
+    return `共 ${rows.length} 个${g.label}分组，其中${g.label}「${top[g.label]}」的${m.label}${word}（${top[m.label]}）。`;
   }
   if (isAggregate) {
     return `共 ${rows.length} 组统计结果，按${

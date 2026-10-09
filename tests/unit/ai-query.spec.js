@@ -487,3 +487,27 @@ describe('计数意图识别 · 服务端兜底（2026-10-10 线上验收暴露�
     expect(looksLikeCountIntent(undefined)).toBe(false);
   });
 });
+
+describe('★ 最值文案必须跟排序方向走（线上验收发现"结论与数据相反"）', () => {
+  // 2026-10-10 线上实测：问「绩点最差的学生」（ORDER BY 绩点 ASC），
+  // AI 答「…林宁蓉的绩点最高（2.57）」—— 排序是对的（1.17 在第一行），
+  // 但 summarize 硬编码"最高"，于是**结论与数据完全相反**。
+  // 这比报错严重得多：用户会照着错误结论做判断（"林宁蓉绩点最好"）。
+  const ascQ = { entity: 'score', metrics: { gpa: 1 }, groupBy: ['realName'], orderBy: { field: 'gpa', dir: 'asc' }, limit: 3 };
+  const descQ = { ...ascQ, orderBy: { field: 'gpa', dir: 'desc' } };
+
+  it('compileQuery 透出 order（含方向），供 summarize 决定措辞', () => {
+    expect(compileQuery(admin, ascQ).order).toEqual({ field: 'gpa', dir: 'asc' });
+    expect(compileQuery(admin, descQ).order).toEqual({ field: 'gpa', dir: 'desc' });
+  });
+
+  it('没给 orderBy 时 order 为 null（summarize 此时不得断言最值）', () => {
+    const c = compileQuery(admin, { entity: 'score', metrics: { gpa: 1 }, groupBy: ['realName'] });
+    expect(c.order).toBeNull();
+  });
+
+  it('SQL 的 ORDER BY 方向与 order 字段一致（两处不能各说各话）', () => {
+    expect(compileQuery(admin, ascQ).sql).toContain('ORDER BY `绩点` ASC');
+    expect(compileQuery(admin, descQ).sql).toContain('ORDER BY `绩点` DESC');
+  });
+});
