@@ -53,6 +53,23 @@ const PARSE_RULES = [
   '6. 用户的话有歧义（例如只说"处理一下那些"）时，两个都填 null，reply 里反问澄清。',
 ].join('\n');
 
+
+/**
+ * 计数意图识别：用户是不是只想要一个**数**？
+ *
+ * ★ 为什么要服务端兜底而不是只靠提示词：实测中模型仍会选 `query_users` 去列明细
+ *   （2026-10-10 线上验收：辅导员问"一共有多少个账号"得到 50 行表格）。
+ *   提示词规则能提高命中率，但**不该把体验押在模型每次都听话上**。
+ *   这里在服务端做一次兜底：命中计数意图且模型选了 list 类动作时，自动改成计数。
+ *
+ * 只在**模型没给 countOnly** 时兜底，不覆盖模型显式选择。
+ */
+const COUNT_INTENT = /(多少|几个|数目|总数|人数|数量|共\s*[多少几]|how many)/i;
+
+function looksLikeCountIntent(text) {
+  return COUNT_INTENT.test(String(text || ''));
+}
+
 export async function onRequestPost(context) {
   try {
     const actor = await actorFrom(context);
@@ -131,6 +148,14 @@ export async function onRequestPost(context) {
     const key = parsed.action === null || parsed.action === undefined ? null : String(parsed.action);
     const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
 
+    // ★ 计数兜底：模型选了"列表型"动作但用户明显只想要个数时，改成计数。
+    //   例："一共有多少个账号" → 模型选 query_users（列表）→ 这里改成只返回总数。
+    //   判定刻意保守：必须同时满足「模型没给 countOnly」+「原句含计数词」，
+    //   否则"查一下 student01 的账号"这种带"多少"边角料的句子会被误伤。
+    if (key === 'query_users' && String(params.countOnly) !== '1' && looksLikeCountIntent(text)) {
+      params.countOnly = '1';
+    }
+
     // ---- 问数分支（C6）：一个调用同时支持"执行/问数/问答"，避免管理员多付一次费 ----
     const insKey = parsed.insight == null ? null : String(parsed.insight);
     if (!key || !ACTIONS[key]) {
@@ -206,3 +231,5 @@ export async function onRequestPost(context) {
     return jsonError(e);
   }
 }
+
+export { looksLikeCountIntent };

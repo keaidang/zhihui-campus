@@ -449,3 +449,41 @@ describe('countUsers · 账号计数（AI 的 countOnly 走它）', () => {
     expect(c).toBeGreaterThan(0); // 本院非空（否则数据范围条件写错了）
   });
 });
+
+describe('计数意图识别 · 服务端兜底（2026-10-10 线上验收暴露）', () => {
+  it('★ 典型计数问法必须命中', async () => {
+    const { looksLikeCountIntent } = await import('../../node-functions/api/ai/action.js');
+    for (const q of [
+      '当前系统中学生账号的数量',
+      '一共有多少个账号',
+      '一共有多少个老师',
+      '总共有多少条请假',
+      '人数是多少',
+      '数目有多少',
+      'how many students',
+    ]) {
+      expect(looksLikeCountIntent(q), q).toBe(true);
+    }
+  });
+
+  it('★ 非计数问法不能误判（否则会把它从列表改成只给一个数）', async () => {
+    const { looksLikeCountIntent } = await import('../../node-functions/api/ai/action.js');
+    for (const q of [
+      '查一下 student01 的账号',
+      '禁用账号 student01',
+      '查看所有待审批的请假',
+      '这几条记录是谁发的', // 关键词边界：含"几条"但不表示要计数
+      '发布一条公告',
+      '怎么选课',
+    ]) {
+      expect(looksLikeCountIntent(q), q).toBe(false);
+    }
+  });
+
+  it('空输入不报错也不命中', async () => {
+    const { looksLikeCountIntent } = await import('../../node-functions/api/ai/action.js');
+    expect(looksLikeCountIntent('')).toBe(false);
+    expect(looksLikeCountIntent(null)).toBe(false);
+    expect(looksLikeCountIntent(undefined)).toBe(false);
+  });
+});
