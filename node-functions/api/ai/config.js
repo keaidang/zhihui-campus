@@ -14,30 +14,35 @@ import { usageSummary } from '../../lib/ai-guard.js';
 
 export { preflight as onRequestOptions };
 
-/** 开关的中文说明（与 schema-012 的 remark 同源；此处冗余一份用于接口自描述） */
-const LABELS = {
-  'ai.enabled': 'AI 总开关（关闭 = 全站 AI 静默降级）',
-  'ai.chat.enabled': 'C1 校园智能问答',
-  'ai.chat.rate_per_min': '每用户每分钟问答次数上限',
-  'ai.chat.daily_per_user': '每用户每日问答次数上限',
-  'ai.forum_review.enabled': 'C2 论坛 AI 审核员（默认关）',
-  'ai.forum_review.block_on_violation': 'C2 判定违规时直接拦截发帖',
-  'ai.forum_review.timeout_ms': 'C2 审核超时（超时 = 放行并标记待复核）',
-  'ai.alert.enabled': 'C3 异常告警邮件总开关（默认关）',
-  'ai.alert.emails': 'C3 收件人（逗号分隔；留空则取 admin 角色的校园邮箱）',
-  'ai.alert.dedupe_min': 'C3 同类告警去重窗口（分钟）',
-  'ai.approval_advice.enabled': 'C4 AI 审批助手（只建议，不自动审批；默认关）',
-  'ai.approval_advice.timeout_ms': 'C4 建议生成超时',
-  'ai.admin_console.enabled': 'C5 对话式系统管理',
-  'ai.insight.enabled': 'C6 信息问数',
-  'ai.study.enabled': 'C7 学生学业助手',
-  'ai.triage.enabled': 'C8 报修智能分诊（默认关）',
-  'ai.notice_summary.enabled': 'C9 公告 AI 摘要（默认关）',
-  'ai.lf_match.enabled': 'C10 失物招领智能匹配（默认关）',
-  'ai.anomaly.enabled': 'C11 数据异常监测（默认关）',
-  'ai.lib_search.enabled': 'C12 图书自然语言检索',
-  'ai.kb.inline_max_chars': '知识库全量注入阈值',
-  'ai.kb.top_k': '知识库召回条数',
+/**
+ * 开关的中文说明 + **显式类型**（与 schema-012 的 remark 同源；此处冗余一份用于接口自描述）
+ *
+ * ★ 类型必须显式声明，不能从值去猜：布尔开关的值就是 '0'/'1'，用 `^\d+$` 判会全部被当成数字，
+ *   于是控制台把"论坛审核开关"渲染成"修改"按钮而不是开关 —— 2026-10-09 线上验收暴露。
+ */
+export const LABELS = {
+  'ai.enabled': { label: 'AI 总开关（关闭 = 全站 AI 静默降级）', type: 'bool' },
+  'ai.chat.enabled': { label: 'C1 校园智能问答', type: 'bool' },
+  'ai.chat.rate_per_min': { label: '每用户每分钟问答次数上限', type: 'number' },
+  'ai.chat.daily_per_user': { label: '每用户每日问答次数上限', type: 'number' },
+  'ai.forum_review.enabled': { label: 'C2 论坛 AI 审核员（默认关）', type: 'bool' },
+  'ai.forum_review.block_on_violation': { label: 'C2 判定违规时直接拦截发帖', type: 'bool' },
+  'ai.forum_review.timeout_ms': { label: 'C2 审核超时（超时 = 放行并标记待复核）', type: 'number' },
+  'ai.alert.enabled': { label: 'C3 异常告警邮件总开关（默认关）', type: 'bool' },
+  'ai.alert.emails': { label: 'C3 收件人（逗号分隔；留空则取 admin 角色的校园邮箱）', type: 'text' },
+  'ai.alert.dedupe_min': { label: 'C3 同类告警去重窗口（分钟）', type: 'number' },
+  'ai.approval_advice.enabled': { label: 'C4 AI 审批助手（只建议，不自动审批；默认关）', type: 'bool' },
+  'ai.approval_advice.timeout_ms': { label: 'C4 建议生成超时', type: 'number' },
+  'ai.admin_console.enabled': { label: 'C5 对话式系统管理', type: 'bool' },
+  'ai.insight.enabled': { label: 'C6 信息问数', type: 'bool' },
+  'ai.study.enabled': { label: 'C7 学生学业助手', type: 'bool' },
+  'ai.triage.enabled': { label: 'C8 报修智能分诊（默认关）', type: 'bool' },
+  'ai.notice_summary.enabled': { label: 'C9 公告 AI 摘要（默认关）', type: 'bool' },
+  'ai.lf_match.enabled': { label: 'C10 失物招领智能匹配（默认关）', type: 'bool' },
+  'ai.anomaly.enabled': { label: 'C11 数据异常监测（默认关）', type: 'bool' },
+  'ai.lib_search.enabled': { label: 'C12 图书自然语言检索', type: 'bool' },
+  'ai.kb.inline_max_chars': { label: '知识库全量注入阈值', type: 'number' },
+  'ai.kb.top_k': { label: '知识库召回条数', type: 'number' },
 };
 
 export async function onRequestGet(context) {
@@ -49,8 +54,8 @@ export async function onRequestGet(context) {
       .map(([key, value]) => ({
         key,
         value,
-        label: LABELS[key] || '',
-        type: /^\d+$/.test(value) ? 'number' : key.endsWith('.emails') ? 'text' : 'bool',
+        label: LABELS[key]?.label || '',
+        type: LABELS[key]?.type || 'text',
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
     const usage = await usageSummary(7);
@@ -71,7 +76,7 @@ export async function onRequestPost(context) {
 
     // 开关型只允许 0/1；数值型必须是合法整数；文本型限长
     let value = body.value;
-    const type = /^\d+$/.test(String((await allConfig())[key] ?? '')) ? 'number' : key.endsWith('.emails') ? 'text' : 'bool';
+    const type = LABELS[key].type;
     if (type === 'bool') value = Number(value) === 1 || value === true || value === '1' ? '1' : '0';
     else if (type === 'number') {
       const n = Number(value);
