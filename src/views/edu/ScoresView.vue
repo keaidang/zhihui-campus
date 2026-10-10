@@ -4,9 +4,23 @@
       <header class="pg-head">
         <div>
           <h2>成绩课表</h2>
-          <p>2026-2027 学年第一学期</p>
+          <p>{{ tab === 'score' ? `${termLabelText}成绩` : '本学期周课表' }}</p>
         </div>
-        <div>
+        <div class="head-ops">
+          <el-select
+            v-if="tab === 'score'"
+            v-model="term"
+            style="width: 200px"
+            placeholder="选择学期"
+            @change="load"
+          >
+            <el-option
+              v-for="t in terms"
+              :key="t.term"
+              :label="t.term === currentTerm ? `${t.label}（当前学期）` : t.label"
+              :value="t.term"
+            />
+          </el-select>
           <el-button :icon="Download" round @click="onExport">导出课表</el-button>
           <el-radio-group v-model="tab">
             <el-radio-button value="score">成绩单</el-radio-button>
@@ -78,7 +92,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Download } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
@@ -91,6 +105,14 @@ const loading = ref(false);
 const list = ref([]);
 const tableList = ref([]);
 const summary = ref({});
+// 学期：成绩可按学期切换（成绩数据挂在历史学期，当前学期只该有"在选"）
+const term = ref('');
+const terms = ref([]);
+const currentTerm = ref('');
+const termLabelText = computed(() => {
+  const hit = terms.value.find((t) => t.term === term.value);
+  return hit?.label || term.value || '';
+});
 
 const DAYS = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const COLORS = ['#2563eb', '#0d9488', '#d97706', '#7c3aed', '#dc2626', '#0891b2'];
@@ -112,10 +134,16 @@ function onExport() {
 async function load() {
   loading.value = true;
   try {
-    const [sc, tt] = await Promise.all([api('/api/edu/score'), api('/api/edu/timetable')]);
+    // 成绩按学期查；课表始终是当前学期（周课表没有"往年"概念，不跟着切）
+    const q = term.value ? `?term=${encodeURIComponent(term.value)}` : '';
+    const [sc, tt] = await Promise.all([api(`/api/edu/score${q}`), api('/api/edu/timetable')]);
     if (sc.code === 0) {
       list.value = sc.data.list;
       summary.value = sc.data.summary || {};
+      terms.value = sc.data.terms || [];
+      currentTerm.value = sc.data.currentTerm || '';
+      // 首次进入时跟随后端返回的学期（默认当前学期），之后由用户选择
+      if (!term.value && sc.data.term) term.value = sc.data.term;
     } else {
       ElMessage.error(sc.message || '成绩加载失败');
     }
@@ -139,6 +167,7 @@ onMounted(load);
 .pg-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .pg-head h2 { margin: 0 0 6px; font-size: 19px; color: var(--zc-navy); letter-spacing: 1px; }
 .pg-head p { margin: 0; font-size: 13px; color: var(--zc-text-sub); }
+.head-ops { display: flex; align-items: center; gap: 12px; }
 
 .sum-row { display: flex; gap: 14px; margin-bottom: 18px; }
 .sum-item {

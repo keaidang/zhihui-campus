@@ -51,6 +51,8 @@ npm-build2-exit.txt
 # 依赖与构建产物
 node_modules/
 dist/
+dist*/
+dist.old-tmp/
 build/
 .unpackage/
 
@@ -77,9 +79,16 @@ working/
 # 移动端验收截图（本地产物，不入库）
 .shots/
 
-# 毕业设计论文交付物 —— 含真实姓名/学号/学校等个人身份信息，**严禁入库**
-# （2026-09-22 已从全部 git 历史中移除；文件本身保留在本地 docs/ 下）
+# 毕业设计论文、开题报告等个人材料 —— 含真实姓名/学号/学校/导师等个人身份信息，**严禁入库**
+# （2026-09-22 已从全部 git 历史中移除；文件本身保留在本地 docs/ 下，不提交到远程仓库）
 docs/论文初稿.*
+docs/开题报告*
+docs/*开题*
+docs/*.docx
+docs/*.doc
+docs/*.pdf
+docs/*.pptx
+docs/*.xlsx
 
 # README 完整性自检脚本
 # ⚠ 必须放在上面 `check-*.mjs` 规则**之后** —— gitignore 后匹配的规则优先，

@@ -34,6 +34,9 @@ const args = new Set(process.argv.slice(2));
 const DRY = args.has('--dry');
 const RESET = args.has('--reset');
 const REDO_GRADES = args.has('--redo-grades');
+// --fix-elect：一次性修复入口 —— 把当前学期被误标成「已出成绩」的选课记录恢复为「在选」。
+// 刻意做成**显式参数**而不是默认行为：将来真的录入了本学期成绩后，重跑脚本不该把它们清掉。
+const FIX_ELECT = args.has('--fix-elect');
 
 // ── 确定性随机（mulberry32）──────────────────────────────────────────
 // 不用 Math.random：脚本必须可复现 —— 同一条命令跑两次得到同样的数据，
@@ -103,123 +106,195 @@ async function insertBatch(sql, rows, size = 200) {
 }
 
 const TERM = '2026-2027-1';
+// 历史学期：成绩/绩点数据挂在这里（与当前学期严格分开，理由见下方长注释）
+const TERM_HISTORY = '2025-2026-1';
 
 // ============================================================
-// 1. 成绩：补齐 edu_elect 中 score IS NULL 的记录
+// 1. 历史学期成绩 + 当前学期选课状态修复
 // ============================================================
-// 分数策略（按学生分档，刻意制造可验证的极值）：
-//   档 A「全优」3 人    → 85~96，绩点 3.8~4.0
-//   档 B「偏弱」5 人    → 多门 55~64，绩点 1.3~1.9（用于验证"绩点最差的学生"）
-//   档 C「中等」其余    → 正态 N(78, 9)，多数 70~85
-// 不及格（<60）只出现在档 B 与少量 C 中，约占 5%，接近真实高校分布。
-async function seedGrades() {
-  // --redo-grades：把 status=2 的成绩清回 NULL 后重算。
-  // 为什么需要：改档位策略或绩点口径后必须能重跑，否则旧数据会一直留在库里，
-  // "改完看不到效果"极难排查（2026-10-10 调整偏弱档时踩过）。
-  // 保留原始那 1 条已录成绩（id 最小的那条），避免破坏手工痕迹。
-  if (REDO_GRADES && !DRY) {
-    const [minRow] = await conn.query('SELECT MIN(id) AS m FROM edu_elect WHERE score IS NOT NULL');
-    const keepId = Number(minRow[0]?.m || 0);
-    await conn.query(
-      `UPDATE edu_elect SET score = NULL, grade = NULL, status = 1
-        WHERE score IS NOT NULL AND id <> ?`,
-      [keepId],
-    );
-    log(`  （--redo-grades：已清空成绩（保留 id=${keepId} 那条原始记录）并重算）`);
-  }
+// ★★ 2026-10-10 事故记录（改这里之前务必读完）★★
+//
+// 原实现：给**当前学期**（2026-2027-1）的选课记录直接写分数、并把 status 改成 2。
+// 用户实测反馈：「选课了 前端不显示选课 但是数据库确实有 为何会这样 以前不会的」。
+// 实测证据（working/probe-elect3.mjs）：
+//     edu_class.enrolled 合计 2012（真实已选人数），
+//     而 edu_elect 里 status=1（在选）只剩 1 条、status=2（已出成绩）有 2015 条；
+//     逐个班对照：enrolled=60 的班，elect 记录里"在选" 0 条、"已出成绩" 60 条。
+//
+// 后果：选课页判断「我是否选了这门课」用的是 `edu_elect.status = 1`（见 api/edu/course.js
+//   的 mine 子查询），记录被改成 2 之后**所有课都显示"选课"按钮** ——
+//   学生既看不到自己选了什么，也无法退课（drop 要求 status=1）；成绩页则把
+//   还没上完的本学期课程当成了"已修完"。
+//
+// 根因是**学期语义被压平**：当前学期「在选」与往年学期「已出成绩」是两种不同学期的
+//   记录，不能塞进同一行。所以本文件现在严格遵守：
+//     · 当前学期：只允许 status=1（在选）、score 为 NULL
+//     · 历史学期：独立的教务班 + 选课记录，status=2（已出成绩）+ 分数
+//   另注意 edu_elect 的唯一键是 (class_id, student_id)（不含 term），
+//   所以历史成绩**必须**指向历史学期的教学班，不能复用当前学期的班。
 
-  const [rows] = await conn.query(
-    `SELECT e.id, e.student_id, u.real_name, u.class_id, c.name AS class_name, d.name AS dept_name
-       FROM edu_elect e
-       JOIN sys_user u ON u.id = e.student_id
-       LEFT JOIN sys_class c ON c.id = u.class_id
-       LEFT JOIN sys_department d ON d.id = c.dept_id
-      WHERE e.score IS NULL
-      ORDER BY e.student_id, e.id`,
+/** 演示用的等级换算（口径与 lib/edu-stats.js 的 gradeOf 一致） */
+const gradeOfDemo = (v) => (v >= 90 ? '优秀' : v >= 80 ? '良好' : v >= 70 ? '中等' : v >= 60 ? '及格' : '不及格');
+
+/**
+ * 一次性修复：把当前学期被误标成「已出成绩」的记录恢复为「在选」。
+ * 只在带 `--fix-elect` 时执行（真实出成绩后不应再跑）。
+ */
+async function restoreCurrentTermElect() {
+  const [r0] = await conn.query('SELECT COUNT(*) AS n FROM edu_elect WHERE term = ? AND status = 2', [TERM]);
+  const n = Number(r0[0]?.n || 0);
+  log(`  当前学期状态修复：${n} 条「已出成绩」→「在选」（同时清空分数）`);
+  if (DRY || !n) return { restored: 0 };
+  await conn.query(
+    'UPDATE edu_elect SET score = NULL, grade = NULL, status = 1 WHERE term = ? AND status = 2',
+    [TERM],
   );
-  if (!rows.length) {
-    log('  成绩：无需补齐（没有 NULL 记录）');
-    return { updated: 0 };
+  return { restored: n };
+}
+
+/**
+ * 历史学期成绩：造「往年已修完的课程 + 分数」。
+ *
+ * 分数策略（延续"可验证极值"的设计，别改成分档之外的随机）：
+ *   档 A「全优」3 人    → 85~96，绩点 3.8~4.0
+ *   档 B「偏弱」5 人    → 58~72（刻意**不**大量挂科：绩点口径里不及格不计入分母，
+ *                         大量挂科会让分母极小 → 多人并列 1.00，"谁最差"变成多解）
+ *   档 C「中等」其余    → 正态 N(78, 9)
+ * 每个学生修 5~7 门；确定性随机（固定种子），同命令跑两次结果一致，极值才可复现。
+ */
+async function seedHistoryGrades() {
+  // ---- 1) 历史学期教学班（幂等：已存在则复用）----
+  const readHClasses = () =>
+    conn.query(
+      `SELECT c.id, c.course_id, co.name AS course_name, co.credit
+         FROM edu_class c JOIN edu_course co ON co.id = c.course_id
+        WHERE c.term = ? ORDER BY c.course_id, c.id`,
+      [TERM_HISTORY],
+    );
+
+  let [hclasses] = await readHClasses();
+
+  if (!hclasses.length && !DRY) {
+    // 以当前学期每门课的第一个班为模板（教师/时间/教室沿用，数据自洽，不凭空造）
+    const [tpl] = await conn.query(
+      `SELECT c.course_id, c.teacher_id, c.week_day, c.section, c.classroom
+         FROM edu_class c JOIN edu_course co ON co.id = c.course_id
+        WHERE c.term = ? AND co.status = 1
+        ORDER BY c.course_id, c.id`,
+      [TERM],
+    );
+    const seen = new Set();
+    const rows = [];
+    for (const t of tpl) {
+      if (seen.has(t.course_id)) continue; // 每门课一个历史班
+      seen.add(t.course_id);
+      // status=0：历史学期已结束，**绝不能出现在选课目录里**（否则又会出现"能选已修完的课"）
+      rows.push([t.course_id, t.teacher_id, TERM_HISTORY, 60, 0, t.week_day, t.section, t.classroom, 0]);
+    }
+    if (rows.length) {
+      await insertBatch(
+        'INSERT INTO edu_class (course_id, teacher_id, term, capacity, enrolled, week_day, section, classroom, status) VALUES ?',
+        rows,
+      );
+      log(`  历史学期教学班：新建 ${rows.length} 个（term=${TERM_HISTORY}、status=0 不参与选课）`);
+    }
+    [hclasses] = await readHClasses();
   }
 
-  // 按学生分组，给每个学生定一个档位
-  const byStudent = new Map();
-  for (const r of rows) {
-    if (!byStudent.has(r.student_id)) byStudent.set(r.student_id, { meta: r, list: [] });
-    byStudent.get(r.student_id).list.push(r);
+  if (!hclasses.length) {
+    log('  历史学期成绩：没有可用的历史教学班，跳过');
+    return { inserted: 0 };
   }
-  const students = [...byStudent.values()];
 
-  // 挑极值学生：按 id 排序取前几个（确定性，不用随机）
-  students.sort((a, b) => a.meta.student_id - b.meta.student_id);
-  const bestIds = new Set(students.slice(0, 3).map((s) => s.meta.student_id));
-  const worstIds = new Set(students.slice(-5).map((s) => s.meta.student_id));
-
-  const updates = [];
-  let over60 = 0;
-  let below60 = 0;
-
-  for (const s of students) {
-    const sid = s.meta.student_id;
-    const n = s.list.length;
-    let gen;
-    if (bestIds.has(sid)) gen = () => gauss(92, 3.5, 85, 96); // 档 A：全优
-    // 档 B「偏弱」：分数落在 58~72 的"及格线上"—— 刻意**不**大量挂科。
-    // 原因：本校口径绩点 = Σ(绩点×学分) / Σ(及格课学分)，**不及格不计入分母**
-    //（见 lib/edu-stats.js）。若大量不及格，分母极小 → 多人并列 1.00，
-    // 反而无法回答"绩点最差的是谁"。这里让及格课绩点分布 1.0~2.0 不等，
-    // 5 名偏弱学生之间绩点各不相同 →排名类问题有唯一正确答案。
-    else if (worstIds.has(sid)) gen = () => gauss(65, 5.5, 58, 72);
-    else gen = () => gauss(78, 9, 52, 94); // 档 C：正态
-
-    for (const r of s.list) {
-      // 档 B 允许挂科，但保底给一门及格（真实数据里很少全挂，答辩问起来更好解释）
-      const score = gen();
-      const finalScore =
-        bestIds.has(sid) && rand() < 0.02 ? gauss(84, 2, 80, 86) : score;
-      if (finalScore >= 60) over60 += 1;
-      else below60 += 1;
-      const grade =
-        finalScore >= 90 ? '优秀' : finalScore >= 80 ? '良好' : finalScore >= 70 ? '中等' : finalScore >= 60 ? '及格' : '不及格';
-      updates.push([finalScore, grade, 2, r.id]); // status=2 = 已录成绩
+  // ---- 2) 已有数据则跳过（--redo-grades 时先清空重建）----
+  const [r0] = await conn.query('SELECT COUNT(*) AS n FROM edu_elect WHERE term = ?', [TERM_HISTORY]);
+  const have = Number(r0[0]?.n || 0);
+  if (have > 0) {
+    if (!REDO_GRADES) {
+      log(`  历史学期成绩：已存在 ${have} 条，跳过（要重建加 --redo-grades）`);
+      return { inserted: 0 };
+    }
+    if (!DRY) {
+      await conn.query('DELETE FROM edu_elect WHERE term = ?', [TERM_HISTORY]);
+      log(`  （--redo-grades：已清空历史学期 ${have} 条成绩，重建中）`);
     }
   }
 
-  log(`  成绩：${rows.length} 条待补，涉及 ${students.length} 名学生`);
-  log(`     其中及格 ${over60} 条 / 不及格 ${below60} 条（不及格占比 ${((below60 / updates.length) * 100).toFixed(1)}%）`);
+  // ---- 3) 分档：按 id 排序取前 3 全优、后 5 偏弱（确定性，不用随机）----
+  const [students] = await conn.query(
+    `SELECT DISTINCT u.id
+       FROM sys_user u
+       JOIN sys_user_role ur ON ur.user_id = u.id
+       JOIN sys_role r ON r.id = ur.role_id
+      WHERE r.code = 'student' AND u.status = 1
+      ORDER BY u.id`,
+  );
+  const ids = students.map((x) => Number(x.id));
+  if (!ids.length) {
+    log('  历史学期成绩：没有在册学生，跳过');
+    return { inserted: 0 };
+  }
+  const bestIds = new Set(ids.slice(0, 3));
+  const worstList = ids.slice(-5);
+  const worstIds = new Set(worstList);
+  // ★ 其中**只有一人**是「全科压线」：所有及格课都落在 60~68 → 加权绩点恰好 1.00。
+  //   为什么必须唯一：绩点是"及格课"的加权平均，下限就是 1.00；若多人并列最低，
+  //   「绩点最差的学生」就有多个答案，评估脚本只能断言"返回了数据"而无法断言
+  //   "返回的是对的那个"（2026-10-10 实测踩过：随机正态会偶然产出并列）。
+  const floorId = worstList[worstList.length - 1];
+
+  const rows = [];
+  let over60 = 0;
+  let below60 = 0;
+  for (const sid of ids) {
+    const n = 5 + Math.floor(rand() * 3); // 每生 5~7 门
+    // Fisher–Yates 洗牌（用同一确定性随机源），保证"选哪几门"可复现
+    const pool = hclasses.slice();
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    let gen;
+    let boostFirst = false;
+    if (bestIds.has(sid)) gen = () => gauss(92, 3.5, 85, 96);
+    else if (sid === floorId) gen = () => gauss(64, 2, 60, 68);
+    else if (worstIds.has(sid)) {
+      // 其余偏弱档也压线，但**刻意把第一门课提到 70~74** → 绩点严格大于 1.00
+      gen = () => gauss(64, 2, 60, 68);
+      boostFirst = true;
+    } else {
+      // 中等档：常规课 70~94（绩点 ≥ 2.0，不可能掉到 1.00），
+      // 另给 4% 一门挂科（52~59）——挂科**不计入绩点分母**，只影响平均分与不及格率，
+      // 所以既能造出"不及格率"这个指标，又不会破坏绩点的唯一性。
+      gen = () => (rand() < 0.04 ? gauss(56, 1.5, 52, 59) : gauss(80, 7, 70, 94));
+    }
+
+    for (const [i, c] of pool.slice(0, n).entries()) {
+      const score = i === 0 && boostFirst ? gauss(72, 1.5, 70, 74) : gen();
+      if (score >= 60) over60 += 1;
+      else below60 += 1;
+      rows.push([c.id, sid, TERM_HISTORY, 2, score, gradeOfDemo(score)]);
+    }
+  }
+
+  log(`  历史学期成绩：${rows.length} 条 / ${ids.length} 名学生（每人 5~7 门）`);
+  log(`     及格 ${over60} 条 · 不及格 ${below60} 条（不及格占比 ${((below60 / rows.length) * 100).toFixed(1)}%）`);
   log(`     全优档 ${bestIds.size} 人（${[...bestIds].join(',')}）· 偏弱档 ${worstIds.size} 人（${[...worstIds].join(',')}）`);
 
-  if (DRY) return { updated: 0, planned: rows.length };
+  if (DRY) return { inserted: 0, planned: rows.length };
 
-  // 分批 UPDATE。
-  // ★ 三个 CASE 的占位符必须**各自独立**地按 id,值 顺序排列：
-  //     score = CASE id WHEN ? THEN ? ... END   → [id1,score1, id2,score2, ...]
-  //     grade = CASE id WHEN ? THEN ? ... END   → [id1,grade1, id2,grade2, ...]
-  //     status = CASE id WHEN ? THEN 2 ... END → [id1, id2, ...]
-  //   之前把三段拼在同一批参数里导致错位（分数被当成 id），报
-  //   "Truncated incorrect DOUBLE value: '?'"。这类"多段 CASE 共用一组占位符"的写法
-  //   极易出错，改成三个独立数组后一眼可验。
-  let updated = 0;
-  for (let i = 0; i < updates.length; i += 200) {
-    const chunk = updates.slice(i, i + 200);
-    const scoreCase = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-    const gradeCase = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-    const statusCase = chunk.map(() => 'WHEN ? THEN 2').join(' ');
-    const ids = chunk.map((c) => c[3]).join(',');
-    const scoreVals = chunk.flatMap((c) => [c[3], c[0]]); // id, score
-    const gradeVals = chunk.flatMap((c) => [c[3], c[1]]); // id, grade
-    const statusVals = chunk.map((c) => c[3]); // id
-    await conn.query(
-      `UPDATE edu_elect
-          SET score  = CASE id ${scoreCase} END,
-              grade  = CASE id ${gradeCase} END,
-              status = CASE id ${statusCase} END
-        WHERE id IN (${ids})`,
-      [...scoreVals, ...gradeVals, ...statusVals],
-    );
-    updated += chunk.length;
-  }
-  return { updated };
+  const inserted = await insertBatch(
+    'INSERT INTO edu_elect (class_id, student_id, term, status, score, grade) VALUES ?',
+    rows,
+  );
+  // enrolled 与实际选课数对齐：避免出现"名额 0/60 却有 50 条选课记录"这种自相矛盾
+  await conn.query(
+    `UPDATE edu_class c
+        SET c.enrolled = (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status = 2)
+      WHERE c.term = ?`,
+    [TERM_HISTORY],
+  );
+  return { inserted };
 }
 
 // ============================================================
@@ -443,10 +518,25 @@ async function seedLoans() {
     'INSERT INTO lib_loan (book_id, user_id, status, borrowed_at, due_at, returned_at) VALUES ?',
     rows,
   );
+  // 学期语义自检：当前学期只允许「在选」，成绩必须挂历史学期
+  const [[{ curGraded }]] = await conn.query(
+    "SELECT COUNT(*) AS curGraded FROM edu_elect WHERE term = ? AND status <> 1",
+    [TERM],
+  );
+  const [[{ histGraded }]] = await conn.query(
+    "SELECT COUNT(*) AS histGraded FROM edu_elect WHERE term = ? AND status = 2",
+    [TERM_HISTORY],
+  );
+  log(`  当前学期「已出成绩」记录：${curGraded} 条（必须为 0）${curGraded > 0 ? '  ✗ 语义被破坏，跑 --fix-elect 修复' : '  OK'}`);
+  log(`  历史学期（${TERM_HISTORY}）已出成绩：${histGraded} 条`);
+
   const [[{ overdueOpen }]] = await conn.query(
     'SELECT COUNT(*) AS overdueOpen FROM lib_loan WHERE status = 0 AND due_at < NOW()',
   );
-  log(`     已新增 ${n} 条（含逾期未还 ${overdueOpen} 条）`);
+  await conn.query(
+    'UPDATE lib_book b SET b.available_copies = b.total_copies - (SELECT COUNT(*) FROM lib_loan l WHERE l.book_id = b.id AND l.returned_at IS NULL)',
+  );
+  log(`     已新增 ${n} 条（含逾期未还 ${overdueOpen} 条），已同步可借库存`);
   return { inserted: n };
 }
 
@@ -577,14 +667,32 @@ log(DRY ? '（--dry 模式，不写库）' : '');
 if (RESET && !DRY) await resetDemoData();
 await readBaseline();
 
-const g = await seedGrades();
+// 先把 enrolled 与选课记录对齐 —— 它就是"已选人数"，两者必须相等。
+// 为什么放在最前面：造任何数据之前先校准基线，后续的"班内已选 vs 在选记录数"才有可比性。
+if (!DRY) {
+  const [al] = await conn.query(
+    `UPDATE edu_class c
+        SET c.enrolled = (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status = 1)
+      WHERE c.term = ?
+        AND c.enrolled <> (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status = 1)`,
+    [TERM],
+  );
+  if (al.affectedRows) log(`  名额对齐：修正 ${al.affectedRows} 个教学班的 enrolled（已选人数与选课记录数不一致）`);
+}
+
+if (FIX_ELECT) {
+  const fix = await restoreCurrentTermElect();
+  if (fix.restored) log(`  → 已恢复 ${fix.restored} 条为「在选」\n`);
+}
+
+const g = await seedHistoryGrades();
 const l = await seedLeaves();
 const r = await seedRepairs();
 const bk = await seedLoans();
 const th = await seedThreads();
 
 log('\n=== 结果汇总 ===');
-log(`  成绩   ${DRY ? `计划补 ${g.planned || 0} 条` : `更新 ${g.updated} 条`}`);
+log(`  成绩   ${DRY ? `计划新增 ${g.planned || 0} 条` : `新增 ${g.inserted} 条`}（历史学期 ${TERM_HISTORY}）`);
 log(`  请假   新增 ${l.inserted} 条`);
 log(`  报修   新增 ${r.inserted} 条`);
 log(`  借阅   新增 ${bk.inserted} 条`);

@@ -6,10 +6,17 @@
           <h2>课程选课</h2>
           <p>本学期可选课程 · 名额实时变动，先到先得</p>
         </div>
-        <el-button :icon="Refresh" circle @click="load" />
+        <div class="head-ops">
+          <span class="mine-tip">已选 {{ mineCount }} 门</span>
+          <el-radio-group v-model="onlyMine" size="small">
+            <el-radio-button :value="false">全部课程</el-radio-button>
+            <el-radio-button :value="true">只看我已选</el-radio-button>
+          </el-radio-group>
+          <el-button :icon="Refresh" circle @click="load" />
+        </div>
       </header>
 
-      <el-table v-loading="loading" :data="list" stripe>
+      <el-table v-loading="loading" :data="shown" stripe>
         <el-table-column prop="course_code" label="课程代码" width="100" />
         <el-table-column prop="course_name" label="课程名称" min-width="160" show-overflow-tooltip />
         <el-table-column label="学分" width="70" align="center">
@@ -42,7 +49,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
@@ -51,6 +58,11 @@ import { api } from '../../api/request';
 const list = ref([]);
 const loading = ref(false);
 const busyId = ref(null);
+// ★ 用户真正的痛点：87 个教学班要滚很久才找得到自己选的那几门，
+//   所以给一个「只看我已选」开关 + 已选门数，而不是让他自己找。
+const onlyMine = ref(false);
+const mineCount = computed(() => list.value.filter((r) => r.mine).length);
+const shown = computed(() => (onlyMine.value ? list.value.filter((r) => r.mine) : list.value));
 
 const WEEK = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const weekText = (d) => WEEK[d] || `周${d}`;
@@ -118,5 +130,7 @@ onMounted(load);
 .pg-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .pg-head h2 { margin: 0 0 6px; font-size: 19px; color: var(--zc-navy); letter-spacing: 1px; }
 .pg-head p { margin: 0; font-size: 13px; color: var(--zc-text-sub); }
+.head-ops { display: flex; align-items: center; gap: 12px; }
+.mine-tip { font-size: 13px; color: var(--zc-text-sub); }
 .cap-text { font-size: 12px; color: var(--zc-text-sub); }
 </style>
