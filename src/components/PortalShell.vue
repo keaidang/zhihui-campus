@@ -339,6 +339,16 @@ onUnmounted(() => clearInterval(unreadTimer));
   filter: blur(2px) saturate(1.05);
   transform: scale(1.03);
 }
+/* ★ 手机端必须换竖版实景图（2026-10-10 用户反馈"手机端主界面背景图加载不出来"）。
+   此前**只有登录页与首页**在媒体查询里切到 /web-phont.webp，登录后的主界面
+   （工作台/成绩/选课…所有页面）一直用横版 /web-pc.webp —— 竖屏 390px 宽下
+   cover 会按高度放大到 1263px 再裁掉两侧约 870px，画面只剩中间一条，
+   看起来就像"图加载不出来"。这里补上切换。 */
+@media (max-width: 768px) {
+  .shell-bg {
+    background-image: url('/web-phont.webp');
+  }
+}
 .shell-veil {
   position: fixed;
   inset: 0;

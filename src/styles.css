@@ -339,12 +339,24 @@ body { background: transparent; }
 @media (max-width: 960px) {
   .zc-hero { background-image: url('/web-phont.webp'); }
   .zc-hero::before { background: linear-gradient(180deg, rgba(8, 20, 42, 0.94) 0%, rgba(9, 23, 46, 0.90) 100%); }
-  .zc-hero .hero-inner { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 52px 0 56px; text-align: center; }
+  /* ★ padding 必须补回左右 24px（2026-10-10 用户反馈"蒙版没有完全对齐"）。
+     模板是 `<div class="zc-container hero-inner">`，两个 class 在同一元素上，
+     而这里写 `padding: 52px 0 56px` 会**整体覆盖** `.zc-container` 的 `padding: 0 24px`，
+     于是窄屏下文案左右零留白、直接贴着蒙版边缘，看上去就是"没对齐"。
+     改用四值简写只改上下，左右沿用容器自己的 24px。 */
+  .zc-hero .hero-inner { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 52px 24px 56px; text-align: center; }
   .zc-hero h1 { font-size: 32px; letter-spacing: 1px; }
   .zc-hero p { margin: 0 auto 24px; font-size: 15px; }
   .zc-hero .actions { justify-content: center; }
   .hero-quick-bar { justify-content: center; }
   .hero-window { display: none; }
+}
+/* 超窄屏（手机竖屏）：标题/正文再降一档，避免长标题被压成两行后视觉失衡 */
+@media (max-width: 480px) {
+  .zc-hero h1 { font-size: 25px; letter-spacing: 0.5px; }
+  .zc-hero p { font-size: 14px; line-height: 1.75; margin-bottom: 20px; }
+  .zc-hero .actions { gap: 10px; }
+  .zc-hero .hero-inner { padding: 40px 20px 44px; }
 }
 
 /* ---------- 数据带：悬浮流光毛玻璃卡片 ---------- */
