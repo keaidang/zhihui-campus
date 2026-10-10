@@ -194,7 +194,7 @@
             <div class="stat"><span class="stat-n">{{ usage?.review?.pending ?? 0 }}</span><span class="stat-l">待复核</span></div>
           </div>
           <el-table :data="usage?.summary || []" size="small" class="mb">
-            <el-table-column prop="kind" label="用途" width="120" />
+            <el-table-column prop="kind" label="用途" width="130" :formatter="(row) => aiKindLabel(row.kind)" />
             <el-table-column prop="calls" label="调用次数" width="110" />
             <el-table-column prop="okCalls" label="成功" width="90" />
             <el-table-column prop="promptTokens" label="输入 token" width="120" />
@@ -204,12 +204,12 @@
           <el-table v-loading="loading.usage" :data="usage?.recentCalls || []" size="small">
             <el-table-column prop="id" label="#" width="70" />
             <el-table-column prop="user_name" label="用户" width="100" />
-            <el-table-column prop="kind" label="用途" width="90" />
+            <el-table-column prop="kind" label="用途" width="110" :formatter="(row) => aiKindLabel(row.kind)" />
             <el-table-column prop="prompt_tokens" label="输入" width="80" />
             <el-table-column prop="completion_tokens" label="输出" width="80" />
             <el-table-column label="结果" width="80">
               <template #default="{ row }">
-                <el-tag :type="row.ok === 1 ? 'success' : 'danger'" size="small" round>{{ row.ok === 1 ? 'OK' : '失败' }}</el-tag>
+                <el-tag :type="row.ok === 1 ? 'success' : 'danger'" size="small" round>{{ row.ok === 1 ? '成功' : '失败' }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="cost_ms" label="耗时(ms)" width="100" />
@@ -297,6 +297,7 @@ import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
 import { fetchAiEval, runAnomalyScan } from '../../api/ai';
 import { fmtTime as fmt } from '../../utils/time';
+import { aiKindLabel } from '../../utils/code-label';
 
 const tab = ref('switches');
 const meta = reactive({ model: '', configured: false });

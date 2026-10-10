@@ -98,9 +98,17 @@
             <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
           </el-table-column>
           <el-table-column prop="operator" label="操作人" width="110" />
-          <el-table-column prop="action" label="动作" width="180" />
-          <el-table-column prop="target" label="对象" width="160" show-overflow-tooltip />
-          <el-table-column prop="detail" label="明细" show-overflow-tooltip />
+          <el-table-column prop="action" label="动作" width="170">
+            <template #default="{ row }">
+              <span :title="opActionLabel(row.action) === UNKNOWN_ACTION ? `未登记代号：${row.action}` : undefined">{{ opActionLabel(row.action) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="target" label="对象" width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ opTargetLabel(row.target) }}</template>
+          </el-table-column>
+          <el-table-column prop="detail" label="明细" show-overflow-tooltip>
+            <template #default="{ row }">{{ opDetailLabel(row.detail) }}</template>
+          </el-table-column>
         </el-table>
       </section>
     </div>
@@ -113,6 +121,7 @@ import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示
 import { fmtTime } from '../../utils/time';
+import { opActionLabel, opTargetLabel, opDetailLabel, UNKNOWN_ACTION } from '../../utils/code-label';
 
 const loading = ref(false);
 const data = ref({
