@@ -59,3 +59,4 @@ for (const e of err) {
 console.log('  （仅看 MAX(created_at) 距今多久判断是否仍在发生；历史已修复 bug 的 500 会永久留痕，属正常）\n');
 
 await conn.end();
+process.exit(0);
