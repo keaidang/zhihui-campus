@@ -220,6 +220,6 @@ onMounted(async () => {
 .ai-advice-deg { font-size: 12px; color: #b45309; }
 .ai-advice-reason { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--zc-text); }
 .ai-advice-risk { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: #9a3412; }
-.ai-advice-ops { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ai-advice-ops { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
 .ai-advice-tip { font-size: 11.5px; color: var(--zc-text-sub); }
 </style>

@@ -106,6 +106,7 @@ import { ElMessage } from 'element-plus';
 import { ChatDotRound, Close, CloseBold, FullScreen, Promotion } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
+import { useIsMobile } from '../utils/device';
 import { streamChat } from '../api/ai';
 import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, streamHandlers } from '../utils/ai-typewriter';
 
@@ -113,6 +114,7 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const ai = useAiStore();
+const isMobile = useIsMobile();
 
 const show = computed(() => ai.chatOn && route.path !== '/ai');
 
@@ -238,7 +240,7 @@ function stop() {
 }
 
 function onKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !isMobile.value) {
     e.preventDefault();
     send();
   }
@@ -494,19 +496,51 @@ onUnmounted(() => {
 .ai-panel-enter-active, .ai-panel-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
 .ai-panel-enter-from, .ai-panel-leave-to { opacity: 0; transform: translateY(12px) scale(0.97); }
 
-/* 窄屏：面板几乎全宽，球略微缩小 */
+/* 窄屏：面板几乎全宽，球略微缩小，适配 iPhone 底部手势横条与动态视口高度 */
 @media (max-width: 820px) {
-  .ai-orb { right: 14px; bottom: 18px; width: 54px; height: 54px; }
+  .ai-orb {
+    right: 14px;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    width: 52px;
+    height: 52px;
+  }
   .ai-orb-tip { display: none; }
   .ai-panel {
     right: 10px;
     left: 10px;
-    bottom: 84px;
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
     width: auto;
-    height: 66vh;
-    max-height: 66vh;
+    height: 68vh;
+    height: min(72dvh, 560px);
+    max-height: calc(100dvh - 100px);
+    border-radius: 14px;
+  }
+  .pl-foot :deep(.el-textarea__inner) {
+    font-size: 16px; /* 关键：防止 iOS Safari 获得焦点时自动放大页面 */
+    padding: 8px 10px;
   }
   .pl-bubble { font-size: 13px; }
   .pl-hint { display: none; }
+}
+
+@media (max-width: 480px) {
+  .ai-panel {
+    right: 8px;
+    left: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .pl-head {
+    padding: 10px 12px;
+  }
+  .pl-body {
+    padding: 10px;
+  }
+  .pl-chips {
+    padding-left: 0;
+  }
+  .pl-chips button {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
 }
 </style>

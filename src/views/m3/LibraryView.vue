@@ -462,5 +462,10 @@ onMounted(() => {
 .lib-detail em { font-style: normal; color: var(--zc-text-sub); flex: none; }
 .overdue-text { color: #b83232; font-weight: 600; }
 @media (max-width: 1024px) { .lib-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px) { .lib-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) {
+  .lib-grid { grid-template-columns: repeat(2, 1fr); }
+  .lib-nl { flex-wrap: wrap; }
+  .lib-nl :deep(.el-input) { max-width: 100%; width: 100%; }
+  .lib-nl :deep(.el-button) { width: 100%; }
+}
 </style>

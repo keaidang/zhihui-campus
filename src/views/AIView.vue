@@ -784,16 +784,107 @@ onMounted(async () => {
   border-color: var(--ai-accent);
 }
 
-/* ---------- 窄屏 ---------- */
+/* ---------- 窄屏适配 ---------- */
 @media (max-width: 820px) {
-  .ai-page { height: calc(100vh - 180px); min-height: 380px; border-radius: 12px; }
-  .ai-head { padding: 12px 14px; }
+  .ai-page {
+    height: calc(100vh - 160px);
+    height: calc(100dvh - 160px);
+    min-height: 420px;
+    border-radius: 12px;
+  }
+  .ai-head {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .ai-head-l {
+    min-width: 0;
+  }
+  .ai-head-l h2 {
+    font-size: 15.5px;
+    gap: 6px;
+  }
   .ai-head p { display: none; }
+  .ai-head-r {
+    margin-left: auto;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ai-modes {
+    padding: 2px;
+    gap: 4px;
+  }
+  .ai-mode {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .ai-profile {
+    padding: 10px 12px;
+  }
+  .ai-pf-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 14px;
+  }
   .ai-chat { padding: 14px 12px; }
-  .ai-bubble { max-width: 86%; font-size: 13.5px; }
+  .ai-bubble {
+    max-width: 88%;
+    font-size: 13.5px;
+    padding: 10px 12px;
+  }
+  .ai-bubble.is-wide {
+    max-width: 96%;
+  }
+  .ai-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
   .ai-start { padding-left: 0; }
   .ai-chip { padding: 6px 12px; font-size: 12.5px; }
   .ai-input { padding: 10px 12px 12px; }
+  .ai-input :deep(.el-textarea__inner) {
+    font-size: 16px; /* 关键：防止 iOS Safari 获得焦点时自动放大页面 */
+    padding: 8px 10px;
+  }
   .ai-hint { display: none; }
+}
+
+@media (max-width: 480px) {
+  .ai-page {
+    height: calc(100vh - 145px);
+    height: calc(100dvh - 145px);
+    min-height: 380px;
+  }
+  .ai-head {
+    padding: 10px 12px;
+  }
+  .ai-head-l h2 {
+    font-size: 14.5px;
+  }
+  .ai-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .ai-ver {
+    font-size: 10.5px;
+    padding: 0 6px;
+  }
+  .ai-bubble {
+    max-width: 90%;
+  }
+  .ai-bubble.is-wide {
+    max-width: 98%;
+  }
+  .ai-op-list {
+    padding-left: 18px;
+    font-size: 12px;
+  }
+  .ai-op-btns {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+  .ai-op-btns :deep(.el-button) {
+    flex: 1;
+  }
 }
 </style>

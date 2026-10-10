@@ -523,7 +523,7 @@ onMounted(reload);
 /* 效果评估卡片 */
 .eval-scale { margin: 0 0 14px; font-size: 13px; color: var(--zc-text-sub); }
 .eval-scale b { font-size: 19px; color: var(--zc-navy); margin-right: 4px; }
-.eval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.eval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 14px; }
 .eval-card { padding: 14px; border: 1px solid var(--zc-border); border-radius: 10px; background: #fff; }
 .eval-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .eval-name { font-size: 13.5px; font-weight: 600; color: var(--zc-navy); }
@@ -592,5 +592,21 @@ onMounted(reload);
 @media (max-width: 820px) {
   .pg-card { padding: 16px 14px; }
   .stat { flex: 1 1 100%; }
+  .anomaly-head { flex-direction: column; align-items: stretch; }
+  .anomaly-ops { width: 100%; justify-content: flex-end; }
+  .row-btns { gap: 8px; }
+  .row-btns :deep(.el-input),
+  .row-btns :deep(.el-select) {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .anomaly-ops { flex-direction: column; }
+  .anomaly-ops :deep(.el-button) { width: 100%; }
+  .row-btns :deep(.el-input),
+  .row-btns :deep(.el-select) {
+    width: 100% !important;
+  }
 }
 </style>

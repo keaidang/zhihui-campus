@@ -565,6 +565,21 @@ body { background: transparent; }
   font-size: 12.5px;
   color: var(--zc-text-sub);
 }
+@media (max-width: 640px) {
+  .zc-ai-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .zc-ai-cta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .zc-ai-cta .ai-cta {
+    width: 100%;
+  }
+  .zc-ai-note {
+    text-align: center;
+  }
+}
 
 /* ---------- 校园服务大厅矩阵 ---------- */
 .zc-grid {
