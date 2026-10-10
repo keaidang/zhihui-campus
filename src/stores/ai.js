@@ -6,6 +6,8 @@
 import { defineStore } from 'pinia';
 import { fetchAiStatus, softOf, themeOf } from '../api/ai';
 
+let loadInFlight = null;
+
 export const useAiStore = defineStore('ai', {
   state: () => ({
     status: null,
@@ -33,26 +35,31 @@ export const useAiStore = defineStore('ai', {
      */
     async load(userId = null, force = false) {
       if (!force && this.status && this.forUser === userId) return this.status;
-      if (this.loading) return this.status;
+      if (loadInFlight) return loadInFlight;
       this.loading = true;
-      try {
-        const res = await fetchAiStatus();
-        if (res.code === 0) {
-          this.status = res.data;
-          this.forUser = userId;
+      loadInFlight = (async () => {
+        try {
+          const res = await fetchAiStatus();
+          if (res.code === 0) {
+            this.status = res.data;
+            this.forUser = userId;
+          }
+        } catch {
+          /* 静默失败：AI 入口不出现即可，不影响页面其他功能 */
+        } finally {
+          this.loading = false;
+          loadInFlight = null;
         }
-      } catch {
-        /* 静默失败：AI 入口不出现即可，不影响页面其他功能 */
-      } finally {
-        this.loading = false;
-      }
-      return this.status;
+        return this.status;
+      })();
+      return loadInFlight;
     },
 
     /** 退出登录时清掉，避免下个账号看到上一个账号的配色/能力 */
     reset() {
       this.status = null;
       this.forUser = null;
+      loadInFlight = null;
     },
   },
 });

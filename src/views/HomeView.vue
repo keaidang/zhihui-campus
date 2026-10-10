@@ -8,17 +8,6 @@
           <img class="brand-name" src="/name.webp" alt="清北大学" />
         </div>
 
-        <div class="navbar-center">
-          <div class="sem-pill">
-            <span class="sem-dot"></span>
-            <span>2025-2026学年 · 第二学期</span>
-          </div>
-          <nav class="nav-links">
-            <a class="nav-link" href="#ai-section" @click.prevent="scrollToAi">AI 融合中枢</a>
-            <a class="nav-link" href="#modules-section" @click.prevent="scrollToModules">服务大厅</a>
-          </nav>
-        </div>
-
         <div>
           <template v-if="auth.isLoggedIn">
             <el-dropdown @command="onCommand">
@@ -48,11 +37,6 @@
     <section class="zc-hero">
       <div class="zc-container hero-inner">
         <div class="hero-copy">
-          <div class="hero-badge">
-            <span class="badge-pulse"></span>
-            <span class="badge-text">2026 数智融合 · 清北大学一站式数字底座</span>
-          </div>
-          <img class="school-name-img hero-school-name" src="/name.webp" alt="清北大学" />
           <h1>一站式智慧校园服务平台</h1>
           <p>
             一个账号打通选课、课表、成绩、审批、宿舍、图书、失物与论坛；
@@ -116,15 +100,6 @@
           </div>
           <div class="window-screen">
             <img src="/home-app.jpg" alt="智汇校园工作台界面" />
-            <div class="window-floating-card">
-              <div class="fl-icon">
-                <el-icon :size="16"><MagicStick /></el-icon>
-              </div>
-              <div class="fl-info">
-                <div class="fl-title">AI 中枢全域协同就绪</div>
-                <div class="fl-sub">知识库流式输出 · 白名单严格受控</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -252,7 +227,6 @@ import { useAuthStore } from '../stores/auth';
 const router = useRouter();
 const auth = useAuthStore();
 const modulesRef = ref(null);
-const aiRef = ref(null);
 
 // 边缘访问统计：KV 计数在边缘节点毫秒级完成，不回源、不碰数据库（云边协同样板，fire-and-forget）
 onMounted(() => { fetch('/api/edge/stats').catch(() => {}); });
@@ -370,10 +344,6 @@ function onAiCard() {
 
 function scrollToModules() {
   modulesRef.value?.scrollIntoView({ behavior: 'smooth' });
-}
-
-function scrollToAi() {
-  aiRef.value?.scrollIntoView({ behavior: 'smooth' });
 }
 
 async function onCommand(cmd) {

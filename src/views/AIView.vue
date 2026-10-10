@@ -318,6 +318,10 @@ async function ask(question) {
 async function send() {
   const q = draft.value.trim();
   if (!q || busy.value) return;
+  if (ai.ready && !ai.chatOn) {
+    ElMessage.warning(ai.status?.degradedReason || '智能问答当前未开启');
+    return;
+  }
 
   const history = historyForRequest();
   draft.value = '';
@@ -540,7 +544,6 @@ function clearChat() {
 onMounted(async () => {
   // 能力清单由 store 缓存：同一用户只拉一次（悬浮球与菜单共用同一份）
   await ai.load(auth.user?.id ?? null);
-  if (!ai.chatOn) ElMessage.warning('智能问答当前不可用，请稍后再试');
   scrollToBottom();
 });
 </script>
