@@ -1,61 +1,76 @@
 <template>
   <PortalShell active="workbench">
-    <div class="wb-zoom">
-    <!-- 欢迎条 -->
-    <section class="wb-hero">
-      <div>
-        <h2>{{ greeting }}，{{ auth.user?.realName || auth.user?.username }}</h2>
-        <p>欢迎来到智汇校园工作台，今天也要元气满满</p>
-      </div>
-      <div class="wb-hero-badge"><span>{{ roleLabel }}</span></div>
-    </section>
-
-    <div class="wb-cols">
-      <!-- 左列：账号信息卡 + 校园资源 -->
-      <div class="wb-left">
-        <!-- 账号信息卡 -->
-        <section class="wb-profile wb-panel">
-          <div class="wp-top">
-            <el-avatar :size="56" class="wp-avatar">{{ initial }}</el-avatar>
-            <div class="wp-id">
-              <h3>{{ auth.user?.realName || auth.user?.username }}</h3>
-              <span class="wp-role-tag">{{ roleLabel }}</span>
+    <div class="wb-container">
+      <!-- 宽幅全景身份与信息面板 -->
+      <section class="wb-hero">
+        <div class="wb-hero-main">
+          <!-- 用户身份与元信息 -->
+          <div class="wb-hero-profile">
+            <el-avatar :size="58" class="wp-avatar">{{ initial }}</el-avatar>
+            <div class="wp-user-meta">
+              <div class="wp-title-row">
+                <h2>{{ greeting }}，{{ auth.user?.realName || auth.user?.username }}</h2>
+                <span class="wp-role-badge">{{ roleLabel }}</span>
+              </div>
+              <div class="wp-chips">
+                <span v-if="auth.user?.userNo" class="wp-chip" title="学号/工号">
+                  <el-icon><User /></el-icon> {{ auth.user.userNo }}
+                </span>
+                <span v-if="auth.user?.deptName" class="wp-chip" title="所属院系">
+                  <el-icon><OfficeBuilding /></el-icon> {{ auth.user.deptName }}
+                </span>
+                <span v-if="auth.user?.className" class="wp-chip" title="班级">
+                  <el-icon><School /></el-icon> {{ auth.user.className }}
+                </span>
+                <span v-if="auth.user?.phone" class="wp-chip" title="联系电话">
+                  <el-icon><Iphone /></el-icon> {{ auth.user.phone }}
+                </span>
+                <span v-if="auth.user?.lastLoginAt" class="wp-chip wp-time-chip" title="上次登录时间">
+                  <el-icon><Clock /></el-icon> 上次登录 {{ fmtTime(auth.user.lastLoginAt) }}
+                </span>
+              </div>
             </div>
           </div>
-          <ul class="wp-meta">
-            <li><em>账号</em><span>{{ auth.user?.username }}</span></li>
-            <li v-if="auth.user?.userNo"><em>学号/工号</em><span>{{ auth.user.userNo }}</span></li>
-            <li v-if="auth.user?.deptName"><em>院系</em><span>{{ auth.user.deptName }}</span></li>
-            <li v-if="auth.user?.className"><em>班级</em><span>{{ auth.user.className }}</span></li>
-            <li v-if="auth.user?.phone"><em>电话</em><span>{{ auth.user.phone }}</span></li>
-            <li><em>角色</em><span>{{ roleNames.join(' / ') }}</span></li>
-            <li v-if="auth.user?.lastLoginAt"><em>上次登录</em><span>{{ fmtTime(auth.user.lastLoginAt) }}</span></li>
-          </ul>
-        </section>
 
-        <!-- 校园邮箱 -->
-        <section class="wb-res wb-panel mail-card">
-          <h4><el-icon><Promotion /></el-icon> 校园邮箱</h4>
-          <template v-if="auth.user?.campusEmail">
-            <div class="mail-addr">
-              <span class="mail-addr-text">{{ auth.user.campusEmail }}</span>
-              <el-tag :type="auth.user.mailEnabled ? 'success' : 'info'" size="small">
+          <!-- 校园邮箱横向快捷卡 -->
+          <div class="wb-hero-mail">
+            <div class="mail-head">
+              <span class="mail-title"><el-icon><Promotion /></el-icon> 校园邮箱</span>
+              <el-tag
+                v-if="auth.user?.campusEmail"
+                :type="auth.user.mailEnabled ? 'success' : 'info'"
+                size="small"
+                effect="plain"
+                class="mail-tag"
+              >
                 {{ auth.user.mailEnabled ? '对外收发已开通' : '仅系统内' }}
               </el-tag>
             </div>
-            <p class="mail-note" v-if="!auth.user.mailEnabled">开通对外收发后即可收发外部邮件，请联系管理员开通</p>
-            <div class="mail-btns" v-if="auth.user.mailEnabled">
-              <el-button type="primary" size="small" @click="router.push('/mail')">进入邮箱</el-button>
-              <el-button size="small" plain @click="mailPwdDlg = true">修改邮箱密码</el-button>
-            </div>
-          </template>
-          <p v-else class="mail-note">校园邮箱尚未分配，请联系管理员</p>
-        </section>
-      </div>
+            <template v-if="auth.user?.campusEmail">
+              <div class="mail-addr-row" :title="auth.user.campusEmail">
+                <span class="mail-addr-text">{{ auth.user.campusEmail }}</span>
+              </div>
+              <div class="mail-actions">
+                <el-button v-if="auth.user.mailEnabled" type="primary" size="small" round @click="router.push('/mail')">
+                  进入邮箱
+                </el-button>
+                <el-button v-if="auth.user.mailEnabled" size="small" round class="mail-btn-ghost" @click="mailPwdDlg = true">
+                  改密
+                </el-button>
+                <span v-if="!auth.user.mailEnabled" class="mail-note-unauth">联系管理员开通对外收发</span>
+              </div>
+            </template>
+            <p v-else class="mail-note-empty">校园邮箱尚未分配，请联系管理员</p>
+          </div>
+        </div>
+      </section>
 
-      <!-- 右列：我的功能（按角色） -->
-      <div class="wb-right">
-        <h3 class="wb-title">我的功能</h3>
+      <!-- 主功能矩阵（全宽展示） -->
+      <section class="wb-section">
+        <div class="wb-section-head">
+          <h3 class="wb-section-title"><el-icon><Grid /></el-icon> 我的功能</h3>
+          <span class="wb-section-badge">共 {{ modules.length }} 项服务</span>
+        </div>
         <div class="wb-grid">
           <div
             v-for="m in modules"
@@ -70,36 +85,44 @@
             <p>{{ m.desc }}</p>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <!-- 常用资源（横向铺底） -->
-    <section class="wb-resrow">
-      <h4 class="wb-resrow-title"><el-icon><Link /></el-icon> 常用资源</h4>
-      <div class="wb-resrow-grid">
-        <a v-for="r in RESOURCES" :key="r.name" :href="r.url" target="_blank" rel="noopener noreferrer" class="resx-card">
-          <span class="res-dot" :style="{ background: r.color }"></span>
-          <span class="resx-name">{{ r.name }}</span>
-          <span class="resx-desc">{{ r.desc }}</span>
-          <el-icon class="res-go"><TopRight /></el-icon>
-        </a>
-      </div>
-    </section>
+      <!-- 常用资源（横向全宽铺底） -->
+      <section class="wb-section wb-resrow">
+        <div class="wb-section-head">
+          <h4 class="wb-section-title"><el-icon><Link /></el-icon> 常用资源</h4>
+        </div>
+        <div class="wb-resrow-grid">
+          <a
+            v-for="r in RESOURCES"
+            :key="r.name"
+            :href="r.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="resx-card"
+          >
+            <span class="res-dot" :style="{ background: r.color }"></span>
+            <span class="resx-name">{{ r.name }}</span>
+            <span class="resx-desc">{{ r.desc }}</span>
+            <el-icon class="res-go"><TopRight /></el-icon>
+          </a>
+        </div>
+      </section>
 
-    <!-- 修改校园邮箱密码 -->
-    <el-dialog v-model="mailPwdDlg" title="修改校园邮箱密码" width="420px">
-      <p class="mail-dlg-tip">邮箱：{{ auth.user?.campusEmail }}</p>
-      <el-input
-        v-model="mailPwd"
-        type="password"
-        placeholder="新密码（至少 8 位）"
-        show-password
-      />
-      <template #footer>
-        <el-button @click="mailPwdDlg = false">取消</el-button>
-        <el-button type="primary" :loading="mailPwdSaving" @click="changeMailPwd">确认修改</el-button>
-      </template>
-    </el-dialog>
+      <!-- 修改校园邮箱密码 -->
+      <el-dialog v-model="mailPwdDlg" title="修改校园邮箱密码" width="420px">
+        <p class="mail-dlg-tip">邮箱：{{ auth.user?.campusEmail }}</p>
+        <el-input
+          v-model="mailPwd"
+          type="password"
+          placeholder="新密码（至少 8 位）"
+          show-password
+        />
+        <template #footer>
+          <el-button @click="mailPwdDlg = false">取消</el-button>
+          <el-button type="primary" :loading="mailPwdSaving" @click="changeMailPwd">确认修改</el-button>
+        </template>
+      </el-dialog>
     </div>
   </PortalShell>
 </template>
@@ -108,10 +131,22 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import {
+  Promotion,
+  Link,
+  TopRight,
+  User,
+  OfficeBuilding,
+  School,
+  Clock,
+  Grid,
+  Iphone,
+} from '@element-plus/icons-vue';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
 import { api } from '../api/request';
+import { fmtTime } from '../utils/time';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -121,6 +156,7 @@ const ai = useAiStore();
 const mailPwdDlg = ref(false);
 const mailPwd = ref('');
 const mailPwdSaving = ref(false);
+
 async function changeMailPwd() {
   if (mailPwd.value.length < 8) return ElMessage.warning('密码至少 8 位');
   mailPwdSaving.value = true;
@@ -155,7 +191,6 @@ const RESOURCES = [
 ];
 
 const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
-const roleNames = computed(() => auth.user?.roleNames?.length ? auth.user.roleNames : ['学生']);
 const initial = computed(() => (auth.user?.realName || auth.user?.username || 'U').charAt(0));
 const greeting = computed(() => {
   const h = new Date().getHours();
@@ -165,9 +200,6 @@ const greeting = computed(() => {
   if (h < 18) return '下午好';
   return '晚上好';
 });
-
-// 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示（勿再手写字符串截断）
-import { fmtTime } from '../utils/time';
 
 /** 各角色功能矩阵（M3/M4 卡片保留占位） */
 const AI_CARD = { title: 'AI 助手', desc: '校园问答 · 办事流程即问即答，可直接下指令或查统计数据', icon: 'MagicStick', path: '/ai' };
@@ -221,7 +253,6 @@ const BY_ROLE = {
 
 const modules = computed(() => {
   const base = BY_ROLE[auth.primaryRole] || BY_ROLE.student;
-  // AI 助手置顶：能力不可用（未配置/被关闭）时整卡不出现，避免点进去看到空页面
   const head = [];
   if (ai.chatOn) head.push(AI_CARD);
   if (ai.features.adminConsole && auth.hasRole(['admin'])) head.push(AI_CONSOLE_CARD);
@@ -238,145 +269,306 @@ function onOpen(m) {
 </script>
 
 <style scoped>
-/* 欢迎条：深蓝实景玻璃面板 + 素金细节，替代角色配色 */
+.wb-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* 宽幅全景身份与信息面板 */
 .wb-hero {
   position: relative;
   overflow: hidden;
   border-radius: 16px;
-  padding: 26px 30px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  padding: 24px 28px;
   color: #fff;
   background: url('/web-pc.webp') center / cover no-repeat;
-  box-shadow: 0 14px 38px rgba(10, 24, 46, 0.32);
+  box-shadow: 0 12px 32px rgba(10, 24, 46, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 .wb-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(115deg, rgba(13, 28, 52, 0.88) 0%, rgba(23, 50, 92, 0.72) 60%, rgba(23, 50, 92, 0.55) 100%);
+  background: linear-gradient(115deg, rgba(13, 28, 52, 0.92) 0%, rgba(23, 50, 92, 0.82) 55%, rgba(35, 74, 133, 0.72) 100%);
 }
-.wb-hero > div { position: relative; z-index: 1; }
-.wb-hero h2 {
-  margin: 0 0 8px;
+.wb-hero-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.wb-hero-profile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+.wp-avatar {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #fff;
   font-size: 22px;
-  letter-spacing: 1px;
+  font-weight: 700;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  flex: none;
+}
+.wp-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.wp-title-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
-/* 标题前的素金竖条 */
-.wb-hero h2::before {
-  content: '';
-  width: 4px;
-  height: 22px;
-  border-radius: 3px;
-  background: var(--zc-gold);
+.wp-title-row h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
-.wb-hero p { margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.82); }
-.wb-hero-badge span {
+.wp-role-badge {
   display: inline-block;
-  font-size: 12px;
-  letter-spacing: 1px;
-  padding: 6px 14px;
+  font-size: 11.5px;
+  letter-spacing: 0.5px;
+  padding: 2px 10px;
   border-radius: 999px;
   color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(4px);
   white-space: nowrap;
 }
+.wp-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.wp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 3px 9px;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
+.wp-chip .el-icon {
+  font-size: 13px;
+  opacity: 0.85;
+}
+.wp-time-chip {
+  color: rgba(255, 255, 255, 0.75);
+}
 
-/* 工作台整体放大 110%（用户浏览器 110% 缩放的默认观感） */
-.wb-zoom { zoom: 1.1; }
-.mail-card .mail-addr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
-.mail-card .mail-addr-text {
-  font-weight: 600;
+/* 顶栏右侧：校园邮箱微卡 */
+.wb-hero-mail {
+  flex: none;
+  width: 290px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+.mail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mail-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
-  color: var(--zc-navy, #17325c);
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+.mail-tag {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  font-size: 11px;
+}
+.mail-addr-row {
+  min-width: 0;
+}
+.mail-addr-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-  flex-shrink: 1;
+  display: block;
 }
-.mail-card .mail-note { margin: 0 0 8px; font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.6; }
-.mail-card .mail-btns { display: flex; gap: 8px; }
-.mail-dlg-tip { margin: 0 0 10px; font-size: 13px; color: var(--zc-navy, #17325c); font-weight: 600; }
+.mail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.mail-btn-ghost {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #fff !important;
+}
+.mail-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.24) !important;
+  border-color: #fff !important;
+}
+.mail-note-unauth {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.mail-note-empty {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.mail-dlg-tip {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--zc-navy, #17325c);
+  font-weight: 600;
+}
 
-.wb-cols {
+/* 主功能矩阵 */
+.wb-section {
+  margin-top: 22px;
+}
+.wb-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.wb-section-title {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--zc-navy);
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wb-section-badge {
+  font-size: 12px;
+  color: var(--zc-text-sub);
+  background: rgba(23, 50, 92, 0.05);
+  border: 1px solid rgba(23, 50, 92, 0.1);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+.wb-grid {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 18px;
-  margin-top: 18px;
-  align-items: start;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
-.wb-left { display: flex; flex-direction: column; gap: 18px; }
-
-/* 通用玻璃卡 */
-.wb-panel {
+.wb-card {
+  position: relative;
+  overflow: hidden;
   background: var(--zc-glass);
   backdrop-filter: blur(14px);
   border: 1px solid var(--zc-glass-border);
   border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(15, 35, 66, 0.09);
+  padding: 18px 16px;
+  cursor: pointer;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+  box-shadow: 0 6px 20px rgba(15, 35, 66, 0.06);
 }
-
-/* 账号信息卡 */
-.wb-profile { overflow: hidden; }
-.wp-top {
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: linear-gradient(135deg, rgba(23, 50, 92, 0.94), rgba(35, 74, 133, 0.88));
+.wb-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2.5px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--zc-gold), rgba(200, 163, 95, 0.2));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
-.wp-avatar {
-  background: rgba(255, 255, 255, 0.16) !important;
-  color: #fff;
-  font-size: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.38);
+.wb-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(37, 99, 235, 0.25);
+  box-shadow: 0 12px 30px rgba(15, 35, 66, 0.12);
 }
-.wp-id h3 { margin: 0 0 6px; font-size: 17px; color: #fff; letter-spacing: 1px; }
-.wp-role-tag {
-  display: inline-block;
+.wb-card:hover::before {
+  transform: scaleX(1);
+}
+.wb-card-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   font-size: 11px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: var(--zc-text-sub);
+  border: 1px solid var(--zc-border);
   border-radius: 999px;
-  padding: 2px 10px;
-  letter-spacing: 1px;
+  padding: 1px 7px;
+  background: rgba(255, 255, 255, 0.65);
 }
-.wp-meta { list-style: none; margin: 0; padding: 8px 20px 14px; }
-.wp-meta li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px dashed var(--zc-border);
-  font-size: 13px;
-}
-.wp-meta li:last-child { border-bottom: none; }
-.wp-meta em { font-style: normal; color: var(--zc-text-sub); flex: none; }
-.wp-meta span { text-align: right; word-break: break-all; }
-
-/* 资源链接卡 */
-.wb-res { padding: 16px 18px; }
-
-/* 常用资源横向铺底 */
-.wb-resrow { margin-top: 18px; }
-.wb-resrow-title {
-  margin: 0 0 12px;
-  font-size: 14px;
+.wb-card.ready .wb-card-badge {
   color: var(--zc-navy);
+  border-color: rgba(23, 50, 92, 0.22);
+}
+.wb-card.pending-card {
+  filter: saturate(0.35);
+  opacity: 0.82;
+}
+.wb-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #2d5a9e, var(--zc-navy));
+  color: #fff;
   display: flex;
   align-items: center;
-  gap: 6px;
-  letter-spacing: 1px;
+  justify-content: center;
+  margin-bottom: 12px;
+  box-shadow: 0 5px 12px rgba(23, 50, 92, 0.18);
+  transition: transform 0.2s ease;
+}
+.wb-card:hover .wb-icon {
+  transform: scale(1.06);
+}
+.wb-card h4 {
+  margin: 0 0 5px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--zc-navy);
+}
+.wb-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--zc-text-sub);
+  line-height: 1.55;
+}
+
+/* 常用资源横向网格 */
+.wb-resrow {
+  margin-top: 24px;
 }
 .wb-resrow-grid {
   display: grid;
@@ -388,117 +580,66 @@ function onOpen(m) {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 14px 16px;
-  background: var(--zc-glass, rgba(255,255,255,.72));
-  border: 1px solid rgba(23,50,92,.08);
-  border-radius: 12px;
-  text-decoration: none;
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-.resx-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(23,50,92,.1); }
-.resx-card .res-dot { width: 8px; height: 8px; border-radius: 50%; margin-bottom: 4px; }
-.resx-name { font-size: 13.5px; font-weight: 600; color: var(--zc-navy, #17325c); }
-.resx-desc { font-size: 12px; color: var(--zc-text-sub, #64748b); line-height: 1.5; padding-right: 18px; }
-.resx-card .res-go { position: absolute; right: 12px; top: 14px; color: var(--zc-text-sub, #94a3b8); font-size: 13px; }
-.wb-res h4 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: var(--zc-navy);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  letter-spacing: 1px;
-}
-.res-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
-  border-radius: 8px;
-  text-decoration: none;
-  color: var(--zc-text);
-  font-size: 13.5px;
-  transition: background 0.15s;
-}
-.res-item:hover { background: rgba(23, 50, 92, 0.06); }
-.res-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.res-name { font-weight: 600; flex: none; }
-.res-desc { color: var(--zc-text-sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.res-go { margin-left: auto; color: var(--zc-text-sub); flex: none; }
-
-.wb-right { min-width: 0; }
-.wb-title { margin: 2px 0 14px; font-size: 17px; color: var(--zc-navy); letter-spacing: 1px; }
-.wb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.wb-card {
-  position: relative;
-  overflow: hidden;
+  padding: 14px 15px;
   background: var(--zc-glass);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--zc-glass-border);
-  border-radius: 13px;
-  padding: 20px 18px;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-  box-shadow: 0 6px 20px rgba(15, 35, 66, 0.07);
-}
-/* 悬停顶部素金线 */
-.wb-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 2px;
-  width: 100%;
-  background: linear-gradient(90deg, var(--zc-gold), rgba(200, 163, 95, 0.15));
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.3s ease;
-}
-.wb-card:hover {
-  transform: translateY(-4px);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 12px 30px rgba(15, 35, 66, 0.13);
-}
-.wb-card:hover::before { transform: scaleX(1); }
-.wb-card-badge {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  font-size: 11px;
-  color: var(--zc-text-sub);
-  border: 1px solid var(--zc-border);
-  border-radius: 999px;
-  padding: 1px 8px;
-  background: rgba(255, 255, 255, 0.6);
-}
-.wb-card.ready .wb-card-badge {
-  color: var(--zc-navy);
-  border-color: rgba(23, 50, 92, 0.28);
-}
-.wb-card.pending-card { filter: saturate(0.35); opacity: 0.82; }
-.wb-icon {
-  width: 44px;
-  height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #2d5a9e, var(--zc-navy));
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 14px;
-  box-shadow: 0 6px 14px rgba(23, 50, 92, 0.2);
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 4px 14px rgba(15, 35, 66, 0.05);
 }
-.wb-card h4 { margin: 0 0 6px; font-size: 15px; }
-.wb-card p { margin: 0; font-size: 12.5px; color: var(--zc-text-sub); line-height: 1.6; }
+.resx-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.3);
+  box-shadow: 0 8px 22px rgba(23, 50, 92, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+}
+.resx-card .res-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-bottom: 4px;
+}
+.resx-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--zc-navy);
+}
+.resx-desc {
+  font-size: 12px;
+  color: var(--zc-text-sub);
+  line-height: 1.5;
+  padding-right: 18px;
+}
+.resx-card .res-go {
+  position: absolute;
+  right: 12px;
+  top: 14px;
+  color: var(--zc-text-sub);
+  font-size: 13px;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.resx-card:hover .res-go {
+  transform: translate(2px, -2px);
+  color: var(--zc-navy);
+}
 
-@media (max-width: 1024px) {
-  .wb-cols { grid-template-columns: 1fr; }
-  .wb-grid { grid-template-columns: repeat(2, 1fr); }
+/* 响应式调整 */
+@media (max-width: 1120px) {
+  .wb-grid { grid-template-columns: repeat(3, 1fr); }
   .wb-resrow-grid { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 560px) {
+@media (max-width: 900px) {
+  .wb-hero-main { flex-direction: column; align-items: stretch; }
+  .wb-hero-mail { width: 100%; }
+}
+@media (max-width: 680px) {
+  .wb-grid { grid-template-columns: repeat(2, 1fr); }
+  .wb-resrow-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
   .wb-grid { grid-template-columns: 1fr; }
-  .wb-hero { flex-direction: column; align-items: flex-start; }
   .wb-resrow-grid { grid-template-columns: 1fr; }
 }
 </style>

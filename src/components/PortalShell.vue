@@ -52,27 +52,26 @@
     </header>
 
     <div class="shell-body">
-      <!-- 侧边菜单（按角色过滤） -->
+      <!-- 侧边菜单（按角色过滤 + 逻辑分组 + Sticky吸顶固定） -->
       <aside class="shell-side">
-        <nav>
+        <nav class="shell-nav">
           <div
-            v-for="m in menus"
-            :key="m.key"
-            class="shell-menu"
-            :class="{ active: m.key === active }"
-            @click="$router.push(m.path)"
+            v-for="g in menuGroups"
+            :key="g.key"
+            class="shell-menu-group-block"
           >
-            <el-icon :size="16"><component :is="m.icon" /></el-icon>
-            <span>{{ m.label }}</span>
-          </div>
-          <template v-if="pendingMenus.length">
-            <div class="shell-menu-group">即将上线</div>
-            <div v-for="m in pendingMenus" :key="m.label" class="shell-menu disabled">
+            <div class="shell-menu-group-title">{{ g.label }}</div>
+            <div
+              v-for="m in g.items"
+              :key="m.key"
+              class="shell-menu"
+              :class="{ active: m.key === active }"
+              @click="$router.push(m.path)"
+            >
               <el-icon :size="16"><component :is="m.icon" /></el-icon>
               <span>{{ m.label }}</span>
-              <em>筹备中</em>
             </div>
-          </template>
+          </div>
         </nav>
         <footer class="shell-side-foot">
           {{ auth.user?.deptName || '清北大学' }}
@@ -96,15 +95,18 @@
           </div>
         </div>
         <nav class="shell-drawer-nav">
-          <div
-            v-for="m in menus"
-            :key="m.key"
-            class="shell-drawer-item"
-            :class="{ active: m.key === active }"
-            @click="goDrawer(m.path)"
-          >
-            <el-icon :size="18"><component :is="m.icon" /></el-icon>
-            <span>{{ m.label }}</span>
+          <div v-for="g in menuGroups" :key="g.key" class="shell-drawer-group-block">
+            <div class="shell-drawer-group-title">{{ g.label }}</div>
+            <div
+              v-for="m in g.items"
+              :key="m.key"
+              class="shell-drawer-item"
+              :class="{ active: m.key === active }"
+              @click="goDrawer(m.path)"
+            >
+              <el-icon :size="18"><component :is="m.icon" /></el-icon>
+              <span>{{ m.label }}</span>
+            </div>
           </div>
         </nav>
         <div class="shell-drawer-foot">{{ auth.user?.deptName || '清北大学' }}</div>
@@ -181,31 +183,41 @@ const roleLabel = computed(() => ROLE_LABEL[auth.primaryRole] || '用户');
 
 /** 统一菜单表：ALL = 全角色；具体能力由路由守卫 + 后端 scope 双重兜底 */
 const MENUS = [
-  { key: 'workbench', label: '工作台', icon: 'HomeFilled', path: '/workbench', roles: null },
+  { key: 'workbench', label: '工作台', icon: 'HomeFilled', path: '/workbench', roles: null, group: 'core' },
   // gate:'ai' → 仅当 AI 问答能力可用时才出现（未配置密钥/被管理员关闭时整体隐藏入口）
-  { key: 'ai', label: 'AI 助手', icon: 'ChatDotRound', path: '/ai', roles: null, gate: 'ai' },
-  { key: 'dashboard', label: '数据驾驶舱', icon: 'DataAnalysis', path: '/dashboard', roles: ['admin', 'leader'] },
-  { key: 'messages', label: '消息中心', icon: 'ChatLineRound', path: '/messages', roles: null },
-  { key: 'forum', label: '校园论坛', icon: 'ChatDotRound', path: '/forum', roles: null },
-  { key: 'library', label: '图书借阅', icon: 'Reading', path: '/library', roles: null },
-  { key: 'club', label: '社团活动', icon: 'Flag', path: '/club', roles: null },
-  { key: 'lf', label: '失物招领', icon: 'Search', path: '/lost-found', roles: null },
-  { key: 'mail', label: '校园邮箱', icon: 'Promotion', path: '/mail', roles: null },
-  { key: 'dorm', label: '宿舍管理', icon: 'House', path: '/dorm', roles: null },
-  { key: 'edu-elect', label: '课程选课', icon: 'Notebook', path: '/edu/elect', roles: ['student'] },
-  { key: 'edu-scores', label: '成绩课表', icon: 'Collection', path: '/edu/scores', roles: ['student'] },
-  { key: 'af-leave', label: '我的请假', icon: 'Clock', path: '/af/leave', roles: ['student'] },
-  { key: 'edu-teach', label: '我的课程', icon: 'Notebook', path: '/edu/teach', roles: ['teacher'] },
-  { key: 'edu-entry', label: '成绩录入', icon: 'EditPen', path: '/edu/score-entry', roles: ['teacher'] },
-  { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'admin'] },
-  { key: 'af-repair-m', label: '报修处理', icon: 'SetUp', path: '/af/repair-manage', roles: ['counselor', 'admin'] },
-  { key: 'af-notice', label: '公告中心', icon: 'Bell', path: '/af/notice', roles: null },
-  { key: 'admin-students', label: '学生管理', icon: 'User', path: '/admin/students', roles: ['admin', 'counselor'] },
-  { key: 'admin-org', label: '系部与班级', icon: 'OfficeBuilding', path: '/admin/org', roles: ['admin', 'counselor'] },
-  { key: 'admin-courses', label: '课程与排课', icon: 'Reading', path: '/admin/courses', roles: ['admin'] },
-  { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'] },
+  { key: 'ai', label: 'AI 助手', icon: 'ChatDotRound', path: '/ai', roles: null, gate: 'ai', group: 'core' },
+  { key: 'messages', label: '消息中心', icon: 'ChatLineRound', path: '/messages', roles: null, group: 'core' },
+
+  { key: 'edu-elect', label: '课程选课', icon: 'Notebook', path: '/edu/elect', roles: ['student'], group: 'edu' },
+  { key: 'edu-scores', label: '成绩课表', icon: 'Collection', path: '/edu/scores', roles: ['student'], group: 'edu' },
+  { key: 'af-leave', label: '我的请假', icon: 'Clock', path: '/af/leave', roles: ['student'], group: 'edu' },
+  { key: 'edu-teach', label: '我的课程', icon: 'Notebook', path: '/edu/teach', roles: ['teacher'], group: 'edu' },
+  { key: 'edu-entry', label: '成绩录入', icon: 'EditPen', path: '/edu/score-entry', roles: ['teacher'], group: 'edu' },
+  { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'admin'], group: 'edu' },
+  { key: 'af-repair-m', label: '报修处理', icon: 'SetUp', path: '/af/repair-manage', roles: ['counselor', 'admin'], group: 'edu' },
+  { key: 'af-notice', label: '公告中心', icon: 'Bell', path: '/af/notice', roles: null, group: 'edu' },
+
+  { key: 'forum', label: '校园论坛', icon: 'ChatDotRound', path: '/forum', roles: null, group: 'life' },
+  { key: 'library', label: '图书借阅', icon: 'Reading', path: '/library', roles: null, group: 'life' },
+  { key: 'club', label: '社团活动', icon: 'Flag', path: '/club', roles: null, group: 'life' },
+  { key: 'lf', label: '失物招领', icon: 'Search', path: '/lost-found', roles: null, group: 'life' },
+  { key: 'dorm', label: '宿舍管理', icon: 'House', path: '/dorm', roles: null, group: 'life' },
+  { key: 'mail', label: '校园邮箱', icon: 'Promotion', path: '/mail', roles: null, group: 'life' },
+
+  { key: 'dashboard', label: '数据驾驶舱', icon: 'DataAnalysis', path: '/dashboard', roles: ['admin', 'leader'], group: 'admin' },
+  { key: 'admin-students', label: '学生管理', icon: 'User', path: '/admin/students', roles: ['admin', 'counselor'], group: 'admin' },
+  { key: 'admin-org', label: '系部与班级', icon: 'OfficeBuilding', path: '/admin/org', roles: ['admin', 'counselor'], group: 'admin' },
+  { key: 'admin-courses', label: '课程与排课', icon: 'Reading', path: '/admin/courses', roles: ['admin'], group: 'admin' },
+  { key: 'admin-users', label: '账号管理', icon: 'UserFilled', path: '/admin/users', roles: ['admin', 'counselor'], group: 'admin' },
   // 仅超管 + AI 管理控制台能力可用时出现
-  { key: 'admin-ai', label: 'AI 管理控制台', icon: 'Setting', path: '/admin/ai', roles: ['admin'], gate: 'aiConsole' },
+  { key: 'admin-ai', label: 'AI 管理控制台', icon: 'Setting', path: '/admin/ai', roles: ['admin'], gate: 'aiConsole', group: 'admin' },
+];
+
+const GROUPS = [
+  { key: 'core', label: '常用核心' },
+  { key: 'edu', label: '教务学工' },
+  { key: 'life', label: '生活服务' },
+  { key: 'admin', label: '管理运维' },
 ];
 
 const menus = computed(() =>
@@ -217,8 +229,15 @@ const menus = computed(() =>
   }),
 );
 
-// 全部模块已上线，不再有"筹备中"占位
-const pendingMenus = computed(() => []);
+const menuGroups = computed(() => {
+  const visible = menus.value;
+  return GROUPS.map((g) => ({
+    key: g.key,
+    label: g.label,
+    items: visible.filter((m) => m.group === g.key),
+  })).filter((g) => g.items.length > 0);
+});
+
 
 // ---- 自助修改登录密码 ----
 // 后端在改密成功后会吊销该用户**全部** refresh token，因此本地必须同步清会话并回登录页，
@@ -380,49 +399,82 @@ onUnmounted(() => clearInterval(unreadTimer));
   align-items: flex-start;
 }
 .shell-side {
-  width: 196px;
+  width: 204px;
   flex: none;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.65);
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 14px;
-  padding: 12px 10px;
+  padding: 12px 10px 14px;
   display: flex;
   flex-direction: column;
-  min-height: 420px;
-  box-shadow: 0 10px 34px rgba(15, 35, 66, 0.1);
+  box-shadow: 0 10px 30px rgba(15, 35, 66, 0.08);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23, 50, 92, 0.15) transparent;
+}
+.shell-side::-webkit-scrollbar {
+  width: 4px;
+}
+.shell-side::-webkit-scrollbar-thumb {
+  background: rgba(23, 50, 92, 0.15);
+  border-radius: 4px;
+}
+.shell-nav {
+  display: flex;
+  flex-direction: column;
+}
+.shell-menu-group-block {
+  margin-bottom: 12px;
+}
+.shell-menu-group-block:last-child {
+  margin-bottom: 0;
+}
+.shell-menu-group-title {
+  padding: 4px 10px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zc-text-sub);
+  letter-spacing: 0.8px;
+  opacity: 0.75;
 }
 .shell-menu {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
-  border-radius: 9px;
-  font-size: 14px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--zc-text);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.18s, color 0.18s;
+  margin-bottom: 2px;
 }
-.shell-menu:hover { background: rgba(23, 50, 92, 0.07); }
+.shell-menu:hover {
+  background: rgba(23, 50, 92, 0.06);
+  color: var(--zc-navy);
+}
 .shell-menu.active {
   background: linear-gradient(120deg, var(--zc-navy), #234a85);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(23, 50, 92, 0.28);
+  box-shadow: 0 4px 14px rgba(23, 50, 92, 0.22);
 }
 .shell-menu.active::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 22%;
-  height: 56%;
+  top: 20%;
+  height: 60%;
   width: 3px;
-  border-radius: 3px;
+  border-radius: 0 3px 3px 0;
   background: var(--zc-gold);
 }
-.shell-menu.disabled { color: var(--zc-text-sub); cursor: not-allowed; }
-.shell-menu.disabled em { margin-left: auto; font-size: 11px; font-style: normal; opacity: 0.7; }
-.shell-menu-group { margin: 16px 0 6px; padding: 0 12px; font-size: 12px; color: var(--zc-text-sub); letter-spacing: 1px; }
 .shell-side-foot {
   margin-top: auto;
   padding: 12px;
@@ -493,11 +545,21 @@ onUnmounted(() => clearInterval(unreadTimer));
   .shell-drawer-head img { width: 34px; height: 34px; object-fit: contain; }
   .shell-drawer-title { font-size: 16px; font-weight: 700; letter-spacing: 1.5px; }
   .shell-drawer-sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
-  .shell-drawer-nav { flex: 1; overflow-y: auto; padding: 8px; -webkit-overflow-scrolling: touch; }
+  .shell-drawer-nav { flex: 1; overflow-y: auto; padding: 12px 10px; -webkit-overflow-scrolling: touch; }
+  .shell-drawer-group-block { margin-bottom: 12px; }
+  .shell-drawer-group-title {
+    padding: 4px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--zc-text-sub);
+    letter-spacing: 0.8px;
+    opacity: 0.75;
+  }
   .shell-drawer-item {
     display: flex; align-items: center; gap: 12px;
-    padding: 13px 12px; border-radius: 9px;
-    font-size: 15px; color: var(--zc-text); cursor: pointer;
+    padding: 10px 12px; border-radius: 8px;
+    font-size: 14.5px; color: var(--zc-text); cursor: pointer;
+    margin-bottom: 2px;
   }
   .shell-drawer-item:active { background: rgba(23, 50, 92, 0.07); }
   .shell-drawer-item.active {
