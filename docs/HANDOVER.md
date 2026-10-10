@@ -39,7 +39,18 @@
 ├─ docs/                      # 文档（单一事实来源，先改文档再改代码）
 ├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ 009-m3-modules（M3 十一表）+ 010-dorm（宿舍）+ 011-message（站内信）
 ├─ node-functions/
-│  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装) ai.js(qwen3.8-omni-flash 统一出口，规划中←ADR-9)
+│  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装)
+│  │  ├─ ai.js                # ★ AI 统一出口（qwen3.8-omni-flash；aiUpstream/aiChat/aiJson + 总开关守卫 + 上游错误分类）
+│  │  ├─ ai-config.js         # 运行时开关与阈值（sys_config，改完约 30 秒生效，无需重新部署）
+│  │  ├─ ai-guard.js          # 频控（DB 流水计数 + 在途标记补 check-then-act 窗口）
+│  │  ├─ ai-entity.js         # ★ C13 实体字段注册表（6 实体；SQL 片段只存服务端，给模型只给语义层）
+│  │  ├─ ai-query.js          # ★ C13 查询编译器（把结构化描述编译成参数化 SQL，六条安全边界）
+│  │  ├─ ai-actions.js        # C5 白名单操作注册表（11 个动作，模型只能选 key）
+│  │  ├─ ai-insight.js        # C6 问数模板库 + C13 实体目录渲染（entityPromptSections）
+│  │  ├─ ai-kb.js / ai-prompt.js / ai-identity.js / ai-variant.js   # 知识注入 / 提示词 / 身份档案 / 分级配色
+│  │  ├─ ai-review.js / ai-triage.js / ai-summary.js / ai-lf-match.js / ai-anomaly.js / ai-lib-search.js / ai-study.js / ai-approval.js
+│  │  ├─ sse.js               # SSE 流式封装（openAiToEvents / pipeUpstreamWithTap，含流中断收尾）
+│  │  └─ alert.js             # C3 告警通道（邮件，HTML 已转义）
 │  └─ api/
 │     ├─ auth/                # register(+send-code/prefix-check/domains) login refresh logout me + password/(forgot-send-code/forgot-reset 忘记密码)
 │     ├─ admin/               # meta users(+resetPassword) departments classes courses mailbox(开通/停用/改密/改地址)
@@ -55,6 +66,9 @@
 │     ├─ dorm/                # index(楼栋/房间/住宿分配 assign 事务+性别约束) ← 宿舍管理
 │     ├─ notice/              # messages(站内信列表/已读/发送/广播) ← schema-011
 │     └─ admin/dashboard.js   # M4 驾驶舱聚合（admin/leader 只读）
+│     └─ ai/                  # ★ AI 端点：status 能力清单 · chat C1 问答(SSE) · action C5 两阶段执行(含 C13 query) · insight C6/C13 问数
+│                             #   study C7 · lib-search C12 · anomaly C11 · review C2 审核队列 · approval-advice C4
+│                             #   config/kb/usage/eval 管理控制台 · stream-probe 流式探测
 ├─ edge-functions/            # KV 诊断位（kv-check 等）
 ├─ src/
 │  ├─ api/request.js          # 统一请求封装（Bearer + 401 自动刷新重放）
@@ -269,9 +283,23 @@
       本地实测「辅导员查账号数」返回 **490（全校）**，应为 58（本院）。
     - 修复：改成白名单式。明确支持的实体给本院条件；**未登记的实体退化为"只看本人"（最保守），
       绝不退化为"不加限制"**。
+    - **★ 同一天在 4 处旧代码里又发现同一个坑**（说明这不是某一处的疏忽，而是**一种写法习惯**）：
+      `dataScope()` 在「角色不在 admin/leader/counselor 里」或「辅导员 `deptId` 为空」时
+      返回 `{type:'self'}`，而 `lib/services/leave.js`、`lib/services/users.js`（`buildWhere` +
+      `findUsersByNames` 两处）、`lib/ai-approval.js` 的写法都是
+      `if (scope.type === 'dept') { ...加本院条件... }` —— **没有 else 分支**。
+      本地直连实测：教师账号能拿到**全校 100 条请假单**、**490 个账号**（均应为 1）。
+      更隐蔽的是 `api/af/leave.js` 的 GET：**连角色门槛都没有**，而文件头注释写着
+      "学生=本人 / counselor·admin·leader=本院或全校" —— **注释与实现不符**，
+      读代码的人会以为已经拦住了。修复后实测：教师 请假 0 条 / 账号 1 个。
+    - **推论**：凡 `dataScope()` 的返回值，**必须穷举 `all` / `dept` / `self` 三种类型**；
+      写成 `else if (scope.type !== 'all')` 的兜底写法最稳（未知类型也一并按最保守处理）。
+      改任何一处时，**顺手 grep 全项目的 `dataScope` 用法**，别只改眼前这一处。
     - 通用写法：写 `if (allowed(x)) return ...;` 之后，**末尾必须有一条兜底**，
       且兜底要与"拒绝"语义一致 —— 越权方向上永远不能有 fall-through。
     - 配套测试：单测里必须有"用无权角色/缺参数的用户去查，断言拿到的是范围限制条件而非全集"。
+      （本项目：`tests/unit/ai-hardening.spec.js` 里断言「教师 = 1 个账号 / 0 条请假，
+      管理员仍看全校」—— 后半条同样重要，兜底不能把正常角色一起挡掉。）
 47. **★ 给模型看的字段目录只给「语义层」，绝不给 SQL 片段（2026-10-10 设计决定）**：
     - 原因：模型一旦看到列名与表达式，它就会开始写 SQL 式的东西（自定义别名、拼函数、
       要求 JOIN），白名单随即失效。
@@ -279,6 +307,36 @@
       `{对象, 字段key, 中文label, 类型, 枚举可选值, 能否分组, hint}`。
     - 同一份渲染逻辑被两个端点复用（`entityPromptSections`）：两份提示词必然漂移，
       改注册表说明时只改一处才对。
+48. **★ 最危险的不是报错，是「静默错误」——把"没算出来"当成"没问题"，或给出与数据相反的结论（2026-10-10 体检踩实）**：
+    - 本类缺陷的共同特征：**不抛异常、不崩溃、日志干净**，只是给出一个看起来正常但错误的结论。
+      用户会照着它做判断，比显式失败危害大得多。体检中一次抓到 4 处：
+      1. `ai-triage` 降级（AI 没回结果）时仍拼出 `[普通] → 后勤处` 这种**像真实分诊**的文本写进工单备注；
+      2. `ai-eval` 把"AI 能力未开启 / 调用失败"记成 `ok:false` → **污染准确率分母与误报率分子**
+         （把上游抖动算成"模型判断错"，指标直接失真）；
+      3. `ai-anomaly` 用 `String(new Date()).slice(0,10)` 取日期 → 得到 `Thu Oct 01`（铁律 #40 的老场景）；
+      4. `ai-summary` 把"内容太短不需要摘要"与"AI 调用失败"**都返回 null**，调用方无法区分。
+    - **规范**：写"降级/失败/无数据"分支时，问自己三个问题 ——
+      ① 这个返回值与"算出来是 0 / 确实没有"**可区分**吗？② 它会不会被当成真实结论写进库或展示给用户？
+      ③ 评估/统计口径会不会把它算进去？三者任一为"否"，就必须显式标注（本项目用 `degraded` 标记 + `skipped` 状态）。
+    - **判据**：**"数据明明变了但界面不动""问最差却答最高""指标突然反常"——先怀疑静默错误，而不是先怀疑模型。**
+49. **★ AI 总开关必须在「唯一出口」守，不要逐个模块加（2026-10-10 体检发现总开关形同虚设）**：
+    - 现象：9 个会调 AI 的模块里**只有 1 个**检查了 `ai.enabled`。管理员在控制台关掉"AI 总开关"后，
+      论坛审核 / 公告摘要 / 报修分诊 / 失物匹配 / 审批助手 / 图书检索**仍然照调不误** ——
+      与"总开关"这三个字的承诺不符（且继续烧额度）。
+    - 修法：在**全项目唯一 AI 调用出口** `lib/ai.js` 的两个入口（`aiUpstream` / `aiChat`）统一守卫。
+      **一处生效、全覆盖，且以后新增能力自动受控** —— 逐个模块加必然漏，实测已经漏了 8 个。
+    - 配套：关闭时**不要落 `ai.error` 日志**。那不是"失败"而是管理员主动关闭；若记成错误，
+      关闭期间会持续写日志，还可能凑满"10 分钟 5 次"的阈值**给管理员发一封"AI 失败"告警邮件** —— 自扰。
+50. **★ 用 DB 流水计数的限流有 check-then-act 窗口；内存补充要带 TTL 自愈（2026-10-10 体检发现）**：
+    - 问题：频控的计数读 `ai_usage_log`，而那一行是在 AI 调用**结束后**才写入的。
+      「读计数 → 调 AI → 写流水」之间存在**与调用时长等长**的窗口 ——
+      同一秒内并发的 N 个请求会全部读到旧计数而同时放行（TOCTOU）。
+    - 修法：放行时在**本实例**登记一条"在途"标记并计入配额，调用结束后释放。
+      **★ 释放不是必须成功的**：标记必须带 TTL 自动失效 —— 内存计数器最危险的失败模式是
+      "某条路径忘了释放 → 用户被**永久锁死**"。有 TTL，最坏只是多限制一会儿。
+    - **诚实标注局限**：EdgeOne 是多实例的，内存 Map 只覆盖当前实例，跨实例并发仍可能略超限额。
+      "每分钟 N 次"是**成本控制**而非安全边界 —— 不要把这种补丁说成"已彻底解决"。
+    - 与铁律 #23 的关系：#23 否定的是"**用内存计数当限流本身**"，这里只是给 DB 计数打窗口补丁，**两层并存**。
 42. **★ 推送前必须跑 `npm run check:import`（部署前导入自检，2026-10-09 踩实）**：
     - **现象**：P8 推送后新端点迟迟不生效、一直回落到 SPA，**从外部看不到任何报错**。
     - **根因**：`api/ai/anomaly.js` 写了 `import { clientIp } from '../../lib/guard.js'`，而该导出实际在 `lib/http.js`。**导入一个不存在的导出会让 EdgeOne 构建失败**，而 EdgeOne Pages 只在**构建日志**里提示 → 外部表现只是"部署没生效"，极易误判为"平台慢"或"业务逻辑错"。
@@ -292,7 +350,7 @@
 ## 6. 交付与验证流程
 
 0. **开工前/交付前盘点**：`node scripts/gap-check.mjs`（只读）——规模、角色分布、封面/blob/令牌剩余项实测、演示账号残留、线上错误最后发生时间，对照 docs/PROGRESS.md 阶段 5 确认差距
-1. 改代码 → **`npm run check`**（lint → 单测 → 库体检 → 线上 e2e，一条命令四段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
+1. 改代码 → **`npm run check`**（lint → 单测 → 导入自检 → 库体检 → 线上 e2e → README 自检，一条命令六段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
 2. **提交用显式 add，禁止 `git add -A`**：`git add <改动的具体文件>` → commit → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）。曾因 `git add -A` 把 `working/` 调试产物带进仓库（b4dc948 才清出）
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
 4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，56 项只读断言（2026-10-07 实测合计数，含 M4 增补），覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
@@ -323,12 +381,12 @@
 | **M4 站内信**：消息中心/铃铛未读/审批自动通知 | ✅ 上线（schema-011，/messages） |
 | 限流（登录/发码 DB 流水计数）| ✅ 上线（内存版多实例失效，已改 DB） |
 | Edge 原生轻端点 /api/edge/stats（KV 访问统计） | ✅ 上线 |
-| **AI 融合**（lib/ai.js 出口 / 驾驶舱意图问数+管理员辅助 / 论坛 AI 审核 / RAG） | ❌ 未开始——**2026-10-09 方向已定版**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关·实测上下文 40 万字·`reasoning_content` 独立字段），唯一口径见 ARCHITECTURE ADR-9，实施顺序见 PROGRESS 阶段 6。**⚠ 只用文本、禁多模态（铁律 #36）；思考模式默认关** |
+| **AI 融合**（C1~C13 共 13 项能力） | ✅ **2026-10-10 全部上线** —— `lib/ai.js` 统一出口 / 对话式系统管理 / 论坛 AI 审核 / 信息问数与自由统计 / 学业助手 / 报修分诊 / 公告摘要 / 失物匹配 / 异常监测 / 图书检索 / 审批助手 / 管理控制台。模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关·实测上下文 40 万字·`reasoning_content` 独立字段），唯一口径见 `docs/AI-FEATURES.md` + ARCHITECTURE ADR-9。**⚠ 只用文本、禁多模态（铁律 #36）；思考模式默认关**。**⚠ 2026-10-10 上游返回 `400 Arrearage`（百炼账号欠费），AI 能力全面不可用，待充值后复验** |
 | 全站时间口径归一（UTC 库内 + 统一展示工具） | ✅ 上线（2026-09-20 深夜，见铁律 #25） |
 | **对外 README**（19 张线上截图 + 架构/功能/部署详解） | ✅ 完成（2026-09-22，`npm run shots` 可一键重截） |
 | **登录后自助修改登录密码**（原密码校验 + 全端令牌吊销） | ✅ 上线（/api/me/password，2026-09-22） |
 | 一键体检：`gap-check` / `integrity-check` / `audit-mobile` / `verify-security` | ✅ 就绪（2026-09-21，命令见 docs/AUDIT-2026-09-21.md 第五节） |
-| **自动化测试体系（`npm run check`）**：ESLint 零告警 + Vitest **80 单测** + 库体检 + 线上 e2e | ✅ 就绪（2026-09-21，铁律 #35） |
+| **自动化测试体系（`npm run check`）**：ESLint 零告警 + Vitest **423 单测** + 导入自检 + 库体检 + 线上 e2e + README 自检 | ✅ 就绪（铁律 #35；单测数随能力增长，2026-10-10 更新） |
 | **账号安全：登录后自助修改登录密码**（`POST /api/me/password`） | ✅ 上线（2026-09-21）—— 须验原密码（防会话劫持后锁死账号）+ 新密码不得与原密码相同 + **成功后吊销该用户全部 refresh token**；⚠ 纯 JWT 架构下 access token 是 2h 无状态凭证，故其他设备最长 2h 窗口内仍有有效凭证（要秒级全端失效需引入令牌版本号，当前规模不做）；入口在顶栏用户名下拉 |
 | 安全响应头（静态层 CSP/HSTS/nosniff 等）+ 前端全局错误兜底 | ✅ 上线（2026-09-21 体检修复，见铁律 #29/#30） |
 | 邮箱附件上传发信 / 邮箱用量统计 | ❌ 未开始 |
@@ -342,7 +400,11 @@
 
 ## 8. 下一步建议（优先级序）
 
-0. **【最高优先·2026-10-09 选题定版】AI 融合实施（未开工）**：毕业设计选题确定为必须与 AI 融合。模型 **qwen3.8-omni-flash**（阿里云 DashScope OpenAI 兼容 `https://dashscope.aliyuncs.com/compatible-mode/v1`，⚠ 仅国内站可用；该 key 实为**聚合网关**，`/models` 有 262 个模型，别按官方文档预期配额；配置 `AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER` 在 `.env` 与 EdgeOne env，密钥严禁入库入文档；GLM 三键保留备用）。**★★ 开发测试期只用「文本输入→文本输出」，禁止任何多模态调用（铁律 #36）；思考模式默认 `enable_thinking: false`（意图 JSON 快 6.2×、输出 token 降 94%，且关思考才解锁 `tool_choice: required`）**。实施顺序：① `lib/ai.js` 统一出口（照 lib/notify.js：唯一调用点 + `enable_thinking` 显式参数 + try/catch + 超时降级，AI 挂了业务照常）→ ② **驾驶舱意图问数 + 管理员辅助**（优先，答辩演示项：模型只做意图分类+参数抽取、强制 JSON；路由到预写白名单操作/SQL 参数化模板，**模型永不拼 SQL、永不直接执行**；破坏性操作先列清单再二次确认 + guard.js 鉴权 + sys_op_log 审计；DB 流水频控）→ ③ **论坛 AI 审核（纯文本）**（高风险转人工队列、留痕 sys_op_log；图片审核暂缓，需预算）→ ④ RAG 校园问答（可选：TiDB 向量检索 + 检索 TopK，禁整篇塞上下文）。**唯一口径 = ARCHITECTURE ADR-9**，任务清单见 PROGRESS 阶段 6
+0. **【已完成 ✅ 2026-10-10】AI 融合（C1~C13 共 13 项能力全部上线）**：毕业设计选题确定为必须与 AI 融合，现已落地。模型 **qwen3.8-omni-flash**（阿里云 DashScope OpenAI 兼容 `https://dashscope.aliyuncs.com/compatible-mode/v1`，⚠ 仅国内站可用；该 key 实为**聚合网关**，`/models` 有 262 个模型，别按官方文档预期配额；配置 `AI_QWEN_API_KEY / AI_QWEN_BASE_URL / AI_QWEN_MODEL / AI_PROVIDER` 在 `.env` 与 EdgeOne env，密钥严禁入库入文档；GLM 三键保留备用）。**★★ 开发测试期只用「文本输入→文本输出」，禁止任何多模态调用（铁律 #36）；思考模式默认 `enable_thinking: false`**（意图 JSON 快 6.2×、输出 token 降 94%，且关思考才解锁 `tool_choice: required`）。
+   - **能力清单与安全边界唯一口径 = `docs/AI-FEATURES.md`**（含 C1~C13 详设、分级配色、实施计划 P0~P11 与每阶段验收）；选型口径 = ARCHITECTURE ADR-9；进度见 PROGRESS 阶段 6。
+   - 三条主线：① `lib/ai.js` 统一出口（唯一调用点 + 超时降级 + **总开关守卫** + 上游错误分类）② 对话式操作（白名单注册表 + 两阶段确认 + `via:ai` 审计）③ 数据问答（模板问数 **+ C13 自由结构化查询**，**模型永不拼 SQL**）。
+   - **体检结论见 `docs/AUDIT-2026-10-10-AI.md`**（越权 / 静默错误 / 总开关失效 / 频控 TOCTOU 四类问题的发现与修复）。
+   - **⚠ 当前阻塞：上游返回 `400 Arrearage`（阿里云百炼账号欠费），AI 能力全面不可用**；充值后需重跑 `working/final-check.mjs`（C13 线上最终验收）与 `npm run eval:ai`（效果评估）。
 1. **【移动端】H5 适配已完成 ✅，仅剩 App 壳打包**（替代原 uni-app 小程序计划，2026-09-20 用户决策）：
    - **为什么不做小程序**：①个人主体不能用 web-view（微信官方限制"仅支持非个人主体配置业务域名"）②纯 web-view 套壳极易被拒审（驳回原文"首页仅有一个 web-view、无小程序原生功能"，要求原生功能占视口 ≥15%）③小程序自身从 2023-09 起也强制 ICP 备案，教育类目对个人主体限制多
    - **为什么不能直接复用前端**：Element Plus 是 DOM 组件库，小程序无 DOM；Vue Router / Pinia / lucide / 现有 CSS 主题全需替换。**可复用的只有 Node Functions API + TiDB 表结构 + 外部集成**
