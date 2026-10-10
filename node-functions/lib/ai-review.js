@@ -21,6 +21,9 @@ export const REVIEW_CATEGORIES = ['广告', '辱骂', '涉政', '色情', '隐�
 
 const VERDICTS = ['ok', 'suspect', 'violation'];
 
+/** 判定词表的中文名 —— 词表归服务端，界面只渲染（铁律 #62：内部代号不上界面） */
+export const VERDICT_LABEL = { ok: '正常', suspect: '可疑', violation: '违规' };
+
 const SYSTEM = [
   '你是「智汇校园」校园论坛的内容审核员，负责判断用户发帖/回复是否违规。',
   '',
@@ -249,7 +252,9 @@ export async function alertViolation({ actor, store, biz, bizId, blocked = false
       LIMIT ? OFFSET ?`,
     [...params, ps, (p - 1) * ps],
   );
-  return { list: rows, total: Number(total), page: p, pageSize: ps };
+  // 每行补中文判定名：界面直接渲染，避免把 ok/suspect/violation 摆给用户看
+  const list = rows.map((r) => ({ ...r, verdictLabel: VERDICT_LABEL[r.verdict] || '其他判定' }));
+  return { list, total: Number(total), page: p, pageSize: ps };
 }
 
 /**

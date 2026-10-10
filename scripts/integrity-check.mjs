@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 
 for (const line of (fs.existsSync('.env') ? fs.readFileSync('.env', 'utf8') : '').split(/\r?\n/)) {
-  const m = line.match(/^([A-Z_]+)=(.*)$/);
+  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (m) process.env[m[1]] = m[2];
 }
 const conn = await mysql.createConnection({

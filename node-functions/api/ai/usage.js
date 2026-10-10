@@ -10,6 +10,7 @@ import { ok, jsonError, preflight } from '../../lib/http.js';
 import { actorFrom } from '../../lib/services/_actor.js';
 import { query } from '../../lib/db.js';
 import { usageSummary } from '../../lib/ai-guard.js';
+import { TYPE_LABEL } from '../../lib/alert.js';
 
 export { preflight as onRequestOptions };
 
@@ -32,9 +33,11 @@ export async function onRequestGet(context) {
         ORDER BY l.id DESC LIMIT 30`,
     );
 
-    const alerts = await query(
+    const alertRows = await query(
       `SELECT id, type, title, sent_to, ok, err, created_at FROM ai_alert_log ORDER BY id DESC LIMIT 20`,
     );
+    // 一并回传中文类型名：告警类型是内部代号（content_violation 等），界面不该直接显示它
+    const alerts = alertRows.map((a) => ({ ...a, typeLabel: TYPE_LABEL[a.type] || '系统提醒' }));
 
     // ⚠ 注意：query() 返回的是**行数组**。`const [rp] = await query(...)` 取的是"第一行"（对象），
     //   而 `const [rv] = await query(...)` 若当成数组用会得到 undefined 再 .map → 500。

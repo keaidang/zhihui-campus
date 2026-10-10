@@ -10,7 +10,7 @@ import mysql from 'mysql2/promise';
 
 const root = path.resolve(import.meta.dirname, '..');
 for (const line of fs.readFileSync(path.join(root, '.env'), 'utf8').split(/\r?\n/)) {
-  const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
+  const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
 

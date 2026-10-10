@@ -111,6 +111,37 @@ describe('内部代号中文化（铁律 #56：只有内部人看得懂的代号
     }
     expect(bad, `以下映射不是中文：${bad.join(' / ')}`).toEqual([]);
   });
+
+  // 审核判定与告警类型的词表**归服务端**（ai-review.js / alert.js），
+  // 所以前端那份映射表管不到它们 —— 这里扫源码，防止新增一个判定/告警类型却没配中文，
+  // 结果又原样显示在审核队列和告警记录里。
+  it('服务端的判定词表与告警类型词表，每个取值都有中文名', () => {
+    const read = (rel) => stripComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+    // 取正则的第 1 个捕获组；没有匹配返回空串
+    // （不用 `|| [, '']` 这种带空洞的数组写法，eslint 的 no-sparse-arrays 会拦）
+    const group = (src, re) => { const m = src.match(re); return m ? m[1] : ''; };
+    // 注意：词表对象可能写在同一行（`{ ok: '正常', suspect: '可疑' }`），
+    // 所以先截出对象块再逐项解析，不能用行首锚点去逐行匹配。
+    const parseEntries = (src, name) => {
+      const block = group(src, new RegExp(`${name} = \\{([\\s\\S]*?)\\}`));
+      return [...block.matchAll(/(?:'([a-z_]+)'|([a-z_]+)):\s*'([^']+)'/g)]
+        .map((m) => ({ code: m[1] || m[2], label: m[3] }));
+    };
+
+    const reviewSrc = read('node-functions/lib/ai-review.js');
+    const verdicts = group(reviewSrc, /const VERDICTS = \[([^\]]+)\]/)
+      .split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+    const vEntries = parseEntries(reviewSrc, 'VERDICT_LABEL');
+    expect(verdicts.length, '未从 ai-review.js 解析到 VERDICTS（扫描器失效）').toBeGreaterThan(0);
+    expect(vEntries.length, '未从 ai-review.js 解析到 VERDICT_LABEL（扫描器失效）').toBeGreaterThan(0);
+    const labeled = new Set(vEntries.map((e) => e.code));
+    expect(verdicts.filter((v) => !labeled.has(v)), '这些判定没配中文名').toEqual([]);
+    expect(vEntries.filter((e) => !hasChinese(e.label)).map((e) => e.code), '这些判定名不是中文').toEqual([]);
+
+    const aEntries = parseEntries(read('node-functions/lib/alert.js'), 'TYPE_LABEL');
+    expect(aEntries.length, '未从 alert.js 解析到 TYPE_LABEL（扫描器失效）').toBeGreaterThan(0);
+    expect(aEntries.filter((e) => !hasChinese(e.label)).map((e) => e.code), '这些告警类型没有中文名').toEqual([]);
+  });
 });
 
 describe('代号 → 界面文案', () => {

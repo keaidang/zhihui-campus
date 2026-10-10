@@ -11,7 +11,8 @@ import { query } from './db.js';
 import { getBool, getConfig, getInt } from './ai-config.js';
 import { sendMail, lanqinConfigured } from './lanqin.js';
 
-const TYPE_LABEL = {
+/** 告警类型中文名 —— 导出供接口回传，界面只渲染（避免前后端各留一份映射表） */
+export const TYPE_LABEL = {
   content_violation: '内容违规',
   system_500: '系统异常',
   ai_failure: 'AI 服务异常',

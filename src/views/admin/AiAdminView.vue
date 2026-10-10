@@ -68,7 +68,7 @@
             <el-table-column prop="author_name" label="作者" width="90" />
             <el-table-column label="判定" width="110">
               <template #default="{ row }">
-                <el-tag :type="verdictTag(row.verdict)" size="small" effect="dark" round>{{ row.verdict }}</el-tag>
+                <el-tag :type="verdictTag(row.verdict)" size="small" effect="dark" round>{{ row.verdictLabel || row.verdict }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="categories" label="分类" width="110" />
@@ -169,7 +169,11 @@
 
           <el-table v-loading="loading.usage" :data="alerts" size="small">
             <el-table-column prop="id" label="#" width="60" />
-            <el-table-column prop="type" label="类型" width="150" />
+            <el-table-column prop="typeLabel" label="类型" width="150">
+              <template #default="{ row }">
+                <span :title="row.typeLabel ? `内部代号：${row.type}` : undefined">{{ row.typeLabel || row.type }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
             <el-table-column prop="sent_to" label="收件人" min-width="180" show-overflow-tooltip />
             <el-table-column label="结果" width="90" align="center">
