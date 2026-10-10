@@ -84,17 +84,25 @@ async function resolveUserTargets(actor, p = {}) {
 function filterUserTargets(actor, targets, { forStatus }) {
   const skipped = [];
   const kept = [];
+  // ★ 每条 skip 都要带机器可读的 `code`：调用方要据此区分
+  //   「本来就是目标状态」（无需操作，不是错误）与「无权限/找不到」（真正的拒绝）。
+  //   只靠中文 reason 做正则匹配太脆（改一个字就失效）。
   for (const u of targets) {
     if (Number(u.id) === Number(actor.userId)) {
-      skipped.push({ id: u.id, label: brief(u), reason: '不能操作自己的账号' });
+      skipped.push({ id: u.id, label: brief(u), code: 'self', reason: '不能操作自己的账号' });
       continue;
     }
     if ((u.roles || []).includes('admin')) {
-      skipped.push({ id: u.id, label: brief(u), reason: '管理员账号受保护，需先移除其管理员角色' });
+      skipped.push({ id: u.id, label: brief(u), code: 'admin', reason: '管理员账号受保护，需先移除其管理员角色' });
       continue;
     }
     if (forStatus !== undefined && Number(u.status) === Number(forStatus)) {
-      skipped.push({ id: u.id, label: brief(u), reason: forStatus === 0 ? '账号已是禁用状态' : '账号已是启用状态' });
+      skipped.push({
+        id: u.id,
+        label: brief(u),
+        code: 'already',
+        reason: forStatus === 0 ? '账号已是禁用状态' : '账号已是启用状态',
+      });
       continue;
     }
     kept.push(u);
@@ -563,8 +571,33 @@ export async function previewWriteAction(actor, key, params = {}) {
 
   const r = await def.resolve(actor, params);
   const targets = r.targets || [];
+  const skipped = r.skipped || [];
   if (!targets.length) {
-    throw new HttpError(49402, `没有匹配到可操作的目标${r.warnings?.length ? `（${r.warnings.join('；')}）` : ''}`);
+    // ★★ 「本来就是目标状态」不是错误，而是"无需重复操作"（2026-10-10 用户反馈）。
+    //
+    //   用户原话：「让 AI 禁用某个账号，如果已经禁用，会直接回复我找不到；
+    //   理论上应该回复'已经禁用'」—— 判断正确。
+    //   此前无论什么原因都抛同一条消息，且**只拼了 warnings、把 skipped.reason 丢掉了**，
+    //   于是最有信息量的那句「账号已是禁用状态」根本没到用户眼前，
+    //   他看到的就是一句干巴巴的"没有匹配到可操作的目标"（≈ 找不到）。
+    //
+    //   现在分两种情况：
+    //     · 全部是「已是目标状态」→ 返回 noop 信息性结果（按普通回答展示，不标成错误）
+    //     · 其它（自己/管理员/找不到/越范围）→ 抛错，但**把每条原因都带上**
+    const benignOnly = skipped.length > 0 && skipped.every((s) => s.code === 'already');
+    if (benignOnly) {
+      return {
+        action: key,
+        label: def.label,
+        noop: `${skipped.map((s) => `${s.label}：${s.reason}`).join('；')}，无需重复操作。`,
+        noopSkipped: skipped.slice(0, 20),
+      };
+    }
+    const why = [...skipped.map((s) => `${s.label}：${s.reason}`), ...(r.warnings || [])];
+    throw new HttpError(
+      49402,
+      why.length ? `没有匹配到可操作的目标 —— ${why.join('；')}` : '没有匹配到可操作的目标',
+    );
   }
   return {
     action: key,
@@ -573,7 +606,7 @@ export async function previewWriteAction(actor, key, params = {}) {
       count: targets.length,
       items: targets.slice(0, 50).map((t) => ({ id: t.id, label: t.label })),
       truncated: targets.length > 50,
-      skipped: (r.skipped || []).slice(0, 20),
+      skipped: skipped.slice(0, 20),
       warnings: r.warnings || [],
       payload: r.payload || null,
     },

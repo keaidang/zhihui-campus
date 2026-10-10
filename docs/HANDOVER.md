@@ -387,6 +387,26 @@
       都必须有唯一、明确的语义，并且要在最坏情况下也不丢数据。**
       加这类字段时先问：*如果它标错了，用户会看到什么？* ——
       能容忍的是"多显示一张表"，不能容忍的是"该显示的没显示"。
+55. **★★ 单测层按设计「不连库」，所以别把"必须连库"的断言写进 `tests/`（2026-10-10 查实：一批测试一直是假通过）**：
+    - `vitest.config.js` 顶部写得很清楚：单测层**不加载插件、不依赖 jsdom，也不连库** ——
+      "这样单测保持秒级、无环境依赖，才能进 pre-commit 与 `npm run check`"。
+    - 我却往里加了一批"查真实数据才成立"的断言（计数口径、数据范围、列表/单值语义…），
+      并统一用 `try { … } catch { expect(true).toBe(true); return; }` 兜住。
+      **在 vitest 下（无 DB）它们永远走 catch 分支** ——
+      报告里显示"✓ 通过"，实际**一条断言都没执行过 = 假通过**。
+      实测证据：同一段代码在 vitest 里连 `SELECT 1` 都失败（`EACCES AggregateError`），
+      而 `npx vitest run` 的通过数却一直是绿的。
+    - **修法（两层）**：
+      ① 那些 describe 全部改成 `describe.skipIf(!process.env.DB_HOST)(…)` ——
+         **显式跳过**，报告里如实显示"skipped"，不再冒充通过。
+      ② 真实验证迁到 **`scripts/ai-check.mjs`**（照 `integrity-check.mjs` 的既有模式：
+         自己读 `.env`、直连真实库、**连不上就 `process.exit(1)` 大声失败**），
+         并接进 `npm run check`（`check:ai`）。
+    - **判据**：**"报告显示通过"必须等于"断言真的执行过"。**
+      写完测试先问：*这条断言在无库/无网环境下会走哪条路？*
+      如果答案是"catch 里假装通过"，那它就是个安慰剂 ——
+      **要么显式 skip，要么挪到会连环境的检查脚本里。**
+      同理适用于任何"靠 catch 兜住当跳过"的写法。
 42. **★ 推送前必须跑 `npm run check:import`（部署前导入自检，2026-10-09 踩实）**：
     - **现象**：P8 推送后新端点迟迟不生效、一直回落到 SPA，**从外部看不到任何报错**。
     - **根因**：`api/ai/anomaly.js` 写了 `import { clientIp } from '../../lib/guard.js'`，而该导出实际在 `lib/http.js`。**导入一个不存在的导出会让 EdgeOne 构建失败**，而 EdgeOne Pages 只在**构建日志**里提示 → 外部表现只是"部署没生效"，极易误判为"平台慢"或"业务逻辑错"。
@@ -400,7 +420,7 @@
 ## 6. 交付与验证流程
 
 0. **开工前/交付前盘点**：`node scripts/gap-check.mjs`（只读）——规模、角色分布、封面/blob/令牌剩余项实测、演示账号残留、线上错误最后发生时间，对照 docs/PROGRESS.md 阶段 5 确认差距
-1. 改代码 → **`npm run check`**（lint → 单测 → 导入自检 → 库体检 → 线上 e2e → README 自检，一条命令六段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
+1. 改代码 → **`npm run check`**（lint → 单测 → 导入自检 → 库体检 → AI 层检查 → 线上 e2e → README 自检，一条命令七段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
 2. **提交用显式 add，禁止 `git add -A`**：`git add <改动的具体文件>` → commit → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）。曾因 `git add -A` 把 `working/` 调试产物带进仓库（b4dc948 才清出）
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
 4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，56 项只读断言（2026-10-07 实测合计数，含 M4 增补），覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`

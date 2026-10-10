@@ -256,6 +256,17 @@ export async function onRequestPost(context) {
 
     // 写操作：只预览，不执行
     const p = await previewWriteAction(actor, key, params);
+    // ★ 无需操作（目标本来就是目标状态，如"禁用一个已禁用的账号"）：
+    //   按**普通回答**返回，不标成错误、也不给确认按钮 —— 这不是失败，
+    //   只是"重复了一次没有意义的操作"（2026-10-10 用户反馈"回的是找不到"）。
+    if (p.noop) {
+      return ok({
+        intent: { action: p.action, label: p.label },
+        kind: 'none',
+        reply: p.noop,
+        skipped: p.noopSkipped,
+      });
+    }
     return ok({ intent: { action: p.action, label: p.label }, kind: 'write', preview: p.preview, confirmToken: p.confirmToken });
   } catch (e) {
     return jsonError(e);

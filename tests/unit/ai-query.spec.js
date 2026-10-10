@@ -413,7 +413,7 @@ describe('编译结果的自检不变量（可被单测直接断言）', () => {
   });
 });
 
-describe('countUsers · 账号计数（AI 的 countOnly 走它）', () => {
+describe.skipIf(!process.env.DB_HOST)('countUsers · 账号计数（AI 的 countOnly 走它）', () => {
   it('函数存在且导出（ai-actions 的 countOnly 依赖它）', async () => {
     const m = await import('../../node-functions/lib/services/users.js');
     expect(typeof m.countUsers).toBe('function');

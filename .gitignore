@@ -87,5 +87,6 @@ docs/论文初稿.*
 !scripts/seed-demo-data.mjs
 !scripts/seed-ai-eval.mjs
 !scripts/ai-eval.mjs
+!scripts/ai-check.mjs
 !scripts/import-check.mjs
 !scripts/check-readme.mjs

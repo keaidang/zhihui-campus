@@ -22,7 +22,8 @@
     "check:e2e": "node scripts/e2e-smoke.mjs",
     "check:docs": "node scripts/check-readme.mjs",
     "shots": "node scripts/make-readme-shots.mjs",
-    "check": "npm run lint && npm test && npm run check:import && npm run check:db && npm run check:e2e && npm run check:docs"
+    "check": "npm run lint && npm test && npm run check:import && npm run check:db && npm run check:ai && npm run check:e2e && npm run check:docs",
+    "check:ai": "node scripts/ai-check.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

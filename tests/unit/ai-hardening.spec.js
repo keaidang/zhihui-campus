@@ -13,6 +13,15 @@ import { SUMMARY_MAX, SUMMARY_MIN_CHARS } from '../../node-functions/lib/ai-summ
 import { pipeUpstreamWithTap } from '../../node-functions/lib/sse.js';
 import * as guard from '../../node-functions/lib/ai-guard.js';
 
+// ★ 本组断言必须连真实库才能验证 —— 而 vitest 这层按设计**不连库、无环境依赖**
+//   （见 vitest.config.js 顶部）。因此这里用 skipIf 显式**跳过**，而不是靠
+//   `catch → 跳过` 那种写法：那种写法在 vitest 下永远走跳过分支，**报告里显示"通过"，
+//   实际一条都没断言过 = 假通过**（2026-10-10 查实）。
+//   真实的行为验证在 `scripts/ai-check.mjs`（连真实库，连不上就大声失败）。
+//   若确实想在本地跑这组：先把 .env 注入环境再跑 vitest。
+const HAS_DB = Boolean(process.env.DB_HOST);
+
+
 // ============================================================
 describe('★ 告警邮件 HTML 转义（P1：用户发帖内容曾可注入管理员邮件）', () => {
   it('角括号被转义，标签无法生效', () => {
@@ -231,7 +240,7 @@ describe('★ SSE 透传：上游中途出错时 done 必须 settle（P2：曾�
 });
 
 // ============================================================
-describe('★ AI 频控的在途标记（P1：check-then-act 窗口）', () => {
+describe.skipIf(!HAS_DB)('★ AI 频控的在途标记（P1：check-then-act 窗口）', () => {
   // 缺陷回顾：配额计数读的是 ai_usage_log，而那一行是在 AI 调用**结束后**才写入的。
   // 于是「读计数 → 调 AI → 写流水」之间存在与调用时长等长的窗口，
   // 同一秒内并发的 N 个请求会全部读到旧计数而同时放行（TOCTOU）。
@@ -283,7 +292,7 @@ describe('★ AI 频控的在途标记（P1：check-then-act 窗口）', () => {
 });
 
 // ============================================================
-describe('★ 数据范围兜底（P0：scope 漏了 self 分支曾导致越权）', () => {
+describe.skipIf(!HAS_DB)('★ 数据范围兜底（P0：scope 漏了 self 分支曾导致越权）', () => {
   // 缺陷回顾：dataScope 在"角色不在 admin/leader/counselor 里"或"辅导员 deptId 为空"时
   // 返回 {type:'self'}，而多处实现只写了 `if (scope.type === 'dept')`，
   // **self 落到"不加任何条件"= 全校可见**。实测教师账号能拿到全校 100 条请假单、490 个账号。
@@ -347,7 +356,7 @@ describe('★ 数据范围兜底（P0：scope 漏了 self 分支曾导致越权�
 });
 
 // ============================================================
-describe('★ 账号计数不能按角色数放大行数（2026-10-10 实测：404 而非 403）', () => {
+describe.skipIf(!HAS_DB)('★ 账号计数不能按角色数放大行数（2026-10-10 实测：404 而非 403）', () => {
   // 缺陷回顾：countUsers 的 FROM 里 LEFT JOIN 了 sys_user_role / sys_role，
   // 但角色筛选实际是在 buildWhere 里用 EXISTS 子查询做的 —— 这两个 JOIN **不参与筛选**，
   // 却会按"用户拥有的角色数"放大行数：admin 同时有 admin + student 两个角色，
@@ -390,7 +399,7 @@ describe('★ 账号计数不能按角色数放大行数（2026-10-10 实测：4
 });
 
 // ============================================================
-describe('★ 账号计数的文案不能出现英文角色码（用户可见）', () => {
+describe.skipIf(!HAS_DB)('★ 账号计数的文案不能出现英文角色码（用户可见）', () => {
   it('countOnly 的 summary 用中文角色名，且带数字（此前会输出「共 404 个student 角色的账号。」）', async () => {
     const { runReadAction } = await import('../../node-functions/lib/ai-actions.js');
     let r;
@@ -411,7 +420,7 @@ describe('★ 账号计数的文案不能出现英文角色码（用户可见）
 });
 
 // ============================================================
-describe('★ 列表类查询不得返回 scalar（否则清单会被渲染成一句话）', () => {
+describe.skipIf(!HAS_DB)('★ 列表类查询不得返回 scalar（否则清单会被渲染成一句话）', () => {
   // 缺陷回顾：query_users 的**列表分支**曾写 `scalar: rows.length < 50 ? rows.length : null`。
   // 而 `scalar` 的语义是"结果是单个值、不是一张表"，前端据此只答一句话 ——
   // 于是「查看所有禁用的账号」被渲染成「共找到 2 个账号」，**用户想看的清单被吞掉**。
@@ -444,5 +453,71 @@ describe('★ 列表类查询不得返回 scalar（否则清单会被渲染成�
     }
     expect(typeof r.scalar).toBe('number');
     expect(r.summary).toContain(String(r.scalar));
+  });
+});
+
+// ============================================================
+describe.skipIf(!HAS_DB)('★ 已经是目标状态 ≠ 找不到（2026-10-10 用户反馈）', () => {
+  // 用户原话：「让 AI 禁用某个账号，如果已经禁用，会直接回复我找不到；
+  //            理论上应该回复'已经禁用'」—— 判断正确。
+  // 根因：目标被 filterUserTargets 移到 skipped 后 targets 为空，
+  //       previewWriteAction 抛错时**只拼了 warnings、把 skipped.reason 丢了**，
+  //       于是"账号已是禁用状态"这句话根本没到用户眼前。
+  const admin = { userId: 2000001, roles: ['admin', 'student'], deptId: null };
+
+  it('★ 禁用已禁用的账号 → 返回 noop 说明"已是禁用状态"，而不是抛错', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let username;
+    try {
+      const rows = await query('SELECT username FROM sys_user WHERE status = 0 AND id <> 2000001 LIMIT 1');
+      username = rows[0]?.username;
+    } catch {
+      expect(true).toBe(true); // 无 DB：跳过
+      return;
+    }
+    if (!username) {
+      expect(true).toBe(true);
+      return;
+    }
+    const r = await previewWriteAction(admin, 'disable_users', { usernames: [username] });
+    expect(r.noop, '应是 noop 结果而非抛错').toBeTruthy();
+    expect(r.noop).toContain('已是禁用状态');
+    expect(r.noop, 'noop 文案要带上是谁').toContain(username);
+    expect(r.preview, 'noop 不该给确认清单').toBeUndefined();
+  });
+
+  it('★ 真的找不到时，错误消息必须带上"未找到"和那个名字（不能只说一句空话）', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const name = '__绝对不存在的账号__';
+    const e = await previewWriteAction(admin, 'disable_users', { usernames: [name] }).catch((x) => x);
+    expect(e.code).toBe(49402);
+    expect(String(e.message)).toContain('未找到');
+    expect(String(e.message)).toContain(name);
+  });
+
+  it('★ 混合目标：已禁用的被跳过并带 code=already，其余正常进入确认清单', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let off;
+    let on;
+    try {
+      const a = await query('SELECT username FROM sys_user WHERE status = 0 AND id <> 2000001 LIMIT 1');
+      const b = await query('SELECT username FROM sys_user WHERE status = 1 AND id <> 2000001 LIMIT 1');
+      off = a[0]?.username;
+      on = b[0]?.username;
+    } catch {
+      expect(true).toBe(true);
+      return;
+    }
+    if (!off || !on) {
+      expect(true).toBe(true);
+      return;
+    }
+    const r = await previewWriteAction(admin, 'disable_users', { usernames: [off, on] });
+    expect(r.preview.count, '启用中的那个应进入清单').toBeGreaterThanOrEqual(1);
+    const sk = (r.preview.skipped || []).find((s) => s.code === 'already');
+    expect(sk, '被跳过的项必须带机器可读的 code=already（不能只靠中文文案判断）').toBeTruthy();
+    expect(sk.reason).toContain('已是禁用状态');
   });
 });
