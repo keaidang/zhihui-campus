@@ -162,7 +162,12 @@ export const ACTIONS = {
           院系: u.dept_name || '-',
           状态: Number(u.status) === 1 ? '正常' : '已禁用',
         })),
-        scalar: rows.length < 50 ? rows.length : null,
+        // ★★ 这个分支**绝不能返回 scalar**（2026-10-10 实测踩到）：
+        //   `scalar` 的语义是"结果是一个单值，不是一张表"，前端据此**只答一句话、不渲染表格**。
+        //   列表分支若也给 scalar（曾写 `rows.length < 50 ? rows.length : null`），
+        //   用户说「查看所有禁用的账号」就会被渲染成一句「共找到 2 个账号」——
+        //   **想看的清单表格被吞掉了**。只有当用户问的是"有多少"（走上面的 countOnly）
+        //   才该给 scalar。
         summary:
           rows.length >= 50
             ? `账号较多，只列出前 50 条（共 ${rows.length}+ 条）。想看总数可以说"有多少个账号"。`

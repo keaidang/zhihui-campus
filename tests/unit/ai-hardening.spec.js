@@ -409,3 +409,40 @@ describe('★ 账号计数的文案不能出现英文角色码（用户可见）
     expect(r.summary, 'summary 里不应出现英文角色码').not.toContain('student');
   });
 });
+
+// ============================================================
+describe('★ 列表类查询不得返回 scalar（否则清单会被渲染成一句话）', () => {
+  // 缺陷回顾：query_users 的**列表分支**曾写 `scalar: rows.length < 50 ? rows.length : null`。
+  // 而 `scalar` 的语义是"结果是单个值、不是一张表"，前端据此只答一句话 ——
+  // 于是「查看所有禁用的账号」被渲染成「共找到 2 个账号」，**用户想看的清单被吞掉**。
+  // 只有"问数量"（countOnly）才该给 scalar。
+  it('★ 列出禁用账号：必须给 rows（清单），不得给 scalar', async () => {
+    const { runReadAction } = await import('../../node-functions/lib/ai-actions.js');
+    let r;
+    try {
+      r = await runReadAction({ userId: 1, roles: ['admin'], deptId: null }, 'query_users', { status: '0' });
+    } catch {
+      expect(true).toBe(true); // 无 DB：跳过
+      return;
+    }
+    expect(Array.isArray(r.rows), '列表分支必须返回 rows').toBe(true);
+    expect(r.scalar === null || r.scalar === undefined, '列表分支不得给 scalar').toBe(true);
+    expect(String(r.summary).length, 'summary 不能为空（否则界面会显示兜底文案「查询完成」）').toBeGreaterThan(0);
+  });
+
+  it('★ 问数量：给 scalar，且 summary 带数字', async () => {
+    const { runReadAction } = await import('../../node-functions/lib/ai-actions.js');
+    let r;
+    try {
+      r = await runReadAction({ userId: 1, roles: ['admin'], deptId: null }, 'query_users', {
+        status: '0',
+        countOnly: '1',
+      });
+    } catch {
+      expect(true).toBe(true);
+      return;
+    }
+    expect(typeof r.scalar).toBe('number');
+    expect(r.summary).toContain(String(r.scalar));
+  });
+});

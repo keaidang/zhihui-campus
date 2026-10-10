@@ -380,7 +380,14 @@ async function sendViaAction(text, reply) {
   //   用户看到「查询账号 / 查询完成」，**一个数字都没有**。
   //   三个分支（action-read / action-data / insight）起初只改了两个，
   //   漏掉的 read 分支就出了这个 bug —— 故统一在这里判断，避免再漏第四个。
-  const single = d.scalar !== null && d.scalar !== undefined;
+  //
+  //   ★ 再加一条：**只有当没有多行清单时才按纯文本渲染**。
+  //   `scalar` 的语义是"单个值"，但万一服务端在返回清单的同时也带了 scalar
+  //   （2026-10-10 真实发生过：query_users 的列表分支误带 scalar），
+  //   一律降级成纯文本会把**用户想看的清单表格吞掉**（"查看所有禁用的账号"
+  //   只剩一句「共找到 2 个账号」）。清单（≥2 行）永远优先于"一句话"。
+  const rowCount = Array.isArray(d.rows) ? d.rows.length : 0;
+  const single = d.scalar !== null && d.scalar !== undefined && rowCount <= 1;
   if (single && (d.kind === 'read' || d.kind === 'data')) {
     reply.kind = 'text';
     reply.content = d.summary || String(d.scalar);
