@@ -95,7 +95,18 @@
             </template>
 
             <!-- C5 只读查询：结果表 -->
-            <template v-else-if="m.kind === 'read' || m.kind === 'data'">
+            <!-- ★ 末端的 `(m.label || m.summary || m.rows.length)` 是**兜底防线**，不要删：
+                 这一支渲染的是 label + summary + 表格，**不渲染 content**。
+                 万一上游给了单值却忘了把 kind 降级为 'text'（2026-10-10 真实发生过），
+                 label/summary/rows 会全空 → 界面只显示一句兜底文案「查询完成」，
+                 答案烂在 content 里出不来。加上这个条件后，该情况会自动落到下面的
+                 v-else 渲染 content —— 让"忘记降级 kind"这种疏漏在机制上不再有后果。 -->
+            <template
+              v-else-if="
+                (m.kind === 'read' || m.kind === 'data') &&
+                (m.label || m.summary || (m.rows && m.rows.length))
+              "
+            >
               <p class="ai-op-head">
                 <b>{{ m.label || '查询结果' }}</b>
                 <span v-if="m.periodLabel" class="ai-op-tip">· {{ m.periodLabel }}</span>
@@ -355,41 +366,39 @@ async function sendViaAction(text, reply) {
     return;
   }
   const d = res.data || {};
-  reply.kind = d.kind;
   reply.opLabel = d.intent?.label || '';
   reply.label = d.intent?.label || '';
   reply.sources = d.sources || [];
 
+  // ★★ 单值结果（服务端给了 scalar）一律按**纯文本**渲染 —— 必须在所有分支之前统一收口。
+  //
+  //   为什么不能各分支自己判断（2026-10-10 用户实测踩到）：
+  //   `kind` 决定模板走哪个分支，而 `read` / `data` 分支渲染的是
+  //   「label + summary + 表格」，**完全不渲染 content**。
+  //   所以"只答一句话"光写 content 是不够的 —— 必须同时把 kind 降级为 'text'，
+  //   否则答案躺在 content 里、界面显示的是 label 加一句兜底文案「查询完成」：
+  //   用户看到「查询账号 / 查询完成」，**一个数字都没有**。
+  //   三个分支（action-read / action-data / insight）起初只改了两个，
+  //   漏掉的 read 分支就出了这个 bug —— 故统一在这里判断，避免再漏第四个。
+  const single = d.scalar !== null && d.scalar !== undefined;
+  if (single && (d.kind === 'read' || d.kind === 'data')) {
+    reply.kind = 'text';
+    reply.content = d.summary || String(d.scalar);
+    return;
+  }
+  reply.kind = d.kind;
+
   if (d.kind === 'read') {
-    // ★ 同 data 分支：服务端给了 scalar（单值）就只答一句话，不渲染表格。
-    //   场景：辅导员问"一共有多少个账号"→ countOnly 算出 101（本院）
-    //   → 若仍渲染那 1 行表格，就等于没解决用户最初抱怨的问题。
-    if (d.scalar !== null && d.scalar !== undefined) {
-      reply.content = d.summary || String(d.scalar);
-    } else {
-      reply.label = d.intent?.label || '';
-      reply.summary = d.summary || '';
-      reply.rows = d.rows || [];
-      // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
-      reply.content = `${d.intent?.label || ''} ${d.summary || ''}`.trim();
-    }
+    reply.summary = d.summary || '';
+    reply.rows = d.rows || [];
+    // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
+    reply.content = `${reply.label} ${reply.summary}`.trim();
   } else if (d.kind === 'data') {
-    reply.kind = 'data';
-    reply.label = d.intent?.label || '';
     reply.periodLabel = d.periodLabel || '';
     reply.summary = d.summary || '';
     reply.rows = d.rows || [];
     reply.extra = d.extra || null;
-    // ★ 单值结果（scalar 有值）→ 只答一句话，**不渲染表格**。
-    //   用户问"学生账号总数"期待的是一个数字，给一张 1 行的表是噪声。
-    //   （2026-10-10 用户原话：「每次提问账号问题就是输出 50 个账号和死的一样」）
-    if (d.scalar !== null && d.scalar !== undefined) {
-      reply.kind = 'text';
-      reply.sources = d.sources || [];
-      reply.content = reply.summary || String(d.scalar);
-    } else {
-      reply.content = `${reply.label} ${reply.summary}`.trim();
-    }
+    reply.content = `${reply.label} ${reply.summary}`.trim();
   } else if (d.kind === 'write') {
     reply.preview = d.preview;
     reply.confirmToken = d.confirmToken;

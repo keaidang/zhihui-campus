@@ -16,6 +16,7 @@
 // 让用户在**确认清单里**就看见哪些不会被处理，而不是执行到一半报错。
 import jwt from 'jsonwebtoken';
 import { HttpError } from './guard.js';
+import { ROLE_LABEL } from './ai-identity.js';
 import { jwtSecret } from './auth.js';
 import { hasRole, isAdmin } from './services/_actor.js';
 import { countUsers, findUsers, findUsersByNames, setUserStatus } from './services/users.js';
@@ -138,11 +139,18 @@ export const ACTIONS = {
         // ★ 用 countUsers 而非 findUsers：后者是分页数组、没有 total，
         //   且超过 FIND_MAX 时长度会被截断，计数必然错。
         const n = await countUsers(actor, filters);
-        const scope = filters.role ? `${filters.role} 角色的` : '';
+        // 用户可见文案里不该出现 `student` 这种英文角色码 —— 之前输出的是
+        // 「共 404 个student 角色的账号。」，既中英混排又难读。
+        // 角色中文名引用 lib/ai-identity.js 的 ROLE_LABEL（不另写一份映射，
+        // 否则同一个人在 AI 身份块和这里会有两种叫法）。
+        const roleLabel = filters.role ? ROLE_LABEL[filters.role] || filters.role : '';
+        const statusLabel =
+          String(filters.status) === '1' ? '状态为「正常」的' : String(filters.status) === '0' ? '状态为「已禁用」的' : '';
+        const what = `${statusLabel}${roleLabel}账号`;
         return {
-          rows: [{ 账号总数: n }],
+          rows: [{ [`${roleLabel || ''}账号数`]: n }],
           scalar: n,
-          summary: scope ? `共 ${n} 个${scope}账号。` : `共 ${n} 个账号。`,
+          summary: `共 ${n} 个${what}。`,
         };
       }
       const rows = await findUsers(actor, { ...filters, limit: 50 });

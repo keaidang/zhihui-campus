@@ -168,8 +168,19 @@ export async function exportUsersCsv(actor) {
  */
 export async function countUsers(actor, filters = {}) {
   const { whereSql, params } = buildWhere(actor, { ...filters, page: 1 });
+  // ★★ 必须 COUNT(DISTINCT u.id)，不能 COUNT(*)（2026-10-10 实测发现多算）。
+  //
+  //   原因：下面的 LEFT JOIN 到 sys_user_role / sys_role **不参与筛选**
+  //   （角色筛选在 buildWhere 里是用 EXISTS 子查询做的），但它们会**按角色数放大行数**：
+  //   一个同时拥有两个角色的用户会产生两行。
+  //   实测：admin 账号同时有 admin + student 两个角色 →
+  //   问"学生有多少"得到 **404**，而真实值是 **403**（正好多 1，就是 admin 那一行的重复）。
+  //
+  //   为什么不干脆删掉这两个 JOIN：兄弟函数 findUsers 也用同一套 JOIN
+  //   （那边靠 GROUP BY 去重），保留 JOIN 可以让将来 whereSql 里用到 d./r. 时不至于报错。
+  //   这里改成按主键去重，语义明确且与 findUsers 的口径一致。
   const rows = await query(
-    `SELECT COUNT(*) AS n
+    `SELECT COUNT(DISTINCT u.id) AS n
        FROM sys_user u
        LEFT JOIN sys_department d ON d.id = u.dept_id
        LEFT JOIN sys_user_role ur ON ur.user_id = u.id

@@ -257,7 +257,7 @@ export const TEMPLATES = {
 
   user_stats: {
     label: '账号统计',
-    desc: '账号总数、按角色与状态分布',
+    desc: '账号总数、按角色与状态分布（问"某类人有几个"也用它 —— 回答里会带上每个角色的实际人数）',
     params: {},
     run: async () => {
       const byRole = await query(
@@ -270,11 +270,18 @@ export const TEMPLATES = {
         `SELECT CASE status WHEN 1 THEN '正常' ELSE '已禁用' END AS 状态, COUNT(*) AS 数量
            FROM sys_user GROUP BY status`,
       );
-      const [[{ n }]] = [await query('SELECT COUNT(*) AS n FROM sys_user')];
+      const total = Number((await query('SELECT COUNT(*) AS n FROM sys_user'))[0]?.n || 0);
+
+      // ★ summary 必须**把每个角色的实际人数都写出来**。
+      //   原实现是「全校共 490 个账号；拥有管理员角色的 1 人。」—— 问"学生有多少"
+      //   会得到一句完全没提学生的回答（2026-10-10 用户实测："查看当前学生数量"
+      //   返回的是一句没提学生的话，虽然表格里有，但标题句答非所问）。
+      //   改成逐角色罗列后，**无论用户问哪个角色，答案都在句子里**，不依赖模板猜意图。
+      const parts = byRole.map((r) => `${r.角色} ${r.人数} 人`).join('、');
       return {
         rows: byRole,
         extra: { 按状态: byStatus },
-        summary: `全校共 ${n} 个账号；拥有管理员角色的 ${byRole.find((r) => r.角色 === '管理员')?.人数 ?? 0} 人。`,
+        summary: parts ? `全校共 ${total} 个账号：${parts}。` : `全校共 ${total} 个账号。`,
       };
     },
   },

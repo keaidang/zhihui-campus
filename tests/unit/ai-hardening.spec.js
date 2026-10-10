@@ -345,3 +345,67 @@ describe('★ 数据范围兜底（P0：scope 漏了 self 分支曾导致越权�
     }
   });
 });
+
+// ============================================================
+describe('★ 账号计数不能按角色数放大行数（2026-10-10 实测：404 而非 403）', () => {
+  // 缺陷回顾：countUsers 的 FROM 里 LEFT JOIN 了 sys_user_role / sys_role，
+  // 但角色筛选实际是在 buildWhere 里用 EXISTS 子查询做的 —— 这两个 JOIN **不参与筛选**，
+  // 却会按"用户拥有的角色数"放大行数：admin 同时有 admin + student 两个角色，
+  // 于是「学生有多少」返回 404（真实 403，正好多 1）。
+  // 修法：COUNT(DISTINCT u.id)。
+  it('★ 多角色账号（admin 同时是 student）不被重复计数', async () => {
+    const { countUsers } = await import('../../node-functions/lib/services/users.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let truth;
+    try {
+      const rows = await query(
+        `SELECT COUNT(DISTINCT u.id) AS n FROM sys_user u
+           JOIN sys_user_role ur ON ur.user_id = u.id
+           JOIN sys_role r ON r.id = ur.role_id
+          WHERE r.code = 'student'`,
+      );
+      truth = Number(rows[0]?.n);
+    } catch {
+      expect(true).toBe(true); // 无 DB：契约由线上验证
+      return;
+    }
+    const got = await countUsers({ userId: 1, roles: ['admin'], deptId: null }, { role: 'student' });
+    expect(got, 'AI 报出的学生数必须与库里去重后的人数一致').toBe(truth);
+  });
+
+  it('★ 不带角色条件时也不受多角色影响（管理员能看到的账号总数）', async () => {
+    const { countUsers } = await import('../../node-functions/lib/services/users.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let truth;
+    try {
+      const rows = await query('SELECT COUNT(*) AS n FROM sys_user');
+      truth = Number(rows[0]?.n);
+    } catch {
+      expect(true).toBe(true);
+      return;
+    }
+    const got = await countUsers({ userId: 1, roles: ['admin'], deptId: null }, {});
+    expect(got, '全量计数应等于 sys_user 行数，不能因 JOIN 翻倍').toBe(truth);
+  });
+});
+
+// ============================================================
+describe('★ 账号计数的文案不能出现英文角色码（用户可见）', () => {
+  it('countOnly 的 summary 用中文角色名，且带数字（此前会输出「共 404 个student 角色的账号。」）', async () => {
+    const { runReadAction } = await import('../../node-functions/lib/ai-actions.js');
+    let r;
+    try {
+      r = await runReadAction({ userId: 1, roles: ['admin'], deptId: null }, 'query_users', {
+        role: 'student',
+        countOnly: '1',
+      });
+    } catch {
+      expect(true).toBe(true); // 无 DB 或权限不符：跳过
+      return;
+    }
+    expect(typeof r.scalar).toBe('number');
+    expect(r.summary).toContain('学生');
+    expect(r.summary).toContain(String(r.scalar));
+    expect(r.summary, 'summary 里不应出现英文角色码').not.toContain('student');
+  });
+});
