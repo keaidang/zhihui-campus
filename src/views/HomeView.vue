@@ -37,6 +37,12 @@
     <section class="zc-hero">
       <div class="zc-container hero-inner">
         <div class="hero-copy">
+          <div class="hero-eyebrow">
+            <span class="hero-badge" title="点击体验「问办合一」智能直达" @click="goAi">
+              <span class="badge-spark"></span>
+              <span class="badge-text">问办合一</span>
+            </span>
+          </div>
           <h1>一站式智慧校园服务平台</h1>
           <p>
             一个账号打通选课、课表、成绩、审批、宿舍、图书、失物与论坛；

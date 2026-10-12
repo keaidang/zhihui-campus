@@ -169,6 +169,58 @@ body { background: transparent; }
 }
 .zc-hero .hero-copy { min-width: 0; }
 
+.zc-hero .hero-eyebrow {
+  margin-bottom: 14px;
+}
+.zc-hero .hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 5px 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(59, 130, 246, 0.16) 100%);
+  border: 1px solid rgba(165, 180, 252, 0.38);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #e0e7ff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.22);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.25s ease;
+}
+.zc-hero .hero-badge:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.32) 0%, rgba(59, 130, 246, 0.24) 100%);
+  border-color: rgba(199, 210, 254, 0.6);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+}
+.zc-hero .hero-badge .badge-spark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #818cf8;
+  box-shadow: 0 0 8px #a5b4fc;
+  animation: heroBadgePulse 2.2s ease-in-out infinite;
+}
+.zc-hero .hero-badge .badge-text {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes heroBadgePulse {
+  0%, 100% {
+    opacity: 0.65;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+    box-shadow: 0 0 12px #c7d2fe;
+  }
+}
 
 .zc-hero h1 {
   margin: 0 0 16px;
@@ -353,6 +405,8 @@ body { background: transparent; }
 }
 /* 超窄屏（手机竖屏）：标题/正文再降一档，避免长标题被压成两行后视觉失衡 */
 @media (max-width: 480px) {
+  .zc-hero .hero-eyebrow { margin-bottom: 10px; }
+  .zc-hero .hero-badge { font-size: 12px; padding: 4px 12px 4px 10px; letter-spacing: 1.5px; }
   .zc-hero h1 { font-size: 25px; letter-spacing: 0.5px; }
   .zc-hero p { font-size: 14px; line-height: 1.75; margin-bottom: 20px; }
   .zc-hero .actions { gap: 10px; }
