@@ -56,16 +56,16 @@ export async function onRequestGet(context) {
 
     const [loanStats] = await query(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_loans,
-              SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS returned,
-              SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS overdue
+              SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS active_loans,
+              SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS returned,
+              SUM(CASE WHEN status = 0 AND due_at < NOW() THEN 1 ELSE 0 END) AS overdue
          FROM lib_loan
-        WHERE borrow_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
+        WHERE borrowed_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
     );
 
     const [forumStats] = await query(
       `SELECT (SELECT COUNT(*) FROM forum_thread WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) AS threads,
-              (SELECT COUNT(*) FROM forum_post WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) AS posts`,
+              (SELECT COUNT(*) FROM forum_reply WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) AS posts`,
     );
 
     const [opStats] = await query(

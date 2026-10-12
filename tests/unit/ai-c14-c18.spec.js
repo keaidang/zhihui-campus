@@ -34,6 +34,23 @@ describe('C14 问办合一 · detectShortcuts', () => {
     expect(sc.some((x) => x.path === '/af/leave')).toBe(true);
   });
 
+  it('支持错别字「保修」与「宿舍空调坏了」精准命中报修直达', () => {
+    const sc = detectShortcuts('宿舍空调坏了怎保修', [{ title: '宿舍坏了怎么报修？', category: '常见问题' }]);
+    expect(sc.some((x) => x.path === '/dorm')).toBe(true);
+    expect(sc.find((x) => x.path === '/dorm').query?.tab).toBe('repair');
+  });
+
+  it('退课换一门不误判为报修，且精准识别选课', () => {
+    const sc = detectShortcuts('我想退课换一门', []);
+    expect(sc.some((x) => x.path === '/edu/elect')).toBe(true);
+    expect(sc.some((x) => x.path === '/dorm')).toBe(false);
+  });
+
+  it('识别口语表达「借的书快到期了怎么还」命中图书借阅', () => {
+    const sc = detectShortcuts('借的书快到期了怎么还', []);
+    expect(sc.some((x) => x.path === '/library')).toBe(true);
+  });
+
   it('直达推荐最多返回 3 条且路径去重', () => {
     const sc = detectShortcuts('请假退课借书报修宿舍失物招领', []);
     expect(sc.length).toBeLessThanOrEqual(3);
