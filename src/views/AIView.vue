@@ -56,6 +56,20 @@
         <div v-for="m in msgs" :key="m.id" class="ai-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ai-ava">AI</div>
           <div class="ai-bubble" :class="{ 'is-error': m.error, 'is-wide': m.kind === 'read' || m.kind === 'write' || m.kind === 'data' }">
+            <!-- 多模态图片预览（用户提问带图） -->
+            <div v-if="m.images && m.images.length" class="ai-bubble-imgs">
+              <el-image
+                v-for="(img, idx) in m.images"
+                :key="idx"
+                :src="img"
+                :preview-src-list="m.images"
+                :initial-index="idx"
+                fit="cover"
+                class="ai-bubble-img"
+                preview-teleported
+              />
+            </div>
+
             <!-- 等待首字：上游首字延迟实测 3~10 秒，光转三个点会让人以为卡死，
                  所以给出**有信息量的阶段提示**（先检索、后组织） -->
             <div v-if="m.pending && !m.content" class="ai-typing">
@@ -143,7 +157,7 @@
             </template>
 
             <!-- 模型输出经 escape 后再注入有限标签，见 renderLite -->
-            <div v-else class="ai-text" v-html="renderLite(m.content)" />
+            <div v-else-if="m.content" class="ai-text" v-html="renderLite(m.content)" />
 
             <span v-if="m.streaming && m.content" class="ai-caret" />
             <div v-if="m.sources && m.sources.length" class="ai-src">
@@ -181,6 +195,15 @@
       </div>
 
       <footer class="ai-input">
+        <!-- 多模态图片附件预览条 -->
+        <div v-if="attachedImages.length > 0" class="ai-attach-bar">
+          <div v-for="(img, idx) in attachedImages" :key="idx" class="ai-attach-item">
+            <img :src="img" class="ai-attach-thumb" alt="附件缩略图" />
+            <button type="button" class="ai-attach-del" title="移除图片" @click="removeImage(idx)">×</button>
+          </div>
+          <span class="ai-attach-count">{{ attachedImages.length }} / 3 张图片</span>
+        </div>
+
         <el-input
           v-model="draft"
           type="textarea"
@@ -189,11 +212,36 @@
           maxlength="500"
           :placeholder="inputPlaceholder"
           @keydown="onKeydown"
+          @paste="onPaste"
         />
         <div class="ai-actions">
-          <span class="ai-hint">{{ isMobile ? '点击发送' : 'Enter 发送 · Shift+Enter 换行' }}</span>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept="image/*"
+            multiple
+            style="display: none"
+            @change="onFilePicked"
+          />
+          <el-tooltip content="添加图片进行视觉识别（支持截图粘贴，最多 3 张）" placement="top">
+            <el-button
+              circle
+              :icon="Picture"
+              :disabled="busy || attachedImages.length >= 3"
+              class="ai-tool-btn"
+              @click="triggerPickImage"
+            />
+          </el-tooltip>
+          <span class="ai-hint">{{ isMobile ? '点击发送' : 'Enter 发送 · Shift+Enter 换行 · 支持粘贴截图' }}</span>
           <el-button v-if="busy" round :icon="CloseBold" @click="stop">停止</el-button>
-          <el-button type="primary" round :icon="Promotion" :loading="busy" :disabled="!draft.trim()" @click="send">
+          <el-button
+            type="primary"
+            round
+            :icon="Promotion"
+            :loading="busy"
+            :disabled="!draft.trim() && attachedImages.length === 0"
+            @click="send"
+          >
             发送
           </el-button>
         </div>
@@ -213,12 +261,13 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-vue';
+import { ChatDotRound, CloseBold, Delete, Picture, Promotion } from '@element-plus/icons-vue';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
 import { streamChat, streamStudy, fetchStudyOverview, runAiAction, runAiInsight, confirmAiAction } from '../api/ai';
 import { useIsMobile } from '../utils/device';
+import { compressImageFile } from '../utils/img-compress';
 // 流式渲染策略与悬浮面板共用同一实现（见 utils/ai-typewriter.js 顶部注释）
 import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, stopTypewriter, streamHandlers } from '../utils/ai-typewriter';
 
@@ -294,9 +343,64 @@ const welcomeText = () => (mode.value === 'study' ? WELCOME_STUDY : WELCOME_CHAT
 
 const msgs = ref([{ id: nextId(), role: 'assistant', content: WELCOME_CHAT, sources: [] }]);
 const draft = ref('');
+const attachedImages = ref([]);
+const fileInputRef = ref(null);
 const busy = ref(false);
 const scroller = ref(null);
 let controller = null;
+
+function triggerPickImage() {
+  if (fileInputRef.value) {
+    fileInputRef.value.value = '';
+    fileInputRef.value.click();
+  }
+}
+
+async function handleImagesInput(files) {
+  const fileArr = Array.from(files || []).filter((f) => f && f.type?.startsWith('image/'));
+  if (!fileArr.length) return;
+  const remaining = 3 - attachedImages.value.length;
+  if (remaining <= 0) {
+    ElMessage.warning('单次提问最多支持 3 张图片');
+    return;
+  }
+  const toProcess = fileArr.slice(0, remaining);
+  for (const f of toProcess) {
+    const dataUrl = await compressImageFile(f);
+    if (dataUrl) {
+      attachedImages.value.push(dataUrl);
+    }
+  }
+}
+
+async function onFilePicked(e) {
+  const files = e.target?.files;
+  if (files && files.length) {
+    await handleImagesInput(files);
+  }
+  if (fileInputRef.value) fileInputRef.value.value = '';
+}
+
+async function onPaste(e) {
+  const items = e.clipboardData?.items;
+  if (!items || !items.length) return;
+  const imageFiles = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length > 0) {
+    e.preventDefault();
+    await handleImagesInput(imageFiles);
+  }
+}
+
+function removeImage(idx) {
+  attachedImages.value.splice(idx, 1);
+}
 
 /** 生成请求用的历史（不含正在生成的这条，最多 6 轮） */
 const historyForRequest = () =>
@@ -336,7 +440,8 @@ async function ask(question) {
 
 async function send() {
   const q = draft.value.trim();
-  if (!q || busy.value) return;
+  const imgs = [...attachedImages.value];
+  if ((!q && imgs.length === 0) || busy.value) return;
   if (ai.ready && !ai.chatOn) {
     ElMessage.warning(ai.status?.degradedReason || '智能问答当前未开启');
     return;
@@ -344,7 +449,12 @@ async function send() {
 
   const history = historyForRequest();
   draft.value = '';
-  msgs.value.push({ id: nextId(), role: 'user', content: q, sources: [] });
+  attachedImages.value = [];
+
+  const displayText = q;
+  const promptText = q || '请分析这幅图片中的内容';
+
+  msgs.value.push({ id: nextId(), role: 'user', content: displayText, images: imgs, sources: [] });
   msgs.value.push(newReplyMessage(nextId()));
   // ★ 关键：必须从数组里**取回 reactive 代理**来改，不能继续用 push 进去的原始对象。
   //   msgs 是 ref([])，push 的原始对象会被数组代理包装，模板拿到的是代理；
@@ -356,10 +466,12 @@ async function send() {
   await nextTick();
   scrollToBottom();
 
-  const route = mode.value === 'study' ? 'study' : routeOf();
-  if (route === 'action') await sendViaAction(q, reply);
-  else if (route === 'insight') await sendViaInsight(q, reply);
-  else await sendViaStream(route === 'study' ? streamStudy : streamChat, q, history, reply);
+  const hasImages = imgs.length > 0;
+  // 多模态图片提问强制走 streamChat，指令/问数接口不支持图片识别
+  const route = mode.value === 'study' ? 'study' : (hasImages ? 'chat' : routeOf());
+  if (route === 'action') await sendViaAction(promptText, reply);
+  else if (route === 'insight') await sendViaInsight(promptText, reply);
+  else await sendViaStream(route === 'study' ? streamStudy : streamChat, promptText, history, reply, imgs);
 
   reply.pending = false;
   clearWaitHint(reply);
@@ -483,11 +595,12 @@ async function sendViaInsight(text, reply) {
  *
  * @param {Function} streamFn streamChat 或 streamStudy
  */
-async function sendViaStream(streamFn, question, history, reply) {
+async function sendViaStream(streamFn, question, history, reply, images = []) {
   controller = new AbortController();
   const res = await streamFn({
     question,
     history,
+    images,
     signal: controller.signal,
     handlers: streamHandlers(reply, { onTick: scrollToBottom }),
   });
@@ -713,6 +826,24 @@ watch(
   border: 1px solid var(--ai-accent);
   color: var(--zc-text);
 }
+.ai-bubble-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ai-row.user .ai-bubble-imgs {
+  justify-content: flex-end;
+}
+.ai-bubble-img {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  background: var(--el-fill-color-light);
+}
 .ai-bubble.is-error { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
 /* 查询结果表/确认清单需要更宽，否则列被压成竖排 */
 .ai-bubble.is-wide { max-width: min(94%, 860px); }
@@ -818,6 +949,52 @@ watch(
 
 /* ---------- 输入区 ---------- */
 .ai-input { padding: 12px 16px 14px; border-top: 1px solid var(--zc-border); background: #fff; }
+.ai-attach-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--zc-border);
+}
+.ai-attach-item {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+.ai-attach-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--zc-border);
+}
+.ai-attach-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  background: #f56c6c;
+  color: #fff;
+  border-radius: 50%;
+  border: none;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.ai-attach-count {
+  font-size: 12px;
+  color: var(--zc-text-sub);
+}
 .ai-input :deep(.el-textarea__inner) {
   border-radius: 10px;
   box-shadow: none;
@@ -829,6 +1006,14 @@ watch(
 .ai-input :deep(.el-textarea__inner:focus) { border-color: var(--ai-accent); }
 .ai-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .ai-hint { margin-right: auto; font-size: 11.5px; color: var(--zc-text-sub); }
+.ai-tool-btn {
+  color: var(--zc-text-sub);
+  border-color: var(--zc-border);
+}
+.ai-tool-btn:hover {
+  color: var(--ai-accent);
+  border-color: var(--ai-accent);
+}
 .ai-actions :deep(.el-button--primary) {
   background: var(--ai-accent);
   border-color: var(--ai-accent);

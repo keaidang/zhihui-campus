@@ -25,8 +25,8 @@ const MAX_QUESTION = 500; // 单次提问上限（chars）
 const MAX_HISTORY = 6; // 携带的历史轮数上限（成本控制）
 const MAX_HISTORY_CHARS = 400; // 单条历史消息截断长度
 
-/** 组装 messages：system(规则 + 身份 + L0 档案 + L1 资料) + 历史 + 本次提问 */
-function buildMessages(question, history, kbText, identityText) {
+/** 组装 messages：system(规则 + 身份 + L0 档案 + L1 资料) + 历史 + 本次提问（支持多模态图片） */
+function buildMessages(question, history, kbText, identityText, images = []) {
   // 回答纪律/身份/档案/资料的拼装口径统一在 lib/ai-prompt.js（与 C5 指令解析共用，防漂移）
   const messages = [{ role: 'system', content: buildAnswerSystem({ identityText, kbProfile: KB_PROFILE, kbText }) }];
   for (const h of history) {
@@ -34,7 +34,18 @@ function buildMessages(question, history, kbText, identityText) {
     const content = String(h?.content ?? '').trim().slice(0, MAX_HISTORY_CHARS);
     if (content) messages.push({ role, content });
   }
-  messages.push({ role: 'user', content: question });
+  if (images && images.length > 0) {
+    const userContent = [{ type: 'text', text: question }];
+    for (const img of images) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: img },
+      });
+    }
+    messages.push({ role: 'user', content: userContent });
+  } else {
+    messages.push({ role: 'user', content: question });
+  }
   return messages;
 }
 
@@ -50,8 +61,16 @@ export async function onRequestPost(context) {
     const { roles, userId } = await requireRoles(context);
 
     // ---- 入参校验（先做，避免为无效请求消耗上游额度）----
-    const body = await readBody(context.request, 8 * 1024);
-    const question = String(body.question ?? '').trim();
+    const body = await readBody(context.request, 4 * 1024 * 1024);
+    const rawImages = Array.isArray(body.images) ? body.images : [];
+    const images = rawImages
+      .filter((img) => typeof img === 'string' && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://')))
+      .slice(0, 3);
+
+    let question = String(body.question ?? '').trim();
+    if (!question && images.length > 0) {
+      question = '请分析这幅图片中的内容';
+    }
     if (!question) return fail(49401, '请输入你要问的问题');
     if (question.length > MAX_QUESTION) return fail(49401, `问题太长了，请控制在 ${MAX_QUESTION} 字以内`);
 
@@ -77,7 +96,7 @@ export async function onRequestPost(context) {
       loadIdentity(userId),
     ]);
 
-    const messages = buildMessages(question, history, kb.text, identityBlock(identity, roles));
+    const messages = buildMessages(question, history, kb.text, identityBlock(identity, roles), images);
 
     // ---- 先拿到上游响应头再决定返回什么：失败时能干净地回 JSON ----
     const t0 = Date.now();

@@ -166,8 +166,8 @@ async function streamSse(path, payload, { signal, handlers = {} } = {}) {
  *   ok:false 表示"根本没开始生成"（未登录/限流/未配置/上游失败），调用方把 message
  *   当作一条助手消息展示即可 —— 不要让整页报错（ADR-9：AI 挂了业务照常）。
  */
-export function streamChat({ question, history = [], signal, handlers = {} } = {}) {
-  return streamSse('/api/ai/chat', { question, history }, { signal, handlers });
+export function streamChat({ question, history = [], images = [], signal, handlers = {} } = {}) {
+  return streamSse('/api/ai/chat', { question, history, images }, { signal, handlers });
 }
 
 /** C7 学业助手：协议与 C1 完全相同，只是 system prompt 里注入了本人成绩/课表事实 */

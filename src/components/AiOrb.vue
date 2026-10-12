@@ -20,12 +20,25 @@
         <div v-for="m in msgs" :key="m.id" class="pl-row" :class="m.role">
           <div v-if="m.role === 'assistant'" class="pl-ava">AI</div>
           <div class="pl-bubble" :class="{ 'is-error': m.error }">
+            <!-- 多模态图片预览（用户提问带图） -->
+            <div v-if="m.images && m.images.length" class="pl-bubble-imgs">
+              <el-image
+                v-for="(img, idx) in m.images"
+                :key="idx"
+                :src="img"
+                :preview-src-list="m.images"
+                :initial-index="idx"
+                fit="cover"
+                class="pl-bubble-img"
+                preview-teleported
+              />
+            </div>
             <!-- 等待首字：上游首字延迟实测 3~10 秒，给出阶段提示而不是干转圈 -->
             <div v-if="m.pending && !m.content" class="pl-wait">
               <span>{{ m.waitHint || '正在思考…' }}</span>
               <span class="pl-dots"><i /><i /><i /></span>
             </div>
-            <template v-else>
+            <template v-else-if="m.content">
               <div class="pl-text" v-html="renderLite(m.content)" />
               <span v-if="m.streaming && m.content" class="pl-caret" />
             </template>
@@ -54,16 +67,43 @@
       </div>
 
       <footer class="pl-foot">
+        <!-- 多模态图片附件预览条 -->
+        <div v-if="attachedImages.length > 0" class="pl-attach-bar">
+          <div v-for="(img, idx) in attachedImages" :key="idx" class="pl-attach-item">
+            <img :src="img" class="pl-attach-thumb" alt="附件缩略图" />
+            <button type="button" class="pl-attach-del" title="移除图片" @click="removeImage(idx)">×</button>
+          </div>
+          <span class="pl-attach-count">{{ attachedImages.length }}/3</span>
+        </div>
+
         <el-input
           v-model="draft"
           type="textarea"
           :autosize="{ minRows: 1, maxRows: 3 }"
           resize="none"
           maxlength="500"
-          placeholder="问点什么，例如「怎么选课」"
+          placeholder="问点什么，或发图片"
           @keydown="onKeydown"
+          @paste="onPaste"
         />
         <div class="pl-actions">
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept="image/*"
+            multiple
+            style="display: none"
+            @change="onFilePicked"
+          />
+          <el-tooltip content="添加图片识别（可直接粘贴截图，最多3张）" placement="top">
+            <el-button
+              link
+              :icon="Picture"
+              :disabled="busy || attachedImages.length >= 3"
+              class="pl-tool-btn"
+              @click="triggerPickImage"
+            />
+          </el-tooltip>
           <span class="pl-hint">Enter 发送</span>
           <el-button v-if="busy" link :icon="CloseBold" title="停止" @click="stop" />
           <el-button
@@ -71,7 +111,7 @@
             circle
             :icon="Promotion"
             :loading="busy"
-            :disabled="!draft.trim()"
+            :disabled="!draft.trim() && attachedImages.length === 0"
             @click="send"
           />
         </div>
@@ -115,11 +155,12 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { ChatDotRound, Close, CloseBold, FullScreen, Promotion } from '@element-plus/icons-vue';
+import { ChatDotRound, Close, CloseBold, FullScreen, Picture, Promotion } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 import { useAiStore } from '../stores/ai';
 import { useIsMobile } from '../utils/device';
 import { streamChat } from '../api/ai';
+import { compressImageFile } from '../utils/img-compress';
 import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, streamHandlers } from '../utils/ai-typewriter';
 
 const route = useRoute();
@@ -134,6 +175,8 @@ const WELCOME = '你好，我是「智汇校园」的 AI 校园助手。\n可以
 
 const open = ref(false);
 const draft = ref('');
+const attachedImages = ref([]);
+const fileInputRef = ref(null);
 const busy = ref(false);
 const scroller = ref(null);
 let seq = 0;
@@ -199,6 +242,59 @@ function scrollToBottom() {
   });
 }
 
+function triggerPickImage() {
+  if (fileInputRef.value) {
+    fileInputRef.value.value = '';
+    fileInputRef.value.click();
+  }
+}
+
+async function handleImagesInput(files) {
+  const fileArr = Array.from(files || []).filter((f) => f && f.type?.startsWith('image/'));
+  if (!fileArr.length) return;
+  const remaining = 3 - attachedImages.value.length;
+  if (remaining <= 0) {
+    ElMessage.warning('单次提问最多支持 3 张图片');
+    return;
+  }
+  const toProcess = fileArr.slice(0, remaining);
+  for (const f of toProcess) {
+    const dataUrl = await compressImageFile(f);
+    if (dataUrl) {
+      attachedImages.value.push(dataUrl);
+    }
+  }
+}
+
+async function onFilePicked(e) {
+  const files = e.target?.files;
+  if (files && files.length) {
+    await handleImagesInput(files);
+  }
+  if (fileInputRef.value) fileInputRef.value.value = '';
+}
+
+async function onPaste(e) {
+  const items = e.clipboardData?.items;
+  if (!items || !items.length) return;
+  const imageFiles = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length > 0) {
+    e.preventDefault();
+    await handleImagesInput(imageFiles);
+  }
+}
+
+function removeImage(idx) {
+  attachedImages.value.splice(idx, 1);
+}
+
 async function ask(q) {
   draft.value = q;
   await send();
@@ -206,7 +302,8 @@ async function ask(q) {
 
 async function send() {
   const q = draft.value.trim();
-  if (!q || busy.value) return;
+  const imgs = [...attachedImages.value];
+  if ((!q && imgs.length === 0) || busy.value) return;
 
   // 历史只带本面板内的对话（最多 4 轮，浮层场景不需要长上下文）
   const history = msgs.value
@@ -215,7 +312,12 @@ async function send() {
     .map((m) => ({ role: m.role, content: m.content }));
 
   draft.value = '';
-  msgs.value.push({ id: nextId(), role: 'user', content: q, sources: [] });
+  attachedImages.value = [];
+
+  const displayText = q;
+  const promptText = q || '请分析这幅图片中的内容';
+
+  msgs.value.push({ id: nextId(), role: 'user', content: displayText, images: imgs, sources: [] });
   msgs.value.push(newReplyMessage(nextId()));
   // ★ 同 AIView：必须改数组里取回的 reactive 代理，改原始对象不会触发渲染
   const reply = msgs.value[msgs.value.length - 1];
@@ -226,8 +328,9 @@ async function send() {
 
   controller = new AbortController();
   const res = await streamChat({
-    question: q,
+    question: promptText,
     history,
+    images: imgs,
     signal: controller.signal,
     handlers: streamHandlers(reply, { onTick: scrollToBottom }),
   });
@@ -420,6 +523,24 @@ onUnmounted(() => {
   background: var(--ai-soft);
   border-color: var(--ai-accent);
 }
+.pl-bubble-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.pl-row.user .pl-bubble-imgs {
+  justify-content: flex-end;
+}
+.pl-bubble-img {
+  width: 90px;
+  height: 90px;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  background: var(--el-fill-color-light);
+}
 .pl-bubble.is-error { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
 .pl-text :deep(strong) { color: var(--zc-navy); }
 .pl-text :deep(code) {
@@ -501,6 +622,52 @@ onUnmounted(() => {
 .pl-chips button:hover { color: var(--ai-accent); border-color: var(--ai-accent); }
 
 .pl-foot { padding: 10px 12px 8px; border-top: 1px solid var(--zc-border); background: #fff; }
+.pl-attach-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--el-fill-color-light);
+  border-radius: 7px;
+  margin-bottom: 6px;
+  border: 1px dashed var(--zc-border);
+}
+.pl-attach-item {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+.pl-attach-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--zc-border);
+}
+.pl-attach-del {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  background: #f56c6c;
+  color: #fff;
+  border-radius: 50%;
+  border: none;
+  font-size: 11px;
+  line-height: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.pl-attach-count {
+  font-size: 11px;
+  color: var(--zc-text-sub);
+}
 .pl-foot :deep(.el-textarea__inner) {
   border-radius: 9px;
   box-shadow: none;
@@ -512,6 +679,13 @@ onUnmounted(() => {
 .pl-foot :deep(.el-textarea__inner:focus) { border-color: var(--ai-accent); }
 .pl-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 7px; }
 .pl-hint { margin-right: auto; font-size: 11px; color: var(--zc-text-sub); }
+.pl-tool-btn {
+  color: var(--zc-text-sub);
+  padding: 4px;
+}
+.pl-tool-btn:hover {
+  color: var(--ai-accent);
+}
 .pl-actions :deep(.el-button--primary) { background: var(--ai-accent); border-color: var(--ai-accent); }
 .pl-more {
   margin: 8px 0 0;
