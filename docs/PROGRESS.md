@@ -11,6 +11,7 @@
 - 质量基线：安全审计完成；M1+M2 线上 16 步、M3 线上 21 步全链路验证通过；邮箱收发/验证码生产验证通过
 - **AI 融合已落地（2026-10-12：C1~C18 共 18 项能力全量上线）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关，实测上下文 40 万字、`reasoning_content` 独立字段）。唯一口径见 **ARCHITECTURE ADR-9**，能力清单与验收见 **AI-FEATURES.md**。**⚠ 开发测试期只用文本输入输出、禁碰多模态（计费高）；思考模式默认关**。新增落地：C14（对话式业务直达）、C15（智能公文邮件助理）、C16（智能排课选课避坑）、C17（数据驾驶舱态势简报）、C18（知识库规章长文切分入库）。首页与控制台同步更新为 18 项能力，全站单测 23 套件 436 项全绿。
 - **真实业务数据千人规模扩充（2026-10-12 落地）**：TiDB 免费层（5 GiB）无成本扩容，全校注册用户升至 **1,002 人**（学生 883、教师 65、校领导 39、辅导员 15、超管 1），涵盖 30 个教学班、881 个宿舍床位、9,751 条选课与历史成绩、300 笔请假、200 笔报修、311 笔图书借还、104 条论坛帖及 126 封站内信。数据一致性体检与 AI 问答/问数评估 100% 通过。
+- **首屏白屏修复（2026-10-12）**：#app 内静态内嵌启动页 + 挂载门控改为等「会话恢复 ∧ 首个路由就绪」+ 会话用户字段收敛到 `lib/user-profile.js`（会话恢复 2 次串行往返 → 1 次）。实测未登录 2.4s / 已登录 3.3s 出内容，等待期全程有品牌启动页。见 **PERFORMANCE.md §7** 与 **HANDOVER 铁律 #64**
 - 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
@@ -129,6 +130,8 @@
 - **★ 移动端表格（2026-09-21 修正）**：**不要给 `.el-table` 加 `max-width`** —— EP 会把所有列按比例压缩到容器宽度内，多列表格（如账号管理 11 列）会被压成一条条按钮堆叠、完全不可读。正解是 `table.el-table__header/__body { width: max-content; min-width: 100% }`，容器不足时由 EP 自带 `.el-scrollbar__wrap` 横向滚动。**移动端表格验收必须同时满足**：① 页面无横向溢出 ② 有数据行时最宽列 > 80px（`node .shots/audit-tables.mjs`）
 - **★ 移动端适配（2026-09-20 深夜）**：`src/mobile.css` 只允许 `@media (max-width: 820px)` 块（PC 零回归保证）；断点须与 `utils/device.js` 的 `MOBILE_MAX_WIDTH` 同值；**覆盖组件 scoped 样式必须三倍类名**（组件 CSS 路由懒加载，`<link>` 运行时插入在本文件之后，双类名同权重会被反超）；窄屏横向溢出两大根因 = grid 的 `1fr`（实为 `minmax(auto,1fr)`，改 `minmax(0,1fr)`）+ flex column 交叉轴被内容 min-content 撑开（须在 `.shell-body` 层就 `overflow-x:hidden`，只在 `.shell-main` 写无效）；内联固定宽度需 `!important`。详见 HANDOVER 铁律 #27/#28
 - **★ AI 融合约束（2026-10-09 定版 + 同日修订，写 AI 代码前必读）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关 `https://dashscope.aliyuncs.com/compatible-mode/v1`，**仅国内站可用**；配置键 `AI_QWEN_*` + `AI_PROVIDER` 在 `.env`，密钥不入库不入文档；GLM 三键保留备用）。**★★ ① 开发测试期只用文本输入输出，禁止任何多模态调用（图片/音频/视频计费远高于文本）；② 思考模式默认关闭 `enable_thinking:false`（意图 JSON 快 6.2 倍、输出 token 降 94%，且只有关思考时 `tool_choice: required` 才可用）**。上下文很大（实测 40 万字通过）但 **RAG 仍走检索 TopK，禁整篇塞上下文**；所有 AI 调用必须 try/catch + 超时降级（**AI 挂了业务照常**）；模型输出只做意图/参数/判定，**操作与 SQL 一律白名单预写、模型永不直接执行**；破坏性操作先列清单再二次确认 + guard.js 鉴权 + sys_op_log 审计；AI 接口加 DB 流水频控（禁内存计数）。完整口径见 ARCHITECTURE ADR-9 与 HANDOVER 铁律 #36
+- **★ 首屏「白屏」= 没有 DOM，不是网络慢（2026-10-12，铁律 #64）**：`index.html` 的 `#app` 在 Vue 挂载前是空的，而挂载又被 `restoreSession` 阻塞 → 纯白。**排查顺序：先看 `#app` 里有没有东西，再谈网络/数据库**（本机对照组 baidu TTFB 0.109s、资源全 `EO-Cache-Status: Cache Hit`，都正常）。修法与实测见 **PERFORMANCE.md §7**
+- **★ 改动涉及「页面能不能出来」时，必须用真渲染验收（2026-10-12）**：`node .shots/verify-boot.mjs`（系统 Edge 真渲染，14 项断言）。**e2e 只打 API + 抓 HTML 文本，抓不到「永远卡在启动页」这个失败模式** —— HTML 里确实有启动页、API 也全通，只有真渲染才看得出来
 - sys_refresh_token 过期/吊销记录清理：**已有 `scripts/cleanup.mjs`**（dry-run 默认，`--yes` 执行，覆盖 refresh_token / blob / login_log）；另 login.js 登录成功时 5% 概率顺带清理
 - 登录失败限流：**已由内存版改为 DB 流水计数**（sys_login_log 失败流水 + sys_email_code），多实例安全；细节见变更记录"边缘网关试错与回滚"条
 - **db.js query() 直接返回 rows**（项目封装过），不能按 mysql2 原生 `[rows]` 解构——解构会把首行当数组用，随机 500
@@ -266,6 +269,12 @@
   8. **千人级真实业务数据体系扩充（无成本落地）**：验证 TiDB Cloud Serverless 免费层可用性（5 GiB 存储 / 50M RU 免费额度），编写幂等脚本 `scripts/seed-1k-scale.mjs`。全校用户由 490 增至 **1,002 人**（学生 883、教师 65、校领导 39、辅导员 15、超管 1 人），新增 16 班级（达 30 班）；宿舍入住 881 床位（男女严格分栋校验）；按既有不变量（铁律 #83）补齐当前学期在选与往年成绩 9,751 条、请假 300 笔、报修 200 笔、借书 311 笔、论坛 104 帖/150 评、站内信 126 封。全库 40 张表仅占用 ~3.8 MB（< 0.1%）。`scripts/integrity-check.mjs` 5 项体检 0 异常，`scripts/ai-check.mjs` 16 项全绿，`eval:ai` 问答 100%（12/12）与问数 100%（8/8）。
   9. **首页统计卡片对齐**：更新 `src/views/HomeView.vue`，将数据带中的师生覆盖指标从原先的 `400+` 升级为 `1000+`（定义 `userTotal = 1000`），标头更新为「真实师生规模 · 千人级多角色在线协同与承载」，与数据库 1,002 真实注册用户规模完全一致。
 
+- 2026-10-12（**修复首屏白屏 + 会话恢复往返减半**，commit `5567528`，详见 **docs/PERFORMANCE.md §7** 与 **HANDOVER 铁律 #64**）：
+  用户反馈「首屏时间偏长、会白屏一会再显示」。**先排除了错误方向**：本机链路正常（对照组 baidu TTFB 0.109s）、静态资源全 `EO-Cache-Status: Cache Hit`、Brotli 已开 —— 与边缘缓存、数据库均无关。**真因是“没有 DOM”**：`index.html` 的 `<div id="app"></div>` 在 Vue 挂载前是空的，而挂载又被 `auth.restoreSession().finally(() => app.mount('#app'))` 阻塞，`restoreSession` 内部是 `tryRefresh() → fetchMe()` **两次串行往返**（单次往返实测中位 ~0.90s）→ 等待期屏幕上没有任何 DOM，即整页纯白。
+  四处修复：① **`index.html` 的 `#app` 内静态内嵌启动页**（校徽 + 校名 + 转圈，内联 CSS 随文档到达即绘制、零额外请求；**不含内联脚本**以符合 CSP `script-src 'self'`；Vue `app.mount()` 会自动清空它，JS 整体加载失败时它反而留在屏幕上兜底）；② **`src/main.js` 挂载门控改为 `Promise.all([restoreSession, router.isReady])`** —— **两个都要等**：只等 `isReady` 会带着空 `auth.user` 挂载，首页 `/` 无需鉴权故守卫立即放行，`HomeView`/`PortalShell` 会先渲染游客态再跳成登录态（肉眼可见的闪烁）；③ 新增 **`node-functions/lib/user-profile.js`** 作为会话用户字段的**单一来源**（`/auth/me`、`/auth/login`、`/auth/login-code`、`/auth/refresh` 四处共用），`refresh` 一次往返即返回完整档案（含 `deptName`/`avatarUrl`），同时杜绝四处各写一份字段映射造成的漂移；④ 去掉 `stores/auth.js` 中 `restoreSession`/`login`/`loginByCode` 三处冗余 `fetchMe`（保留 `!this.user` 兑底）。
+  **验证**：lint / 单测 **439 通过**（24 文件）/ 模块加载自检 **101 模块 0 失败** / build 全绿；新增 **`.shots/verify-boot.mjs`** 用系统 Edge 真渲染验收 **14 项断言全过**（未登录 `/` 启动页 997ms 出现 → 应用 2417ms 渲染完；已登录 `/` 1602ms → 3302ms，`/api/auth/me` 请求数 **0**，揭开首帧页头已是真实姓名「梁薇」→ 无游客态闪烁；已登录直进 `/workbench` 3978ms → 7865ms，该次为刚部署后的冷缓存；禁用 JS 时启动页留在屏幕上兑底）；线上 e2e 由 56 项扩到 **61 项**（新增：登录与 refresh 必须返回完整用户档案、线上 HTML 必须含启动页），**61/61 通过**（首跑有 1 项「成绩」瞬时失败，复跑全绿，与本次改动无关）。
+  **诚实边界**：启动页出现**之前**那 0.9~1.4s（文档 TTFB，边缘 RTT 决定）仍是空白，前端无法消除；要彻底消掉需改用边缘函数直出首屏 HTML。
+
 ## 下一步
 
 > 详细剩余项与整改建议已收敛到 **docs/AUDIT-2026-09-21.md**（2026-09-21 全面体检报告，含 P0~P2 分级与工作量估计），此处不再重复维护（避免漂移）。
@@ -276,4 +285,5 @@
 - **[x] P1（工程护栏）**：`npm run check` 已串起 lint / 单测(309) / 模块加载自检 / DB 巡检 / e2e / 文档检查（见 AUDIT P1-1）
 - **[ ] P1**：统一报修口径（纯文档，20 分钟，见 AUDIT P1-2）/ EP 按需引入 / 图片图床
 - **[ ] P2**：图书封面、邮箱附件、学期口径、监控告警、备份演练、App 壳打包（测试账号 zhreg2871 已于 2026-10-07 停用处理）
+- **[ ] P2（首屏性能，2026-10-12 新增）**：`ep-icons`(170.95KB) 移出首屏 modulepreload / 277KB 背景图降优先级或延迟加载 / 首屏 HTML 由边缘函数直出（唯一能消掉「文档到达前 0.9~1.4s 空白」的办法）—— 见 **PERFORMANCE.md §7.6**
 

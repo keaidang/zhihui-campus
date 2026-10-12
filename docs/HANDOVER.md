@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
 > 最后更新：2026-10-12。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据健全（全校 1,002 用户真实业务规模）；**AI 融合 C1~C18 共 18 项能力全量上线**（模型 **qwen3.8-omni-flash**（阿里云 DashScope 聚合网关），唯一口径见 ARCHITECTURE ADR-9 与 AI-FEATURES.md，2026-10-12）。**⚠ 开发测试期 AI 只用文本输入输出，禁碰多模态（贵）——见铁律 #36。**
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据健全（全校 1,002 用户真实业务规模）；**AI 融合 C1~C18 共 18 项能力全量上线**（模型 **qwen3.8-omni-flash**（阿里云 DashScope 聚合网关），唯一口径见 ARCHITECTURE ADR-9 与 AI-FEATURES.md，2026-10-12）。**⚠ 开发测试期 AI 只用文本输入输出，禁碰多模态（贵）——见铁律 #36。** **2026-10-12 修复首屏白屏**：`#app` 内嵌静态启动页 + 挂载门控改为等「会话恢复 ∧ 首个路由就绪」+ 会话用户字段收敛到 `lib/user-profile.js`（会话恢复由 2 次串行往返降为 1 次）——见铁律 #64 与 `docs/PERFORMANCE.md` §7。
 
 ## 1. 项目快照
 
@@ -41,6 +41,7 @@
 ├─ database/                  # schema-001~008（auth/base/edu/affair/org/行政部门/校园邮箱/发件表）+ 009-m3-modules（M3 十一表）+ 010-dorm（宿舍）+ 011-message（站内信）
 ├─ node-functions/
 │  ├─ lib/                    # db.js(连接池+瞬时错误重试，query()直接返回rows) http.js guard.js auth.js lanqin.js(邮件API封装)
+│  │  ├─ user-profile.js      # ★ 会话用户字段单一来源（/auth/me·login·login-code·refresh 共用）——见铁律 #64
 │  │  ├─ ai.js                # ★ AI 统一出口（qwen3.8-omni-flash；aiUpstream/aiChat/aiJson + 总开关守卫 + 上游错误分类）
 │  │  ├─ ai-config.js         # 运行时开关与阈值（sys_config，改完约 30 秒生效，无需重新部署）
 │  │  ├─ ai-guard.js          # 频控（DB 流水计数 + 在途标记补 check-then-act 窗口）
@@ -72,6 +73,8 @@
 │                             #   config/kb/usage/eval 管理控制台 · stream-probe 流式探测
 ├─ edge-functions/            # KV 诊断位（kv-check 等）
 ├─ src/
+│  ├─ main.js                 # 入口：挂载门控 = Promise.all([restoreSession, router.isReady])（★ 白屏修复，见铁律 #64）
+│  │                          #   index.html 的 #app 内静态内嵌启动页，Vue app.mount() 时自动清空
 │  ├─ api/request.js          # 统一请求封装（Bearer + 401 自动刷新重放）
 │  ├─ stores/auth.js          # Pinia：双令牌，accessToken 仅内存；restoreSession/tryRefresh 单飞 Promise（防 F5 竞态）
 │  ├─ router/index.js         # 路由 + 登录/角色守卫（redirect 回跳；M3 五路由均 requiresAuth）
@@ -493,6 +496,15 @@
     - 我因此一度误判「`.env 里没有 E2E_ADMIN_PWD」，还差点写成"线上拿不到管理员口令"的结论。**实际它一直都在。**
     - 规范：解析键名的字符类写 `[A-Z0-9_]`；**"查不到"时先怀疑自己的查询条件**，而不是先怀疑文件（与铁律 #60 同源：自己的度量工具出错时，最先被误导的是自己）。
     - 通则：**静默跳过比直接报错更危险** —— 报错会停下来，静默跳过会让你带着一个错误的假设继续往下走。写解析/查找逻辑时，至少加一条"我确实读到了"的正向断言。
+64. **★★「白屏」不是网络慢，是「没有 DOM」；而「到底渲没渲染出来」e2e 抓不到（2026-10-12 用户反馈「首屏时间偏长、会白屏一会再显示」）**：
+    - **现象**：打开 c.9o.pw 先纯白一会才出内容。第一反应是"边缘/数据库慢"，实测**全部排除**：本机对照组 baidu TTFB 0.109s、静态资源全 `EO-Cache-Status: Cache Hit`、Brotli 已开。
+    - **根因**：`index.html` 的 `<div id="app"></div>` **在 Vue 挂载前是空的**，而挂载又被 `auth.restoreSession().finally(() => app.mount('#app'))` 阻塞，且 `restoreSession` 内部是 `tryRefresh() → fetchMe()` **两次串行往返** → 等待期屏幕上没有任何 DOM，就是整页纯白。**白屏 = "没东西可画"，与"画得慢"是两件完全不同的事。**
+    - **修法**：① `#app` 内静态内嵌启动页（内联 CSS，随文档到达即绘制、零额外请求；Vue `app.mount()` 会自动清空它，JS 加载失败时它反而留在屏幕上兜底）② 挂载门控改 `Promise.all([restoreSession, router.isReady])` ③ 会话用户字段收敛到 **`node-functions/lib/user-profile.js` 单一来源**，`refresh` 一次往返即返回完整档案 ④ 去掉 `restoreSession`/`login`/`loginByCode` 三处冗余 `fetchMe`。
+    - **★ 门控为什么两个都要等**：只等 `router.isReady()` 会带着 `auth.user === null` 挂载 —— 首页 `/` 不需鉴权、守卫立即放行，于是 `HomeView`/`PortalShell` 先渲染**游客态**、会话恢复回来再跳成登录态，用户看到明显闪烁。**"先把画面放出来"与"画面内容是对的"必须同时满足。**
+    - **★★ 方法论（比修复本身更重要）**：**这次的失败模式 e2e 抓不到。** `scripts/e2e-smoke.mjs` 只打 API + 抓 HTML 文本；若门控写错（如 `isReady` 永不 resolve），页面会**永远停在启动页**，而"HTML 里有启动页"这条断言**照样通过**。故新增 **`.shots/verify-boot.mjs`**（系统 Edge 真渲染）：断言 ① 应用真的渲染出来了（启动页被清空且 `#app` 有真实内容）② 启动页确实出现过并消失 ③ 揭开首帧页头已是真实姓名（无游客态闪烁）④ 禁用 JS 时启动页兜底。**判据：凡改动涉及"页面能不能出来"，必须有一条"真的渲染了"的断言，不能用 API 断言代替。**
+    - **配套（验收脚本自身的坑）**：首版脚本让两个场景**共用同一个 refresh token**，第二个场景必然被判重放而正确地踢回登录页 —— 我一度以为门控写坏了。**刷新令牌是一次性轮换的**：每个"已登录场景"必须各自登录一次。
+    - **量化**（2026-10-12 实测）：未登录 `/` 启动页 997ms 出现 → 应用 2417ms 渲染完；已登录 `/` 1602ms → 3302ms；已登录直进 `/workbench` 3978ms → 7865ms（**该次是刚部署后的冷缓存**，全部资源 hash 变化所致，属"每次部署后第一位访客"的固有代价）。已登录路径的 `/api/auth/me` 请求数实测 **0**。完整数据见 `docs/PERFORMANCE.md` §7。
+    - **诚实边界**：启动页出现**之前**那 0.9~1.4s（文档 TTFB）仍是空白，前端无法消除；要彻底消掉需改用边缘函数直出首屏 HTML。
 
 ## 6. 交付与验证流程
 
@@ -500,7 +512,7 @@
 1. 改代码 → **`npm run check`**（lint → 单测 → 导入自检 → 库体检 → AI 层检查 → 线上 e2e → README 自检，一条命令七段；分层职责见铁律 #35）→ `npm run build`（前端构建必须过）
 2. **提交用显式 add，禁止 `git add -A`**：`git add <改动的具体文件>` → commit → push（凭据在 Windows 凭据管理器；`git -c credential.helper= push <user:pass 编码后的 url> main`）。曾因 `git add -A` 把 `working/` 调试产物带进仓库（b4dc948 才清出）
 3. 等约 2.5~3 分钟部署（部署未完成时新旧函数混跑会出"诡异 500"，先等满再测）→ 线上验证
-4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，56 项只读断言（2026-10-07 实测合计数，含 M4 增补），覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
+4. **线上验证优先用固化脚本**：`npm run check:e2e`（即 `scripts/e2e-smoke.mjs`，**61 项**断言（2026-10-12 实测合计数；含登录/refresh 必须返回完整用户档案、线上 index.html 必须含启动页），覆盖四角色 + 越权边界 + 历史缺陷回归，可反复重跑不污染数据）。**只有固化脚本覆盖不到的场景**（如新增业务链路的写操作）才写一次性 Node 22 脚本（原生 fetch 打线上全链路，跑完即删），并同步把可长期复用的断言补进 `e2e-smoke.mjs`。脚本执行时注意：**Bash 工具的 cwd 不随 `cd` 持久**，每条命令都要自带 `cd /c/Users/Administrator/Desktop/zhihui-campus && ...`
 5. 收尾必须同步 docs（见 CONVENTIONS.md 会话纪律）
    - **★ 脚本执行纪律（2026-10-09 踩实，用户明确要求"不要再出现"）**：临时 Node 脚本**结尾必须 `process.exit(0)`**。连过 TiDB（mysql2）的脚本即使 `await conn.end()`，连接池仍持有 handle 让事件循环不空 → 命令"跑完了却不结束" → 超时被杀 → 若输出接了 `tail`/`head`/重定向（非 tty，Node 用 64KB 块缓冲）**缓冲区全丢、一个字看不到**，看上去像卡死。判据：**长时间无返回 + 零输出 → 先怀疑"进程未退出 + 输出被缓冲"，而不是"任务太重"**。对策：脚本显式退出；看输出先 `> 文件` 再 `cat`，别接管道；耗时命令（build/安装/e2e/等部署）放后台收通知。另：`npm run build` 前先把 `dist` 改名移走，否则 Vite 的 `emptyDir` 会撞环境删除钩子超时（`[safe-delete] … ETIMEDOUT`）。`scripts/seed-ai-kb.mjs` 已按此规范补上 `process.exit(0)`。
 6. **README 与配图维护**（项目对外门面，界面/功能有变动后同步）：
