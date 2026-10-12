@@ -13,95 +13,201 @@
     <!-- 认证卡片 -->
     <main class="gate-main">
       <div class="gate-card">
-        <img class="card-school-name" src="/name.webp" alt="清北大学" />
-        <h2>{{ mode === 'login' ? '账号密码登录' : '注册统一账号' }}</h2>
-        <div class="divider"></div>
-
-        <!-- 登录 -->
-        <el-form v-if="mode === 'login'" :model="loginForm" size="large" @submit.prevent>
-          <el-form-item>
-            <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" clearable />
-          </el-form-item>
-          <el-form-item>
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              placeholder="密码"
-              :prefix-icon="Lock"
-              show-password
-              @keyup.enter="doLogin"
-            />
-          </el-form-item>
-          <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doLogin">
-            登录
-          </el-button>
-        </el-form>
-
-        <!-- 注册 -->
-        <el-form v-else :model="regForm" size="large" @submit.prevent>
-          <el-form-item>
-            <el-input v-model="regForm.realName" placeholder="姓名" :prefix-icon="Postcard" clearable />
-          </el-form-item>
-          <el-form-item>
-            <el-input v-model="regForm.username" placeholder="用户名（字母开头，4~32 位）" :prefix-icon="User" clearable />
-          </el-form-item>
-          <el-form-item>
-            <el-input
-              v-model="regForm.password"
-              type="password"
-              placeholder="密码（至少 8 位）"
-              :prefix-icon="Lock"
-              show-password
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-input
-              v-model="regForm.confirm"
-              type="password"
-              placeholder="确认密码"
-              :prefix-icon="Lock"
-              show-password
-            />
-          </el-form-item>
-          <el-form-item>
-            <div class="field-row mail-row">
-              <el-input v-model="regForm.email" placeholder="邮箱（接收验证码）" :prefix-icon="Message" clearable />
-              <el-button class="side-btn" :disabled="codeCooldown > 0 || sending" @click="sendCode">
-                {{ sending ? '发送中…' : codeCooldown > 0 ? `${codeCooldown}s 重发` : '获取验证码' }}
-              </el-button>
-            </div>
-          </el-form-item>
-          <el-form-item>
-            <el-input v-model="regForm.code" placeholder="6 位邮箱验证码" :prefix-icon="Key" maxlength="6" @keyup.enter="doRegister" />
-          </el-form-item>
-          <p class="mail-tip">验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
-          <el-form-item>
-            <div class="field-row">
-              <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀" :prefix-icon="Promotion" clearable @keyup.enter="checkPrefix" />
-              <el-select v-model="regForm.domain" class="domain-select" @change="resetPrefixHint">
-                <el-option v-for="d in domains" :key="d" :label="`@${d}`" :value="d" />
-              </el-select>
-            </div>
-          </el-form-item>
-          <div class="prefix-meta">
-            <span class="prefix-hint" :class="prefixState">{{ prefixHint }}</span>
-            <a v-if="prefixState !== 'checking'" class="prefix-check" :class="{ dim: !regForm.prefix.trim() }" @click="checkPrefix">
-              {{ prefixAvailable === null ? '检查可用性' : '重新检查' }}
-            </a>
+        <!-- 登录模式 -->
+        <template v-if="mode === 'login'">
+          <!-- 登录模式切换 Tab：密码登录 vs 邮箱免密登录 -->
+          <div class="login-tabs">
+            <button
+              type="button"
+              class="login-tab-btn"
+              :class="{ active: loginType === 'password' }"
+              @click="loginType = 'password'"
+            >
+              账号密码登录
+            </button>
+            <button
+              type="button"
+              class="login-tab-btn"
+              :class="{ active: loginType === 'code' }"
+              @click="loginType = 'code'"
+            >
+              邮箱免密登录
+            </button>
           </div>
-          <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doRegister">
-            注 册
-          </el-button>
-        </el-form>
+
+          <!-- 账号密码登录 -->
+          <el-form v-if="loginType === 'password'" :model="loginForm" size="large" @submit.prevent>
+            <el-form-item>
+              <el-input
+                ref="usernameInputRef"
+                v-model="loginForm.username"
+                placeholder="用户名 / 学工号"
+                :prefix-icon="User"
+                clearable
+                @keyup.enter="onUsernameEnter"
+              />
+            </el-form-item>
+            <el-form-item style="margin-bottom: 8px;">
+              <el-input
+                ref="passwordInputRef"
+                v-model="loginForm.password"
+                type="password"
+                placeholder="密码"
+                :prefix-icon="Lock"
+                show-password
+                @keydown="checkCapsLock"
+                @keyup="checkCapsLock"
+                @blur="capsLockOn = false"
+                @keyup.enter="doLogin"
+              />
+            </el-form-item>
+
+            <!-- Caps Lock 大写锁定检测提示 -->
+            <div v-if="capsLockOn" class="caps-warning">
+              <span class="caps-icon">⚠️</span> 大写锁定（Caps Lock）已开启
+            </div>
+
+            <!-- 记住账号 & 忘记密码 -->
+            <div class="form-sub-row">
+              <el-checkbox v-model="rememberMe" class="remember-checkbox">记住账号</el-checkbox>
+              <a class="forgot-link" @click="onForgot">忘记密码？</a>
+            </div>
+
+            <el-button type="primary" class="w-full submit-btn" size="large" :loading="loading" @click="doLogin">
+              登 录
+            </el-button>
+          </el-form>
+
+          <!-- 邮箱免密登录 -->
+          <el-form v-else :model="codeForm" size="large" @submit.prevent>
+            <el-form-item>
+              <div class="field-row mail-row">
+                <el-input
+                  v-model="codeForm.email"
+                  placeholder="绑定邮箱 / 校园邮箱"
+                  :prefix-icon="Message"
+                  clearable
+                  @keyup.enter="focusCodeInput"
+                />
+                <el-button
+                  class="side-btn"
+                  :disabled="codeLoginCooldown > 0 || codeLoginSending"
+                  :loading="codeLoginSending"
+                  @click="sendLoginCode"
+                >
+                  {{ codeLoginSending ? '发送中…' : codeLoginCooldown > 0 ? `${codeLoginCooldown}s 重发` : '获取验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+            <el-form-item style="margin-bottom: 12px;">
+              <el-input
+                ref="codeInputRef"
+                v-model="codeForm.code"
+                placeholder="6 位邮箱验证码"
+                :prefix-icon="Key"
+                maxlength="6"
+                @keyup.enter="doCodeLogin"
+              />
+            </el-form-item>
+            <p class="mail-tip">
+              支持个人绑定邮箱及校园邮箱（<b>@keaidang.com</b> / <b>@9o.pw</b>），若未收到请检查垃圾箱
+            </p>
+            <el-button type="primary" class="w-full submit-btn" size="large" :loading="loading" @click="doCodeLogin">
+              登 录
+            </el-button>
+          </el-form>
+
+          <!-- 快捷体验演示账号胶囊组 -->
+          <div class="demo-pills-bar">
+            <div class="demo-pills-title">
+              <span>快捷体验演示账号</span>
+            </div>
+            <div class="demo-pills">
+              <button
+                v-for="d in DEMO_ACCOUNTS"
+                :key="d.username"
+                type="button"
+                class="demo-pill"
+                :title="`一键填入 ${d.roleName}（${d.username}）`"
+                @click="fillDemoAccount(d)"
+              >
+                <span class="demo-tag" :class="d.tagClass">{{ d.roleName }}</span>
+                <span class="demo-name">{{ d.realName }}</span>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 注册统一账号 -->
+        <template v-else>
+          <div class="reg-header">
+            <h2>注册统一账号</h2>
+            <p class="reg-subtitle">一个账号通行全部校园服务 · 默认开通学生角色</p>
+          </div>
+
+          <el-form :model="regForm" size="large" @submit.prevent>
+            <el-form-item>
+              <el-input v-model="regForm.realName" placeholder="姓名" :prefix-icon="Postcard" clearable />
+            </el-form-item>
+            <el-form-item>
+              <el-input v-model="regForm.username" placeholder="用户名（字母开头，4~32 位）" :prefix-icon="User" clearable />
+            </el-form-item>
+            <el-form-item>
+              <el-input
+                v-model="regForm.password"
+                type="password"
+                placeholder="密码（至少 8 位）"
+                :prefix-icon="Lock"
+                show-password
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-input
+                v-model="regForm.confirm"
+                type="password"
+                placeholder="确认密码"
+                :prefix-icon="Lock"
+                show-password
+              />
+            </el-form-item>
+            <el-form-item>
+              <div class="field-row mail-row">
+                <el-input v-model="regForm.email" placeholder="邮箱（接收验证码）" :prefix-icon="Message" clearable />
+                <el-button class="side-btn" :disabled="codeCooldown > 0 || sending" @click="sendCode">
+                  {{ sending ? '发送中…' : codeCooldown > 0 ? `${codeCooldown}s 重发` : '获取验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+            <el-form-item>
+              <el-input v-model="regForm.code" placeholder="6 位邮箱验证码" :prefix-icon="Key" maxlength="6" @keyup.enter="doRegister" />
+            </el-form-item>
+            <p class="mail-tip">验证码发送至上方邮箱，<b>若未收到请检查垃圾邮件 / 广告邮件</b>文件夹</p>
+            <el-form-item>
+              <div class="field-row">
+                <el-input v-model="regForm.prefix" placeholder="校园邮箱前缀" :prefix-icon="Promotion" clearable @keyup.enter="checkPrefix" />
+                <el-select v-model="regForm.domain" class="domain-select" @change="resetPrefixHint">
+                  <el-option v-for="d in domains" :key="d" :label="`@${d}`" :value="d" />
+                </el-select>
+              </div>
+            </el-form-item>
+            <div class="prefix-meta">
+              <span class="prefix-hint" :class="prefixState">{{ prefixHint }}</span>
+              <a v-if="prefixState !== 'checking'" class="prefix-check" :class="{ dim: !regForm.prefix.trim() }" @click="checkPrefix">
+                {{ prefixAvailable === null ? '检查可用性' : '重新检查' }}
+              </a>
+            </div>
+            <el-button type="primary" class="w-full submit-btn" size="large" :loading="loading" @click="doRegister">
+              注 册
+            </el-button>
+          </el-form>
+        </template>
 
         <div class="gate-links">
-          <a v-if="mode === 'login'" @click="mode = 'register'">免费注册</a>
-          <a v-else @click="mode = 'login'">返回登录</a>
-          <span>|</span>
-          <a @click="onForgot">忘记密码</a>
+          <a v-if="mode === 'login'" @click="mode = 'register'">没有账号？免费注册</a>
+          <a v-else @click="mode = 'login'">已有账号？返回登录</a>
         </div>
 
-        <p class="gate-tip">一个账号通行全部校园服务 · 默认开通学生角色</p>
+        <p class="gate-tip">清北大学数字化智慧校园 · 身份认证凭证受 TLS 加密保护</p>
       </div>
     </main>
 
@@ -136,7 +242,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { User, Lock, Postcard, Message, Key, Promotion } from '@element-plus/icons-vue';
@@ -147,8 +253,130 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const mode = ref('login');
+const loginType = ref('password'); // 'password' | 'code'
 const loading = ref(false);
 const loginForm = reactive({ username: '', password: '' });
+const codeForm = reactive({ email: '', code: '' });
+const codeLoginSending = ref(false);
+const codeLoginCooldown = ref(0);
+let codeLoginTimer = null;
+
+const usernameInputRef = ref(null);
+const passwordInputRef = ref(null);
+const codeInputRef = ref(null);
+
+const rememberMe = ref(false);
+const REMEMBER_KEY = 'zc_remember_username';
+
+const capsLockOn = ref(false);
+
+const DEMO_ACCOUNTS = [
+  { roleName: '学生', realName: '梁薇', username: 'student004', password: 'Zhihui@2026', tagClass: 'tag-student' },
+  { roleName: '教师', realName: '王志远', username: 'teacher01', password: 'Zhihui@2026', tagClass: 'tag-teacher' },
+  { roleName: '辅导员', realName: '刘慧敏', username: 'counselor01', password: 'Zhihui@2026', tagClass: 'tag-counselor' },
+  { roleName: '校领导', realName: '彭霭', username: 'leader01', password: 'Zhihui@2026', tagClass: 'tag-leader' },
+  { roleName: '管理员', realName: '超管', username: 'admin', password: '', tagClass: 'tag-admin' },
+];
+
+function fillDemoAccount(d) {
+  if (loginType.value !== 'password') loginType.value = 'password';
+  loginForm.username = d.username;
+  if (d.password) {
+    loginForm.password = d.password;
+    ElMessage.info(`已填入【${d.roleName} · ${d.realName}】账号，点击登录或按回车即可`);
+  } else {
+    loginForm.password = '';
+    ElMessage.info(`已填入【${d.roleName}】账号（${d.username}），请输入管理员密码`);
+    passwordInputRef.value?.focus();
+  }
+}
+
+function checkCapsLock(e) {
+  if (e && typeof e.getModifierState === 'function') {
+    capsLockOn.value = e.getModifierState('CapsLock');
+  }
+}
+
+function onUsernameEnter() {
+  if (!loginForm.password) {
+    passwordInputRef.value?.focus();
+  } else {
+    doLogin();
+  }
+}
+
+function focusCodeInput() {
+  if (!codeForm.code) {
+    codeInputRef.value?.focus();
+  } else {
+    doCodeLogin();
+  }
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+async function sendLoginCode() {
+  const email = codeForm.email.trim();
+  if (!email) {
+    ElMessage.warning('请输入邮箱地址');
+    return;
+  }
+  if (!EMAIL_RE.test(email)) {
+    ElMessage.warning('请填写正确的邮箱地址');
+    return;
+  }
+  codeLoginSending.value = true;
+  try {
+    const res = await api('/api/auth/login-code-send', {
+      method: 'POST',
+      body: { email },
+      auth: false,
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '验证码已发送');
+      codeLoginCooldown.value = 60;
+      if (codeLoginTimer) clearInterval(codeLoginTimer);
+      codeLoginTimer = setInterval(() => {
+        codeLoginCooldown.value--;
+        if (codeLoginCooldown.value <= 0) clearInterval(codeLoginTimer);
+      }, 1000);
+      codeInputRef.value?.focus();
+    } else {
+      ElMessage.error(res.message || '发送失败');
+    }
+  } finally {
+    codeLoginSending.value = false;
+  }
+}
+
+async function doCodeLogin() {
+  const email = codeForm.email.trim();
+  const code = codeForm.code.trim();
+  if (!email) return ElMessage.warning('请输入邮箱地址');
+  if (!/^\d{6}$/.test(code)) return ElMessage.warning('请输入 6 位邮箱验证码');
+  loading.value = true;
+  try {
+    const res = await auth.loginByCode(email, code);
+    if (res.code === 0) {
+      ElMessage.success(`欢迎回来，${res.data.user.realName || res.data.user.username}！`);
+      const redirect = router.currentRoute.value.query.redirect;
+      router.push(typeof redirect === 'string' && redirect ? redirect : '/workbench');
+    } else {
+      ElMessage.error(res.message || '登录失败');
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  const saved = localStorage.getItem(REMEMBER_KEY);
+  if (saved) {
+    loginForm.username = saved;
+    rememberMe.value = true;
+  }
+});
+
 const regForm = reactive({ realName: '', username: '', password: '', confirm: '', email: '', code: '', prefix: '', domain: 'keaidang.com' });
 const sending = ref(false);
 const codeCooldown = ref(0);
@@ -171,8 +399,6 @@ const domains = ref(['keaidang.com']);
     }
   } catch { /* 保持默认 */ }
 })();
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 async function sendCode() {
   if (!EMAIL_RE.test(regForm.email)) {
@@ -219,7 +445,6 @@ async function checkPrefix() {
   const seq = ++prefixSeq;
   prefixState.value = 'checking';
   prefixHint.value = '正在检查前缀可用性，请稍候…（不检查也可直接注册）';
-  // 后端最慢可能等邮件服务器约 20s，前端 14s 兜底，避免一直停在"检查中"
   const guard = setTimeout(() => {
     if (seq === prefixSeq && prefixState.value === 'checking') {
       prefixState.value = 'bad';
@@ -228,7 +453,7 @@ async function checkPrefix() {
   }, 14000);
   try {
     const res = await api(`/api/auth/register/prefix-check?prefix=${encodeURIComponent(prefix)}&domain=${encodeURIComponent(regForm.domain)}`, { auth: false });
-    if (seq !== prefixSeq) return; // 已有更新的请求，丢弃旧结果
+    if (seq !== prefixSeq) return;
     if (res.code === 0 && res.data.available) {
       prefixAvailable.value = true;
       prefixState.value = 'ok';
@@ -261,6 +486,11 @@ async function doLogin() {
   try {
     const res = await auth.login(loginForm.username, loginForm.password);
     if (res.code === 0) {
+      if (rememberMe.value && loginForm.username) {
+        localStorage.setItem(REMEMBER_KEY, loginForm.username);
+      } else {
+        localStorage.removeItem(REMEMBER_KEY);
+      }
       ElMessage.success(`欢迎回来，${res.data.user.realName || res.data.user.username}！`);
       const redirect = router.currentRoute.value.query.redirect;
       router.push(typeof redirect === 'string' && redirect ? redirect : '/workbench');
@@ -384,19 +614,180 @@ async function doForgotReset() {
 .w-full { width: 100%; }
 .forgot-tip { margin: 0 0 12px; font-size: 12.5px; color: #64748b; line-height: 1.6; }
 
-/* 输入框 + 操作按钮同行：按钮做成兄弟节点。
-   不要用 el-input 的 #append（Element Plus 会渲染成 display:table 的
-   .el-input-group），在 430px 卡片里追加按钮会把真正的输入区挤到只剩几十像素。 */
+.login-tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 4px;
+  border-radius: 9px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.login-tab-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+.login-tab-btn:hover {
+  color: #fff;
+}
+.login-tab-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.caps-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin: -2px 0 10px;
+}
+.caps-icon { font-size: 13px; }
+
+.form-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 6px 0 18px;
+  font-size: 13px;
+}
+.remember-checkbox {
+  margin: 0;
+  height: auto;
+}
+.remember-checkbox :deep(.el-checkbox__label) {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+}
+.remember-checkbox :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+}
+.forgot-link {
+  color: #93c5fd;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: color 0.15s;
+}
+.forgot-link:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+
+.submit-btn {
+  height: 42px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 4px !important;
+  border-radius: 8px !important;
+  background: #2563eb;
+  border-color: #2563eb;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transition: all 0.2s ease;
+}
+.submit-btn:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+}
+
+.demo-pills-bar {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.16);
+}
+.demo-pills-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+.demo-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.demo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.demo-pill:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+}
+.demo-tag {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.tag-student { background: rgba(59, 130, 246, 0.35); color: #93c5fd; }
+.tag-teacher { background: rgba(16, 185, 129, 0.35); color: #6ee7b7; }
+.tag-counselor { background: rgba(245, 158, 11, 0.35); color: #fcd34d; }
+.tag-leader { background: rgba(168, 85, 247, 0.35); color: #d8b4fe; }
+.tag-admin { background: rgba(239, 68, 68, 0.35); color: #fca5a5; }
+.demo-name {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 500;
+}
+
+.reg-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.reg-header h2 {
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.reg-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 输入框 + 操作按钮同行 */
 .field-row { display: flex; align-items: center; gap: 8px; width: 100%; }
 .field-row .el-input { flex: 1; min-width: 0; }
 .field-row .el-select { flex: 0 0 auto; }
-/* 覆盖 .gate-card .el-button 的 6px 字距，否则右侧窄按钮过宽 */
 .gate-card .field-row .el-button { letter-spacing: 0.5px; padding: 0 12px; height: 40px; }
-/* 后缀下拉：@keaidang.com 需约 101px（14px 字号），收到 12.5px 后 164px 宽刚好不截断 */
 .domain-select { width: 164px; }
 .domain-select :deep(.el-select__wrapper) { font-size: 12.5px; }
 
-/* 前缀提示行：左侧说明占满，右侧"检查可用性"文字链（不挤占输入框宽度） */
 .prefix-meta { display: flex; align-items: flex-start; gap: 10px; margin: -10px 0 16px; }
 .prefix-hint { flex: 1; min-width: 0; font-size: 12px; line-height: 1.6; color: rgba(255, 255, 255, 0.5); }
 .prefix-hint.idle { color: rgba(255, 255, 255, 0.5); }
@@ -414,13 +805,13 @@ async function doForgotReset() {
 }
 .prefix-check:hover { color: #bae6fd; }
 .prefix-check.dim { color: rgba(255, 255, 255, 0.35); border-bottom-color: rgba(255, 255, 255, 0.18); }
-.mail-tip { margin: -8px 0 14px; font-size: 12px; color: rgba(255, 255, 255, 0.5); line-height: 1.6; }
+.mail-tip { margin: -6px 0 14px; font-size: 12px; color: rgba(255, 255, 255, 0.6); line-height: 1.6; }
 .mail-tip b { color: #fcd34d; }
 
-/* 窄屏：把后缀下拉收紧，保证输入框仍有可读宽度 */
 @media (max-width: 640px) {
   .domain-select { width: 152px; }
   .domain-select :deep(.el-select__wrapper) { font-size: 12px; }
   .gate-card .field-row .el-button { padding: 0 10px; }
+  .demo-pill { padding: 3px 8px; font-size: 11px; }
 }
 </style>
