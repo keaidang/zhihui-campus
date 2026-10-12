@@ -132,11 +132,11 @@
         </div>
         <div class="zc-stat-card">
           <div class="stat-head">
-            <span class="stat-val">400</span>
+            <span class="stat-val">{{ userTotal }}</span>
             <span class="stat-unit">+</span>
           </div>
-          <div class="stat-label">活跃师生覆盖</div>
-          <p class="stat-desc">多角色全流程在线协同与承载</p>
+          <div class="stat-label">真实师生规模</div>
+          <p class="stat-desc">千人级多角色在线协同与承载</p>
         </div>
         <div class="zc-stat-card">
           <div class="stat-head">
@@ -296,6 +296,8 @@ const aiFeatures = [
 const aiTotal = 18;
 /** 评估用例数（与 scripts/seed-ai-eval.mjs 的 42 条一致；写在页面上的数字必须真实可查） */
 const evalCases = 42;
+/** 全校在册师生真实用户规模（与全库 1,002 真实注册用户规模保持一致，千人级承载） */
+const userTotal = 1000;
 
 const modules = [
   { title: '课程选课', desc: '在线选课、退改选，名额实时可见', icon: 'Notebook', colorClass: 'icon-edu', ready: true, path: '/edu/elect', roles: ['student'] },
