@@ -282,15 +282,11 @@ function onOpen(m) {
   border-radius: 16px;
   padding: 24px 28px;
   color: #fff;
-  background: url('/web-pc.webp') center / cover no-repeat;
-  box-shadow: 0 12px 32px rgba(10, 24, 46, 0.24);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-.wb-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, rgba(13, 28, 52, 0.92) 0%, rgba(23, 50, 92, 0.82) 55%, rgba(35, 74, 133, 0.72) 100%);
+  background:
+    linear-gradient(135deg, rgba(12, 26, 48, 0.96) 0%, rgba(18, 40, 75, 0.93) 55%, rgba(24, 52, 98, 0.91) 100%),
+    url('/web-pc.webp') center top / cover no-repeat;
+  box-shadow: 0 10px 28px rgba(10, 24, 46, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .wb-hero-main {
   position: relative;
@@ -378,15 +374,16 @@ function onOpen(m) {
 .wb-hero-mail {
   flex: none;
   width: 290px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.10);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px;
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
 }
 .mail-head {
   display: flex;

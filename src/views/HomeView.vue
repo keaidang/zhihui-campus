@@ -8,7 +8,7 @@
           <img class="brand-name" src="/name.webp" alt="清北大学" />
         </div>
 
-        <div>
+        <div class="nav-user-area">
           <template v-if="auth.isLoggedIn">
             <el-dropdown @command="onCommand">
               <div class="user-capsule">
