@@ -18,13 +18,29 @@ import { buildAnswerSystem } from './ai-prompt.js';
 import { KB_PROFILE, buildKnowledgeContext } from './ai-kb.js';
 import { identityBlock, loadIdentity } from './ai-identity.js';
 
+export function checkScheduleConflict(candDay, candSec, currentSlots = []) {
+  if (!Array.isArray(currentSlots)) return null;
+  const cDay = Number(candDay);
+  const cSec = String(candSec || '').trim();
+  for (const slot of currentSlots) {
+    if (!slot) continue;
+    if (Number(slot.week_day) === cDay) {
+      const sSec = String(slot.section || '').trim();
+      if (sSec === cSec || sSec.includes(cSec) || cSec.includes(sSec)) {
+        return slot.course_name || slot.course || '在修课程';
+      }
+    }
+  }
+  return null;
+}
+
 /** 学业助手可回答的范围（界面与提示词共用，避免"我以为它能答"造成的落差） */
 export const STUDY_TOPICS = [
   '我已修 / 还差多少学分',
   '哪些课不及格（挂科）',
   '我的平均绩点',
   '我这学期的课表',
-  '选课建议（还有哪些课有余量）',
+  '智能选课避坑规划（推荐无冲突有余量课程）',
   '哪学期学分拿得少',
 ];
 
@@ -134,11 +150,19 @@ export function buildStudyFacts(rows, electable = []) {
   }
 
   if (electable.length) {
-    lines.push(`- 可修且有余量的课程（前 ${electable.length} 门，可用于选课建议）：`);
+    lines.push(`- 可修且有余量的课程（前 ${electable.length} 门，含基于本人在修课表的智能冲突检测）：`);
     for (const e of electable) {
-      lines.push(
-        `    ${e.course_name}（${e.course_code}，${e.credit} 学分）${WD[Number(e.week_day)] || ''} ${e.section} 余 ${Math.max(0, Number(e.capacity) - Number(e.enrolled))} 位 ${e.teacher_name || ''}`,
-      );
+      const remaining = Math.max(0, Number(e.capacity) - Number(e.enrolled));
+      const conflictWith = checkScheduleConflict(e.week_day, e.section, s.inProgress);
+      if (conflictWith) {
+        lines.push(
+          `    [时间冲突 ✖] ${e.course_name}（${e.course_code}，${e.credit} 学分）${WD[Number(e.week_day)] || ''} ${e.section} —— 与在修课程《${conflictWith}》时间重叠冲突（避坑不要选！），余 ${remaining} 位 ${e.teacher_name || ''}`,
+        );
+      } else {
+        lines.push(
+          `    [无冲突推荐 ✔] ${e.course_name}（${e.course_code}，${e.credit} 学分）${WD[Number(e.week_day)] || ''} ${e.section} —— 与当前课表时间完全无冲突，余 ${remaining} 位 ${e.teacher_name || ''}`,
+        );
+      }
     }
   } else {
     lines.push('- 可修课程：（无数据）');
@@ -151,7 +175,10 @@ const STUDY_RULES = [
   '【学业助手专项纪律】',
   '1. 上面的【学业事实】是**唯一数据来源**。学分、绩点、挂科门数一律直接引用，不要自己加减乘除。',
   '2. 事实里写「（无数据）」的，就回答"这项数据我这边没有"，不要推测。',
-  '3. 给选课建议时，**只能从"可修且有余量的课程"里挑**，并说明理由（学分缺口、与现有课表是否冲突、课程性质）。不要推荐事实里没有的课。',
+  '3. 给选课建议或排课规划时：',
+  '   - 必须优先推荐标注为「[无冲突推荐 ✔]」的课程，并说明理由（无时间冲突、学分补充、名额充裕）；',
+  '   - 对标注为「[时间冲突 ✖]」的课程，明确提出排课避坑警示，提醒学生注意上课时间重叠；',
+  '   - 绝不推荐事实列表里没有的课。',
   '4. 不评价老师的教学水平，不预测分数，不承诺"选这门一定过"。',
   '5. 发现学生可能挂科较多时，语气要鼓励但不说教，可以建议联系辅导员或教务。',
 ].join('\n');

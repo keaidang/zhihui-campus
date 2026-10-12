@@ -105,6 +105,7 @@
               <el-option v-for="c in kbCats" :key="c.category" :label="`${c.category}（${c.n}）`" :value="c.category" />
             </el-select>
             <el-button type="primary" round @click="loadKb">查询</el-button>
+            <el-button type="success" plain round @click="openDocParseDlg">智能长文档解析入库 (C18)</el-button>
             <span class="muted">
               共 {{ kbTotal }} 条 · 启用条目合计 {{ kbChars }} 字（阈值 {{ inlineMax }} 字，
               {{ kbChars > Number(inlineMax) ? '走关键词召回' : '走全量注入' }}）
@@ -286,6 +287,74 @@
         <el-button type="primary" :loading="valSaving" @click="saveValue">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- C18 智能长文档解析入库弹窗 -->
+    <el-dialog v-model="docParseDlg" title="智能长文档切分入库 (C18)" width="780px">
+      <div v-if="!parsedItems.length" class="doc-input-wrap">
+        <p class="tab-tip" style="margin-top: 0">
+          粘贴校级管理规章、办事须知或通知手册全文（支持最多 8,000 字），AI 将自动按独立业务/问答拆分为知识条目，抽取关键词并格式化。
+        </p>
+        <el-form label-width="84px">
+          <el-form-item label="默认分类">
+            <el-select v-model="docCategory" style="width: 180px">
+              <el-option label="办事指南 (guide)" value="guide" />
+              <el-option label="常见问答 (faq)" value="faq" />
+              <el-option label="部门机构 (dept)" value="dept" />
+              <el-option label="请销假 (leave)" value="leave" />
+              <el-option label="宿舍报修 (repair)" value="repair" />
+              <el-option label="课程选课 (elect)" value="elect" />
+              <el-option label="图书借阅 (lib)" value="lib" />
+              <el-option label="校园邮箱 (mail)" value="mail" />
+              <el-option label="校园生活 (life)" value="life" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="规章长文">
+            <el-input
+              v-model="docText"
+              type="textarea"
+              :rows="10"
+              placeholder="请在此粘贴长文档内容，例如《学生宿舍用电安全管理规定》或《毕业综合离校手续指南》..."
+              maxlength="8000"
+              show-word-limit
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+      <div v-else class="doc-preview-wrap">
+        <div class="doc-prev-bar">
+          <span>AI 已拆分提炼出 <b>{{ parsedItems.length }}</b> 条知识库候选项，勾选后即可批量入库：</span>
+          <el-button size="small" @click="parsedItems = []">重新输入</el-button>
+        </div>
+        <el-table ref="docTableRef" :data="parsedItems" size="small" max-height="380" @selection-change="onDocSelectionChange">
+          <el-table-column type="selection" width="45" />
+          <el-table-column prop="category" label="分类" width="90" />
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="keywords" label="关键词" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="content" label="正文预览" min-width="220" show-overflow-tooltip />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="docParseDlg = false">取消</el-button>
+        <el-button
+          v-if="!parsedItems.length"
+          type="primary"
+          :loading="docParsing"
+          :disabled="!docText.trim()"
+          @click="parseDoc"
+        >
+          AI 智能切分解析
+        </el-button>
+        <el-button
+          v-else
+          type="success"
+          :loading="docImporting"
+          :disabled="!selectedDocItems.length"
+          @click="batchImportDocs"
+        >
+          一键批量入库（已选 {{ selectedDocItems.length }} 条）
+        </el-button>
+      </template>
+    </el-dialog>
   </PortalShell>
 </template>
 
@@ -294,7 +363,7 @@
 //
 // 为什么这个页面是"必需品"而不是"锦上添花"：所有新 AI 能力（C2 审核 / C3 告警 / C4 审批助手）
 // **默认关闭**（用户确认的决策），在控制台出现之前，管理员只能改数据库才能打开它们。
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
@@ -483,6 +552,90 @@ async function removeKb(row) {
   } else ElMessage.error(res.message || '删除失败');
 }
 
+// C18 智能长文档切分与批量入库
+const docParseDlg = ref(false);
+const docText = ref('');
+const docCategory = ref('guide');
+const docParsing = ref(false);
+const docImporting = ref(false);
+const parsedItems = ref([]);
+const selectedDocItems = ref([]);
+const docTableRef = ref(null);
+
+function openDocParseDlg() {
+  docParseDlg.value = true;
+  docText.value = '';
+  docCategory.value = 'guide';
+  parsedItems.value = [];
+  selectedDocItems.value = [];
+}
+
+function onDocSelectionChange(rows) {
+  selectedDocItems.value = rows;
+}
+
+async function parseDoc() {
+  if (!docText.value.trim()) {
+    ElMessage.warning('请输入长文档内容');
+    return;
+  }
+  docParsing.value = true;
+  try {
+    const res = await api('/api/ai/kb', {
+      method: 'POST',
+      body: {
+        action: 'parse_doc',
+        docText: docText.value.trim(),
+        defaultCategory: docCategory.value,
+      },
+    });
+    if (res.code === 0 && res.data?.items) {
+      parsedItems.value = res.data.items;
+      selectedDocItems.value = [...res.data.items];
+      nextTick(() => {
+        if (docTableRef.value) {
+          docTableRef.value.toggleAllSelection();
+        }
+      });
+      ElMessage.success(`切分完成，提炼出 ${res.data.items.length} 个知识条目`);
+    } else {
+      ElMessage.error(res.message || '切分失败');
+    }
+  } catch (err) {
+    ElMessage.error(err?.message || 'AI 解析服务未响应');
+  } finally {
+    docParsing.value = false;
+  }
+}
+
+async function batchImportDocs() {
+  if (!selectedDocItems.value.length) {
+    ElMessage.warning('请至少勾选一个条目');
+    return;
+  }
+  docImporting.value = true;
+  try {
+    const res = await api('/api/ai/kb', {
+      method: 'POST',
+      body: {
+        action: 'batch_insert',
+        items: selectedDocItems.value,
+      },
+    });
+    if (res.code === 0) {
+      ElMessage.success(res.message || '批量入库成功');
+      docParseDlg.value = false;
+      await loadKb();
+    } else {
+      ElMessage.error(res.message || '入库失败');
+    }
+  } catch (err) {
+    ElMessage.error(err?.message || '请求失败');
+  } finally {
+    docImporting.value = false;
+  }
+}
+
 // ---- 用量 / 告警 ----
 const usage = ref(null);
 const totals = ref({});
@@ -614,4 +767,10 @@ onMounted(reload);
     width: 100% !important;
   }
 }
+
+/* C18 智能长文档解析样式 */
+.doc-input-wrap { padding: 4px 0; }
+.doc-preview-wrap { padding: 4px 0; }
+.doc-prev-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; color: var(--zc-text); }
+.doc-prev-bar b { color: var(--zc-gold, #c8a35f); }
 </style>

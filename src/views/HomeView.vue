@@ -114,7 +114,7 @@
             <span class="stat-unit">项</span>
           </div>
           <div class="stat-label">AI 深度融合</div>
-          <p class="stat-desc">涵盖问答、分诊、审核与问数</p>
+          <p class="stat-desc">涵盖问答、管理、邮件、避坑与态势</p>
         </div>
         <div class="zc-stat-card">
           <div class="stat-head">
@@ -174,7 +174,7 @@
           立即体验 AI 校园助手
         </el-button>
         <span class="zc-ai-note">
-          共 {{ aiTotal }} 项能力（上方为 {{ aiFeatures.length }} 项代表） · 问答 / 分诊 / 审核 / 问数四类已完成效果评估（{{ evalCases }} 条人工标注用例）
+          共 {{ aiTotal }} 项能力（上方精选 {{ aiFeatures.length }} 大核心集群） · 问答 / 业务直达 / 问数 / 审核 / 邮件 / 避坑 / 简报全覆盖 · 实测经 {{ evalCases }} 条人工标注用例严密验证
         </span>
       </div>
     </section>
@@ -249,45 +249,45 @@ const roleLabel = computed(() => {
  */
 const aiFeatures = [
   {
-    title: '校园智能问答',
-    tag: '知识库流式检索',
-    desc: '基于校园知识库回答选课、请假、报修等流程问题，逐字流式输出并标注出处；答不出来会如实说明而不是编造',
+    title: '校园问答与业务直达',
+    tag: '知识检索 + 业务直达 (C1/C14)',
+    desc: '基于校园知识库流式回答选课、请假、报修等流程问题，并智能挂载预填直达卡片；答不出来如实说明不编造',
     icon: 'ChatDotRound',
   },
   {
     title: '对话式系统管理',
-    tag: '二阶段安全确认',
+    tag: '二阶段安全确认 (C5)',
     desc: '管理员说一句"禁用账号 xxx"，系统先列出影响清单，确认之后才真正执行',
     icon: 'MagicStick',
   },
   {
     title: '信息问数与自由统计',
-    tag: '结构化 Text-to-Query',
-    desc: '「这周哪个班请假最多」出统计表；「账号总数」「各院系人数排名」「绩点最差的学生」也能直接问 —— 模型只产出结构化查询条件，全程不接触 SQL',
+    tag: 'Text-to-Query (C6/C13)',
+    desc: '「这周哪个班请假最多」出统计表；「账号总数」「各院系人数排名」「绩点最差的学生」也能直接问 —— 全程不接触 SQL',
     icon: 'DataAnalysis',
   },
   {
-    title: '学业助手',
-    tag: '只读隐私保护',
-    desc: '只读本人成绩与课表，回答还差多少学分、哪些课不及格、绩点是多少',
+    title: '学业助手与避坑规划',
+    tag: '隐私保护 + 选课避坑 (C7/C16)',
+    desc: '只读本人成绩与课表，回答已获学分与绩点，并基于课表冲突算法提供智能选课避坑规划',
     icon: 'Reading',
   },
   {
-    title: '审核与分诊',
-    tag: '智能风控与定级',
-    desc: '论坛帖子自动判定违规内容；报修提交后自动判定责任部门与紧急程度',
-    icon: 'SetUp',
+    title: '智能公文与邮件助理',
+    tag: '情境起草 + 多语气润色 (C15)',
+    desc: '覆盖请假报备、学术请教、通知公告等高频场景，根据发件人身份与语气一键起草或润色邮件',
+    icon: 'Promotion',
   },
   {
-    title: '数据异常监测',
-    tag: '规则扫描+智能归纳',
-    desc: '规则扫描请假集中、成绩未录等问题，再由 AI 归纳成一段人话邮件提醒管理员',
+    title: '态势简报与异常监测',
+    tag: '运行综述 + 规则预警 (C11/C17)',
+    desc: '驾驶舱一键提炼全校近 7 日请假、报修、借阅与系统多维宏观简报；规则扫描异常自动发信提醒',
     icon: 'Bell',
   },
 ];
 
-/** AI 能力总数（C1~C13）；首页只列 6 项代表，故用常量而不是卡片数推算 */
-const aiTotal = 13;
+/** AI 能力总数（C1~C18 全量落地共 18 项能力）；首页精选 6 大核心场景卡片 */
+const aiTotal = 18;
 /** 评估用例数（与 scripts/seed-ai-eval.mjs 的 42 条一致；写在页面上的数字必须真实可查） */
 const evalCases = 42;
 

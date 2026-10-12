@@ -16,6 +16,7 @@ import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
 import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { variantOf } from '../../lib/ai-variant.js';
+import { detectShortcuts } from '../../lib/ai-shortcuts.js';
 import { openAiToEvents, sseEvent, sseResponse } from '../../lib/sse.js';
 
 export { preflight as onRequestOptions };
@@ -91,6 +92,7 @@ export async function onRequestPost(context) {
       variant,
       mode: kb.mode, // inline / retrieve / empty
       sources: kb.sources, // [{ id, title, category }]
+      shortcuts: detectShortcuts(question, kb.sources),
       model: aiModel(),
     };
 

@@ -92,8 +92,89 @@
     </template>
 
     <!-- 写邮件 -->
-    <el-dialog v-model="composeDlg" title="写邮件" width="560px">
-      <el-form label-width="64px">
+    <el-dialog v-model="composeDlg" width="620px" class="mail-compose-dialog">
+      <template #header>
+        <div class="compose-header">
+          <span class="compose-title">写邮件</span>
+          <el-button
+            type="primary"
+            plain
+            round
+            size="small"
+            @click="aiComposeOpen = !aiComposeOpen"
+          >
+            <Sparkles :size="13" style="margin-right: 4px; vertical-align: -1px" />
+            {{ aiComposeOpen ? '收起 AI 助理' : 'AI 帮我写 / 润色' }}
+          </el-button>
+        </div>
+      </template>
+
+      <!-- AI 邮件助理折叠面板 (C15) -->
+      <transition name="el-zoom-in-top">
+        <div v-if="aiComposeOpen" class="ai-compose-panel">
+          <div class="ai-cp-head">
+            <span class="ai-cp-title">
+              <Sparkles :size="13" color="#b45309" />
+              <b>智能邮件公文助理</b>
+            </span>
+            <span class="ai-cp-sub">输入要求或润色现有正文</span>
+          </div>
+          <div class="ai-cp-fields">
+            <el-input
+              v-model="aiPrompt"
+              type="textarea"
+              :rows="2"
+              placeholder="告诉 AI 你的邮件意图，例如：向辅导员申请周五去医院就医请假1天；或向导师请教开题报告"
+              maxlength="500"
+            />
+            <div class="ai-cp-options">
+              <el-select v-model="aiScenario" size="small" style="width: 130px" placeholder="场景">
+                <el-option label="通用师生邮件" value="general" />
+                <el-option label="请假申请报备" value="leave" />
+                <el-option label="学术请教/导师" value="academic" />
+                <el-option label="行政通知公告" value="notice" />
+                <el-option label="社团招募活动" value="club" />
+              </el-select>
+              <el-select v-model="aiTone" size="small" style="width: 120px" placeholder="语气风格">
+                <el-option label="诚恳礼貌" value="polite" />
+                <el-option label="正式公文" value="formal" />
+                <el-option label="简洁明了" value="concise" />
+                <el-option label="热情亲和" value="friendly" />
+              </el-select>
+              <el-button
+                type="primary"
+                size="small"
+                round
+                :loading="aiLoading"
+                @click="generateDraft('draft')"
+              >
+                生成草稿
+              </el-button>
+              <el-button
+                size="small"
+                round
+                :loading="aiLoading"
+                :disabled="!form.text.trim()"
+                @click="generateDraft('polish')"
+              >
+                润色正文
+              </el-button>
+            </div>
+            <!-- 生成结果预览与一键填入 -->
+            <div v-if="aiResult" class="ai-cp-preview">
+              <div class="ai-prev-head">
+                <span class="ai-prev-subj"><b>推荐主题：</b>{{ aiResult.subject }}</span>
+                <el-button type="success" size="small" round @click="applyAiDraft">
+                  一键填入邮件
+                </el-button>
+              </div>
+              <div class="ai-prev-body">{{ aiResult.body }}</div>
+            </div>
+          </div>
+        </div>
+      </transition>
+
+      <el-form label-width="64px" style="margin-top: 12px">
         <el-form-item label="收件人">
           <el-input v-model="form.to" placeholder="对方邮箱地址，如 someone@example.com" clearable />
         </el-form-item>
@@ -116,7 +197,7 @@
 import { computed, ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import DOMPurify from 'dompurify';
-import { Inbox, Send, RefreshCw, SquarePen, Paperclip, MailOpen, LockKeyhole } from 'lucide-vue-next';
+import { Inbox, Send, RefreshCw, SquarePen, Paperclip, MailOpen, LockKeyhole, Sparkles } from 'lucide-vue-next';
 import PortalShell from '../components/PortalShell.vue';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../api/request';
@@ -138,6 +219,54 @@ const sentStore = new Map(); // 已发邮件详情缓存（本地数据，无需
 const composeDlg = ref(false);
 const form = ref({ to: '', subject: '', text: '' });
 const sending = ref(false);
+
+// C15 智能邮件助理
+const aiComposeOpen = ref(false);
+const aiPrompt = ref('');
+const aiScenario = ref('general');
+const aiTone = ref('polite');
+const aiLoading = ref(false);
+const aiResult = ref(null);
+
+async function generateDraft(mode = 'draft') {
+  if (mode === 'draft' && !aiPrompt.value.trim()) {
+    ElMessage.warning('请输入起草要求或邮件意图');
+    return;
+  }
+  if (mode === 'polish' && !form.value.text.trim()) {
+    ElMessage.warning('请先在下方正文框输入需要润色的内容');
+    return;
+  }
+  aiLoading.value = true;
+  try {
+    const res = await api('/api/ai/mail-compose', {
+      method: 'POST',
+      body: {
+        prompt: aiPrompt.value.trim(),
+        originalText: mode === 'polish' ? form.value.text.trim() : '',
+        scenario: aiScenario.value,
+        tone: aiTone.value,
+      },
+    });
+    if (res.code === 0 && res.data) {
+      aiResult.value = res.data;
+      ElMessage.success('已生成推荐草稿，点击「一键填入」即可应用');
+    } else {
+      ElMessage.error(res.message || '生成草稿失败');
+    }
+  } catch (err) {
+    ElMessage.error(err?.message || 'AI 服务未响应');
+  } finally {
+    aiLoading.value = false;
+  }
+}
+
+function applyAiDraft() {
+  if (!aiResult.value) return;
+  if (aiResult.value.subject) form.value.subject = aiResult.value.subject;
+  if (aiResult.value.body) form.value.text = aiResult.value.body;
+  ElMessage.success('已填入邮件主题与正文');
+}
 
 function statusLabel(s) {
   return {
@@ -385,4 +514,29 @@ onMounted(() => {
   .ml-body { grid-template-columns: 1fr; }
   .ml-list { max-height: 300px; }
 }
+
+/* C15 智能邮件助理样式 */
+.compose-header { display: flex; align-items: center; justify-content: space-between; padding-right: 24px; }
+.compose-title { font-size: 16px; font-weight: 600; color: var(--zc-navy, #17325c); }
+.ai-compose-panel {
+  background: #fdfaf3;
+  border: 1px solid rgba(200, 163, 95, 0.4);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.ai-cp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-cp-title { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #854d0e; }
+.ai-cp-sub { font-size: 11.5px; color: var(--zc-text-sub, #64748b); }
+.ai-cp-options { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.ai-cp-preview {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid rgba(200, 163, 95, 0.25);
+  border-radius: 8px;
+}
+.ai-prev-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ai-prev-subj { font-size: 12.5px; color: var(--zc-navy, #17325c); }
+.ai-prev-body { font-size: 12.5px; line-height: 1.6; color: var(--zc-text, #1e293b); white-space: pre-wrap; max-height: 140px; overflow-y: auto; background: #fafafa; padding: 6px 8px; border-radius: 6px; }
 </style>

@@ -33,6 +33,18 @@
               <span class="pl-src-label">参考</span>
               <em v-for="s in m.sources" :key="s.id">{{ s.title }}</em>
             </div>
+            <!-- C14 问办合一：业务直达捷径 -->
+            <div v-if="m.shortcuts && m.shortcuts.length" class="pl-shortcuts">
+              <button
+                v-for="(sc, sci) in m.shortcuts"
+                :key="sci"
+                class="pl-sc-btn"
+                type="button"
+                @click="onShortcut(sc)"
+              >
+                {{ sc.label }} →
+              </button>
+            </div>
           </div>
         </div>
 
@@ -155,6 +167,12 @@ function close() {
 function goFull() {
   open.value = false;
   router.push('/ai');
+}
+
+function onShortcut(sc) {
+  if (!sc?.path) return;
+  router.push({ path: sc.path, query: sc.query || {} });
+  open.value = false;
 }
 
 function esc(s) {
@@ -438,6 +456,20 @@ onUnmounted(() => {
   border-radius: 999px;
   padding: 1px 7px;
 }
+.pl-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(23, 50, 92, 0.12); }
+.pl-sc-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  background: #fff;
+  color: var(--ai-accent);
+  border: 1px solid var(--ai-accent);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pl-sc-btn:hover { background: var(--ai-accent); color: #fff; }
 
 /* 等待首字 */
 .pl-wait { display: flex; align-items: center; gap: 7px; }

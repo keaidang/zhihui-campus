@@ -1,6 +1,23 @@
 <template>
   <PortalShell active="dashboard">
     <div v-loading="loading" class="dash">
+      <!-- 顶部控制条：态势简报 (C17) -->
+      <div class="dash-top-bar pg-card">
+        <div>
+          <h2>校园运行全景态势驾驶舱</h2>
+          <p class="dash-subtitle">全校核心指标实时看板与多维运行监控</p>
+        </div>
+        <el-button
+          type="primary"
+          round
+          :icon="DataAnalysis"
+          :loading="briefingLoading"
+          @click="openBriefing"
+        >
+          一键生成 AI 态势简报 (C17)
+        </el-button>
+      </div>
+
       <!-- 顶部核心指标 -->
       <div class="kpi-row">
         <div v-for="k in kpis" :key="k.label" class="kpi pg-card">
@@ -112,11 +129,53 @@
         </el-table>
       </section>
     </div>
+
+    <!-- C17 校园运行态势 AI 简报弹窗 -->
+    <el-dialog v-model="briefingVisible" title="校园运行态势 AI 综合简报" width="680px" class="briefing-dlg">
+      <div v-loading="briefingLoading" class="briefing-wrap">
+        <template v-if="briefing">
+          <div class="br-head">
+            <h3>{{ briefing.title }}</h3>
+            <div class="br-meta">
+              <el-tag size="small" type="success" effect="plain" round>{{ briefing.period }}</el-tag>
+              <span>生成时间：{{ formatBriefingTime(briefing.generatedAt) }}</span>
+            </div>
+          </div>
+          <div class="br-summary">
+            <b>【运行全貌综述】</b>
+            <p>{{ briefing.summary }}</p>
+          </div>
+          <div class="br-sections">
+            <div v-for="(sec, i) in briefing.sections" :key="i" class="br-sec-card">
+              <div class="br-sec-head">
+                <el-tag size="small" effect="light" round>{{ sec.tag }}</el-tag>
+                <b>{{ sec.title }}</b>
+              </div>
+              <p class="br-sec-body">{{ sec.content }}</p>
+            </div>
+          </div>
+          <div v-if="briefing.suggestions?.length" class="br-suggs">
+            <b>【管理决策建议】</b>
+            <ul>
+              <li v-for="(s, i) in briefing.suggestions" :key="i">{{ s }}</li>
+            </ul>
+          </div>
+        </template>
+        <el-empty v-else-if="!briefingLoading" description="暂无简报数据" />
+      </div>
+      <template #footer>
+        <el-button @click="briefingVisible = false">关闭</el-button>
+        <el-button type="primary" plain :disabled="!briefing" @click="copyBriefing">复制简报文本</el-button>
+        <el-button type="primary" :loading="briefingLoading" @click="fetchBriefing">重新生成</el-button>
+      </template>
+    </el-dialog>
   </PortalShell>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { ElMessage } from 'element-plus';
+import { DataAnalysis } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
 // 时间统一走 utils/time.js：库内存 UTC，这里转北京时间展示
@@ -172,6 +231,62 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+// C17 校园运行态势 AI 简报
+const briefingVisible = ref(false);
+const briefingLoading = ref(false);
+const briefing = ref(null);
+
+function formatBriefingTime(t) {
+  if (!t) return '';
+  return fmtTime(t);
+}
+
+async function fetchBriefing() {
+  briefingLoading.value = true;
+  try {
+    const res = await api('/api/ai/briefing');
+    if (res.code === 0 && res.data) {
+      briefing.value = res.data;
+      ElMessage.success('校园运行态势 AI 简报已生成');
+    } else {
+      ElMessage.error(res.message || '生成简报失败');
+    }
+  } catch (err) {
+    ElMessage.error(err?.message || '网络或服务异常');
+  } finally {
+    briefingLoading.value = false;
+  }
+}
+
+async function openBriefing() {
+  briefingVisible.value = true;
+  if (!briefing.value) {
+    await fetchBriefing();
+  }
+}
+
+function copyBriefing() {
+  if (!briefing.value) return;
+  const b = briefing.value;
+  const lines = [
+    `【${b.title}】（周期：${b.period}）`,
+    `生成时间：${formatBriefingTime(b.generatedAt)}`,
+    '',
+    `【全貌综述】`,
+    b.summary,
+    '',
+    `【多维动态】`,
+    ...(b.sections || []).map((s) => `[${s.tag}] ${s.title}：${s.content}`),
+    '',
+    `【管理建议】`,
+    ...(b.suggestions || []).map((s, i) => `${i + 1}. ${s}`),
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(
+    () => ElMessage.success('简报内容已复制到剪贴板'),
+    () => ElMessage.warning('复制失败，请手动选取复制'),
+  );
 }
 
 onMounted(load);
@@ -231,4 +346,47 @@ onMounted(load);
   .dash-cols { grid-template-columns: 1fr; }
   .bld-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* C17 态势简报样式 */
+.dash-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f6f8fb 100%);
+}
+.dash-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--zc-text-sub); }
+.briefing-wrap { max-height: 520px; overflow-y: auto; padding-right: 4px; }
+.br-head { margin-bottom: 14px; border-bottom: 1px solid var(--zc-border); padding-bottom: 10px; }
+.br-head h3 { margin: 0 0 6px; font-size: 17px; color: var(--zc-navy); }
+.br-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--zc-text-sub); }
+.br-summary {
+  background: rgba(200, 163, 95, 0.08);
+  border-left: 3px solid var(--zc-gold, #c8a35f);
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.br-summary b { color: #854d0e; font-size: 13px; display: block; margin-bottom: 4px; }
+.br-summary p { margin: 0; color: var(--zc-text); }
+.br-sections { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.br-sec-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.br-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.br-sec-head b { font-size: 13px; color: var(--zc-navy); }
+.br-sec-body { margin: 0; font-size: 12.5px; line-height: 1.6; color: #334155; }
+.br-suggs {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.br-suggs b { color: #15803d; font-size: 13px; display: block; margin-bottom: 6px; }
+.br-suggs ul { margin: 0; padding-left: 20px; font-size: 12.5px; color: #166534; line-height: 1.7; }
 </style>

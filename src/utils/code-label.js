@@ -27,6 +27,9 @@ const AI_KIND_LABEL = {
   anomaly: '异常监测',
   lf_match: '失物匹配',
   lib_search: '图书检索',
+  mail_compose: '邮件公文起草',
+  briefing: '态势简报生成',
+  kb_parse: '规章长文切分',
   other: '其他',
 };
 
@@ -39,6 +42,7 @@ const OP_ACTION_LABEL = {
   'ai.action': 'AI 对话式操作',
   'ai.config.set': '修改 AI 功能开关',
   'ai.kb.upsert': '新增/更新知识库条目',
+  'ai.kb.batch_insert': '长文档批量入库',
   'ai.kb.delete': '删除知识库条目',
   'ai.kb.status': '启用/停用知识库条目',
   'ai.review.confirm': 'AI 审核复核处置',

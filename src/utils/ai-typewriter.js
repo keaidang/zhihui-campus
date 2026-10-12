@@ -124,6 +124,9 @@ export function streamHandlers(reply, opts = {}) {
   return {
     onMeta: (d) => {
       reply.sources = d?.sources || [];
+      if (Array.isArray(d?.shortcuts) && d.shortcuts.length) {
+        reply.shortcuts = d.shortcuts;
+      }
       onMeta?.(d);
     },
     onDelta: (d) => {
@@ -163,6 +166,7 @@ export function newReplyMessage(id) {
     role: 'assistant',
     content: '',
     sources: [],
+    shortcuts: [],
     pending: true,
     streaming: false,
     _buf: '',

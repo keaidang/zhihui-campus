@@ -12,6 +12,16 @@
             <el-radio-button :value="false">全部课程</el-radio-button>
             <el-radio-button :value="true">只看我已选</el-radio-button>
           </el-radio-group>
+          <el-button
+            type="primary"
+            plain
+            round
+            size="small"
+            @click="$router.push({ path: '/ai', query: { mode: 'study', q: '请帮我规划不冲突的选课推荐（避开已选课时）' } })"
+          >
+            <el-icon :size="13" style="margin-right: 3px"><MagicStick /></el-icon>
+            AI 选课避坑规划
+          </el-button>
           <el-button :icon="Refresh" circle @click="load" />
         </div>
       </header>
@@ -51,7 +61,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Refresh } from '@element-plus/icons-vue';
+import { MagicStick, Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
 

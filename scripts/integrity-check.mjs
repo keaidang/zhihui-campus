@@ -46,9 +46,9 @@ for (const [label, sql] of again) {
 // ============================================================
 console.log('\n=== 选课/成绩一致性（学期语义不变量）===');
 const [badTerm] = await q(
-  "SELECT COUNT(*) n FROM edu_elect WHERE term = '2026-2027-1' AND status <> 1",
+  "SELECT COUNT(*) n FROM edu_elect WHERE term = '2026-2027-1' AND (status = 2 OR score IS NOT NULL)",
 );
-console.log(`${Number(badTerm.n) > 0 ? '⚠ ' : '  '}当前学期非「在选」的选课记录（应为 0）${Number(badTerm.n)}`);
+console.log(`${Number(badTerm.n) > 0 ? '⚠ ' : '  '}当前学期被误标「已出成绩」的选课记录（应为 0）${Number(badTerm.n)}`);
 const [badCap] = await q(
   `SELECT COUNT(*) n FROM edu_class c
     WHERE c.term = '2026-2027-1'

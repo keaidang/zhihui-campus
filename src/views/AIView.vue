@@ -150,6 +150,22 @@
               <span class="ai-src-label">参考</span>
               <el-tag v-for="s in m.sources" :key="s.id" size="small" effect="plain" round>{{ s.title }}</el-tag>
             </div>
+            <!-- C14 问办合一：业务直达捷径卡片 -->
+            <div v-if="m.shortcuts && m.shortcuts.length" class="ai-shortcuts">
+              <span class="ai-shortcuts-label">直达办理</span>
+              <el-button
+                v-for="(sc, sci) in m.shortcuts"
+                :key="sci"
+                size="small"
+                round
+                type="primary"
+                plain
+                class="ai-shortcut-btn"
+                @click="goToShortcut(sc)"
+              >
+                {{ sc.label }}
+              </el-button>
+            </div>
           </div>
         </div>
 
@@ -195,6 +211,7 @@
 //   · 同一套页面按角色换主色（--ai-accent），**不按角色复制页面**
 //   · 失败不报错：把服务端的友好文案当成一条助手消息渲染，页面其他功能照常
 import { computed, nextTick, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-vue';
 import PortalShell from '../components/PortalShell.vue';
@@ -205,6 +222,8 @@ import { useIsMobile } from '../utils/device';
 // 流式渲染策略与悬浮面板共用同一实现（见 utils/ai-typewriter.js 顶部注释）
 import { clearWaitHint, disposeReply, newReplyMessage, setWaitHint, stopTypewriter, streamHandlers } from '../utils/ai-typewriter';
 
+const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const ai = useAiStore();
 const isMobile = useIsMobile();
@@ -541,9 +560,22 @@ function clearChat() {
   msgs.value = [{ id: nextId(), role: 'assistant', content: welcomeText(), sources: [] }];
 }
 
+function goToShortcut(sc) {
+  if (!sc?.path) return;
+  router.push({ path: sc.path, query: sc.query || {} });
+}
+
 onMounted(async () => {
   // 能力清单由 store 缓存：同一用户只拉一次（悬浮球与菜单共用同一份）
   await ai.load(auth.user?.id ?? null);
+  const qMode = route.query.mode;
+  const qText = route.query.q;
+  if (qMode === 'study' && studyOn.value) {
+    await switchMode('study');
+  }
+  if (qText) {
+    await ask(String(qText));
+  }
   scrollToBottom();
 });
 </script>
@@ -680,6 +712,9 @@ onMounted(async () => {
 .ai-src { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px dashed rgba(23, 50, 92, 0.14); }
 .ai-src-label { font-size: 11.5px; color: var(--zc-text-sub); letter-spacing: 0.5px; }
 .ai-src :deep(.el-tag) { color: var(--ai-accent); border-color: var(--ai-accent); background: #fff; }
+.ai-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(23, 50, 92, 0.14); }
+.ai-shortcuts-label { font-size: 11.5px; color: var(--zc-text-sub); letter-spacing: 0.5px; }
+.ai-shortcut-btn { font-size: 12px; }
 
 /* 打字光标 */
 .ai-caret {
