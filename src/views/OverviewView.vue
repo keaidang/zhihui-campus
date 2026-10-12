@@ -92,6 +92,8 @@
               src="/shots/architecture.png"
               alt="总体架构图"
               :preview-src-list="['/shots/architecture.png']"
+              preview-teleported
+              hide-on-click-modal
               fit="contain"
               class="diagram-img"
             />
@@ -159,6 +161,8 @@
               src="/shots/runtime.png"
               alt="运行时对比图"
               :preview-src-list="['/shots/runtime.png']"
+              preview-teleported
+              hide-on-click-modal
               fit="contain"
               class="diagram-img"
             />
@@ -223,6 +227,8 @@
               src="/shots/modules.png"
               alt="功能矩阵图"
               :preview-src-list="['/shots/modules.png']"
+              preview-teleported
+              hide-on-click-modal
               fit="contain"
               class="diagram-img"
             />
@@ -234,7 +240,13 @@
           <!-- 模块 1：工作台与身份中枢 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/workbench.jpg" :preview-src-list="['/shots/workbench.jpg']" fit="cover" />
+              <el-image
+                src="/shots/workbench.jpg"
+                :preview-src-list="['/shots/workbench.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">统一门户 · BASE</span>
@@ -251,7 +263,13 @@
           <!-- 模块 2：数据驾驶舱 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/dashboard.jpg" :preview-src-list="['/shots/dashboard.jpg']" fit="cover" />
+              <el-image
+                src="/shots/dashboard.jpg"
+                :preview-src-list="['/shots/dashboard.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">决策中枢 · M4</span>
@@ -268,7 +286,13 @@
           <!-- 模块 3：教务选课与成绩 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/elect.jpg" :preview-src-list="['/shots/elect.jpg', '/shots/scores.jpg']" fit="cover" />
+              <el-image
+                src="/shots/elect.jpg"
+                :preview-src-list="['/shots/elect.jpg', '/shots/scores.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">教务管理 · M1</span>
@@ -285,7 +309,13 @@
           <!-- 模块 4：通用两表审批流 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/approve.jpg" :preview-src-list="['/shots/approve.jpg', '/shots/leave.jpg']" fit="cover" />
+              <el-image
+                src="/shots/approve.jpg"
+                :preview-src-list="['/shots/approve.jpg', '/shots/leave.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">学工管理 · M2</span>
@@ -302,7 +332,13 @@
           <!-- 模块 5：宿舍管理与报修 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/dorm.jpg" :preview-src-list="['/shots/dorm.jpg', '/shots/repair-manage.jpg']" fit="cover" />
+              <el-image
+                src="/shots/dorm.jpg"
+                :preview-src-list="['/shots/dorm.jpg', '/shots/repair-manage.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">学工生活 · M4</span>
@@ -319,7 +355,13 @@
           <!-- 模块 6：图书馆与生活服务 -->
           <div class="mod-card">
             <div class="mod-shot">
-              <el-image src="/shots/library.jpg" :preview-src-list="['/shots/library.jpg', '/shots/forum.jpg']" fit="cover" />
+              <el-image
+                src="/shots/library.jpg"
+                :preview-src-list="['/shots/library.jpg', '/shots/forum.jpg']"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+              />
             </div>
             <div class="mod-body">
               <span class="mod-pill">校园生活 · M3</span>
@@ -877,7 +919,7 @@ function goWorkbench() {
 .diagram-img {
   max-width: 100%;
   border-radius: 8px;
-  cursor: pointer;
+  cursor: zoom-in;
   transition: transform 0.2s;
 }
 .diagram-img:hover {
@@ -982,7 +1024,7 @@ function goWorkbench() {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  cursor: pointer;
+  cursor: zoom-in;
   transition: transform 0.3s;
 }
 .mod-shot :deep(.el-image):hover {

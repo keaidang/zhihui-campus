@@ -942,3 +942,62 @@ body { background: transparent; }
   .gate-title { font-size: 17px; letter-spacing: 3px; }
   .gate-card { padding: 28px 24px 22px; }
 }
+
+/* 全局增强：Element Plus 图片全屏查看器优化 (支持 Overview 与 AI 提问等场景) */
+.el-image-viewer__wrapper {
+  z-index: 9999 !important;
+}
+
+.el-image-viewer__mask {
+  opacity: 1 !important;
+  background: rgba(10, 18, 30, 0.88) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: zoom-out;
+}
+
+.el-image-viewer__canvas {
+  cursor: zoom-out;
+}
+
+.el-image-viewer__canvas .el-image-viewer__img {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+}
+
+.el-image-viewer__btn {
+  background-color: rgba(30, 41, 59, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #f8fafc !important;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.el-image-viewer__btn:hover {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  transform: scale(1.08);
+}
+
+.el-image-viewer__actions {
+  background-color: rgba(30, 41, 59, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(6px);
+  padding: 0 20px !important;
+  border-radius: 28px !important;
+}
+
+.el-image-viewer__actions .el-image-viewer__actions__inner {
+  color: #f8fafc !important;
+}
+
+.el-image-viewer__progress {
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 4px 14px;
+  border-radius: 16px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
