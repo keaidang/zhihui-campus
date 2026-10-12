@@ -283,10 +283,27 @@ function copyBriefing() {
     `【管理建议】`,
     ...(b.suggestions || []).map((s, i) => `${i + 1}. ${s}`),
   ];
-  navigator.clipboard.writeText(lines.join('\n')).then(
-    () => ElMessage.success('简报内容已复制到剪贴板'),
-    () => ElMessage.warning('复制失败，请手动选取复制'),
-  );
+  const text = lines.join('\n');
+  if (navigator?.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => ElMessage.success('简报内容已复制到剪贴板'),
+      () => ElMessage.warning('复制失败，请手动选取复制'),
+    );
+  } else {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      ElMessage.success('简报内容已复制到剪贴板');
+    } catch {
+      ElMessage.warning('复制失败，请手动选取复制');
+    }
+  }
 }
 
 onMounted(load);

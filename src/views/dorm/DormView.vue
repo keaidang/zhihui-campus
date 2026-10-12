@@ -33,7 +33,7 @@
           <el-empty v-else-if="!loading" description="尚未分配宿舍，请联系辅导员" />
         </section>
 
-        <section class="pg-card">
+        <section ref="repairCardRef" class="pg-card">
           <h2>宿舍报修</h2>
           <p class="sub">提交后自动带上你的宿舍位置，由辅导员/后勤受理</p>
           <el-form label-position="top" :model="form">
@@ -227,13 +227,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api } from '../../api/request';
 import { useAuthStore } from '../../stores/auth';
 
+const route = useRoute();
+const repairCardRef = ref(null);
 const auth = useAuthStore();
 const isStaff = computed(() => auth.hasRole(['admin', 'counselor']));
 
@@ -424,11 +427,16 @@ async function doUnassign(u) {
   } else ElMessage.error(res.message || '操作失败');
 }
 
-onMounted(() => {
-  if (isStaff.value) loadOverview();
-  else {
-    loadDorm();
-    loadRepairs();
+onMounted(async () => {
+  if (isStaff.value) {
+    loadOverview();
+  } else {
+    await Promise.all([loadDorm(), loadRepairs()]);
+    if (route.query.tab === 'repair') {
+      nextTick(() => {
+        repairCardRef.value?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
   }
 });
 </script>

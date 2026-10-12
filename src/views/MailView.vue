@@ -154,7 +154,7 @@
                 size="small"
                 round
                 :loading="aiLoading"
-                :disabled="!form.text.trim()"
+                :disabled="!form.text?.trim()"
                 @click="generateDraft('polish')"
               >
                 润色正文
@@ -243,7 +243,7 @@ async function generateDraft(mode = 'draft') {
       method: 'POST',
       body: {
         prompt: aiPrompt.value.trim(),
-        originalText: mode === 'polish' ? form.value.text.trim() : '',
+        originalText: mode === 'polish' ? (form.value.text || '').trim() : '',
         scenario: aiScenario.value,
         tone: aiTone.value,
       },

@@ -210,7 +210,7 @@
 //     不命中时 api/ai.js 会自动走"整段返回 + 一次性渲染"，前端代码无需分支
 //   · 同一套页面按角色换主色（--ai-accent），**不按角色复制页面**
 //   · 失败不报错：把服务端的友好文案当成一条助手消息渲染，页面其他功能照常
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ChatDotRound, CloseBold, Delete, Promotion } from '@element-plus/icons-vue';
@@ -574,10 +574,25 @@ onMounted(async () => {
     await switchMode('study');
   }
   if (qText) {
+    router.replace({ path: '/ai', query: qMode ? { mode: qMode } : {} });
     await ask(String(qText));
   }
   scrollToBottom();
 });
+
+watch(
+  () => route.query.q,
+  async (newQ) => {
+    if (newQ && !busy.value) {
+      const qMode = route.query.mode;
+      if (qMode === 'study' && studyOn.value && mode.value !== 'study') {
+        await switchMode('study');
+      }
+      router.replace({ path: '/ai', query: qMode ? { mode: qMode } : {} });
+      await ask(String(newQ));
+    }
+  },
+);
 </script>
 
 <style scoped>
