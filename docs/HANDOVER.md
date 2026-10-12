@@ -1,7 +1,7 @@
 # HANDOVER · AI/开发者交接文档
 
-> 最后更新：2026-10-09。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
-> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据齐全；**AI 融合 C1~C18 共 18 项能力全量上线**（模型 **qwen3.8-omni-flash**（阿里云 DashScope 聚合网关），唯一口径见 ARCHITECTURE ADR-9 与 AI-FEATURES.md，2026-10-12）。**⚠ 开发测试期 AI 只用文本输入输出，禁碰多模态（贵）——见铁律 #36。**
+> 最后更新：2026-10-12。**新会话/新 Agent 开工前必读本文档**，再按需读 docs/ 其他文档。
+> 一句话现状：智汇校园已上线 https://c.9o.pw/ ，认证 + 五角色 RBAC + M1 教务线 + M2 学工线 + 校园邮箱体系 + M3 生活服务五模块（图书借阅/失物招领/社团活动/校园论坛/忘记密码）+ **M4 数据驾驶舱/宿舍管理/站内信** 全量可用，演示数据健全（全校 1,002 用户真实业务规模）；**AI 融合 C1~C18 共 18 项能力全量上线**（模型 **qwen3.8-omni-flash**（阿里云 DashScope 聚合网关），唯一口径见 ARCHITECTURE ADR-9 与 AI-FEATURES.md，2026-10-12）。**⚠ 开发测试期 AI 只用文本输入输出，禁碰多模态（贵）——见铁律 #36。**
 
 ## 1. 项目快照
 
@@ -12,6 +12,7 @@
 | 线上地址 | **https://c.9o.pw/**（EdgeOne Pages，git push 后约 2.5~3 分钟自动部署；旧地址 campus.keaidang.com 仍可用） |
 | 仓库 | github.com/keaidang/zhihui-campus（main 分支） |
 | 技术栈 | Vue3 + Element Plus + Pinia（前端）/ EdgeOne Node Functions（业务 API）/ TiDB Cloud Serverless（MySQL 8.0 兼容）/ keaidang mail 开放 API（邮件） |
+| 真实数据规模 | **1,002 注册用户**（883 学生、65 教师、39 校领导、15 辅导员、1 管理员）、30 班级、881 宿位、9,751 选课与成绩、300 请假、200 报修、311 图书流通 |
 | 虚拟学校 | 清北大学（校徽 public/logo.webp、书法校名 public/name.webp）；页脚备案 苏ICP备2026056678号 · 鲁ICP备2025186072号 并列 |
 | 本地路径 | `C:\Users\Administrator\Desktop\zhihui-campus` |
 

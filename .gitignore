@@ -22,6 +22,7 @@ scripts/*
 !scripts/cleanup.mjs
 !scripts/ops-check.mjs
 !scripts/make-readme-shots.mjs
+!scripts/seed-1k-scale.mjs
 
 # 调试探针与本地验证产物（严禁入库）
 probe*
