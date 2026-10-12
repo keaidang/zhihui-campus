@@ -316,12 +316,55 @@ body { background: transparent; }
 }
 .zc-hero .more-link:hover { color: #fff; }
 
+.zc-hero .overview-cta-btn {
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #fff;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(56, 189, 248, 0.22);
+  transition: all 0.2s ease;
+}
+.zc-hero .overview-cta-btn:hover {
+  background: rgba(56, 189, 248, 0.28);
+  border-color: #38bdf8;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.35);
+}
+
+.nav-overview-btn {
+  background: rgba(23, 50, 92, 0.05);
+  border: 1px solid rgba(23, 50, 92, 0.15);
+  color: var(--zc-navy);
+  font-size: 12.5px;
+  font-weight: 500;
+  height: 34px;
+  padding: 0 12px;
+  margin-right: 10px;
+  transition: all 0.2s ease;
+}
+.nav-overview-btn:hover {
+  background: rgba(23, 50, 92, 0.1);
+  border-color: rgba(23, 50, 92, 0.3);
+  color: var(--zc-navy);
+}
+
 .hero-quick-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 24px;
   flex-wrap: wrap;
+}
+.quick-pill.highlight {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #ffffff;
+}
+.quick-pill.highlight:hover {
+  background: rgba(56, 189, 248, 0.32);
+  border-color: #38bdf8;
 }
 .quick-label {
   font-size: 12px;

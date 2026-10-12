@@ -9,6 +9,10 @@
         </div>
 
         <div class="nav-user-area">
+          <el-button round class="nav-overview-btn" @click="$router.push('/overview')">
+            <el-icon><Platform /></el-icon>
+            <span>架构与工程全景</span>
+          </el-button>
           <template v-if="auth.isLoggedIn">
             <el-dropdown @command="onCommand">
               <div class="user-capsule">
@@ -65,11 +69,18 @@
             <el-button v-else size="large" round class="ghost-btn" @click="$router.push('/login')">
               登录 / 注册
             </el-button>
+            <el-button size="large" round class="overview-cta-btn" @click="$router.push('/overview')">
+              <el-icon :size="16"><Platform /></el-icon>
+              <span>架构与工程全景</span>
+            </el-button>
             <el-button link class="more-link" @click="scrollToModules">浏览全部服务 ↓</el-button>
           </div>
 
           <div class="hero-quick-bar">
             <span class="quick-label">热门直达：</span>
+            <button type="button" class="quick-pill highlight" @click="$router.push('/overview')">
+              <el-icon :size="12"><Platform /></el-icon> 全景架构
+            </button>
             <button type="button" class="quick-pill" @click="onModule(modules[0])">
               <el-icon :size="12"><Notebook /></el-icon> 选课
             </button>
@@ -225,6 +236,7 @@ import {
   Lock,
   MagicStick,
   Notebook,
+  Platform,
   Promotion,
   Reading,
 } from '@element-plus/icons-vue';

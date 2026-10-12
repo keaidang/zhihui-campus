@@ -6,6 +6,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    {
+      path: '/overview',
+      name: 'overview',
+      component: () => import('../views/OverviewView.vue'),
+      alias: '/architecture',
+    },
     { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { gate: true } },
     {
       path: '/workbench',
