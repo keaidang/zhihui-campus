@@ -108,7 +108,7 @@
             </div>
             <div class="window-url">
               <el-icon :size="11"><Lock /></el-icon>
-              <span>campus.9o.pw/workbench</span>
+              <span>campus.keaidang.com/workbench</span>
             </div>
             <div class="window-live-badge">
               <span class="live-dot"></span>
