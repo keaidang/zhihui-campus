@@ -282,11 +282,11 @@ function onOpen(m) {
   border-radius: 16px;
   padding: 24px 28px;
   color: #fff;
-  background:
-    linear-gradient(135deg, rgba(12, 26, 48, 0.96) 0%, rgba(18, 40, 75, 0.93) 55%, rgba(24, 52, 98, 0.91) 100%),
-    url('/web-pc.webp') center top / cover no-repeat;
-  box-shadow: 0 10px 28px rgba(10, 24, 46, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, rgba(14, 30, 56, 0.78) 0%, rgba(20, 44, 82, 0.73) 55%, rgba(28, 60, 110, 0.68) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(10, 24, 46, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 .wb-hero-main {
   position: relative;
