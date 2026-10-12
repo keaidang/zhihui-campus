@@ -277,6 +277,12 @@
 
 - 2026-10-12（**外观回归核验：确认首屏优化未改变任何布局**，用户要求「确保外观和以前一样」；方法固化为 HANDOVER 铁律 #65）：三条证据链全部通过 —— ① **产物级**：改动前后两次构建的 **46 个 CSS chunk 文件名与 md5 逐个相同**（主样式表 `index-D7zd051h.css` md5 `875f689ca04320aeaca7183f56646d8d`），`vendor-vue / ep-icons / lucide / dompurify` 亦同 → **样式字节级零改动**；② **结构级**：`git diff --name-only 2057951..HEAD` 确认**未碰任何 `.css` / `components/` / `views/` 文件**，前端只改了 `index.html`、`src/main.js`、`src/stores/auth.js`；③ **渲染级**：新增 `.shots/visual-diff.mjs`，两个产物各起 `vite preview` 并逐页比「布局签名（每元素几何+计算样式）+ 文本」，**11/11 页布局与文本逐字节一致、10/11 张截图 md5 完全相同**（唯一差异是手机首页，经同版本连拍 3 次测得该页自身噪声基线为 2 种结果，属固有亚像素/动画噪声，非改动引入）。字段层面也已核对：界面实际读取的 `id/realName/campusEmail/username/mailEnabled/deptName/userNo/phone/lastLoginAt/className` 十个字段 `lib/user-profile.js` 全部返回；`role`（单数）旧接口本来也不返回（首页角色标签一直是兑底值，与本次无关）。
 
+- 2026-10-12（**登录页回退到改版前 + 在「登录」下方新增免密入口**；用户要求「登录页被改得很丑，改回上一个版本，其他不要做改动，并在登录下面加一个免密登录的选项」）：`893d552`（`feat(auth): ... and UI overhaul on login page`，把 LoginView 从 **426 行改成 817 行**）之后的登录页视觉被用户否决。本次三件事：
+  1. **`src/views/LoginView.vue` 回退到 `7b27bc6` 版本**（426 行，即改版前那份）。
+  2. **`src/styles.css` 精确反向应用 `893d552` 的 `.gate-*` 补丁**（13 增 / 26 删，只涉及门面页专用样式：`.gate-card` 宽 440→430、圆角 14→6、内边距 `30px 36px 24px`→`34px 44px 28px`、背景与模糊度 0.78/14px→0.72/10px、输入框圆角 8→3、按钮圆角 8→3 且字距 2px→6px、`.gate-tip` 字号 12→12.5px）。**刻意不整文件回退** —— `2057951` 还给 styles.css 加过 `.zc-hero .overview-cta-btn`、`.nav-overview-btn`（全景页用），整文件回退会误伤；用 `git apply -R` 只反打那一段。
+  3. **在「登录」按钮正下方新增「邮箱免密登录」入口**：点击后同一张卡片内切到免密表单（邮箱 + 验证码，"获取验证码"沿用旧版注册表单的 `.field-row` + 侧边按钮写法；标题随模式切为「邮箱免密登录」；下方有「返回密码登录」可切回，链接视觉沿用 `.gate-links` 的白色半透明口径）。复用 `7b27bc6` **已就绪**的 `/api/auth/login-code-send` + `/api/auth/login-code` 与 store 的 `loginByCode`，**后端与 store 一行未改**。
+  **验证**：lint 零告警、单测 **439 通过**；另构建"上一版本"与"当前版本"两份产物做逐元素对照（`.shots/verify-login.mjs`）——**卡片宽/圆角/背景/内边距四项与上一版本完全一致**；元素数 **60→62（净增恰好 2 个**，即新增的 `<p class="alt-login">` + `<a>`）；其余全部差异**仅为 y 坐标整体上移 17px**（卡片因新增入口高 35px，而它是垂直居中），x / 宽 / 高 / 全部计算样式逐字相同；PC(1440×900) 与手机(390×844) 结论一致；免密态渲染正常。**改动文件仅 `src/views/LoginView.vue` + `src/styles.css`，其他页面与功能零改动**（`mobile.css` 的 `.gate-*` 窄屏规则针对旧版类名写的，回退后正好继续适用，无需改动）。
+
 ## 下一步
 
 > 详细剩余项与整改建议已收敛到 **docs/AUDIT-2026-09-21.md**（2026-09-21 全面体检报告，含 P0~P2 分级与工作量估计），此处不再重复维护（避免漂移）。
