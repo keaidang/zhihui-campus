@@ -2,10 +2,12 @@
 //
 // 定位：把过去"每次临时手写、跑完即删"的线上验证固化成**一条可重复命令**（AUDIT P1-1 步骤 4）。
 // 原则：
-//   ① **全部为 GET，不产生任何数据** —— 因此可随时重跑，不会污染演示数据；
+//   ① **除登录（POST /api/auth/login）与结尾的会话恢复契约检查（POST /api/auth/refresh）外，
+//      全部为 GET**；两者都不改动任何业务数据、也不影响演示账号——登录只写 sys_login_log
+//      （既有行为），refresh 只轮换**本脚本刚创建的那个会话**的令牌。故本脚本可随时重跑；
 //   ② 覆盖多角色（student/admin/counselor/teacher），不只测"最顺"的那个角色；
 //   ③ 含**越权边界断言**（学生打 admin 端点必须 40301）—— 越权是静默事故，必须机器化盯住；
-//   ④ 含历史缺陷的回归断言（如邮箱密码不得出现在列表接口）。
+//   ④ 含历史缺陷的回归断言（如邮箱密码不得出现在列表接口、首屏必须带启动页）；
 //
 // 运行：node scripts/e2e-smoke.mjs
 //   换环境：E2E_BASE=https://xxx node scripts/e2e-smoke.mjs
@@ -40,6 +42,8 @@ const ACCOUNTS = {
 };
 
 const results = [];
+/** role → 登录返回体（含 refreshToken / user），供"会话恢复契约"断言使用 */
+const sessions = {};
 const log = (s) => console.log(s);
 
 async function call(path, token) {
@@ -109,6 +113,7 @@ async function login(role) {
   });
   const json = await res.json().catch(() => ({}));
   const ok = json.code === 0;
+  if (ok) sessions[role] = json.data;
   results.push({ name: `登录(${role})`, pass: ok, code: json.code });
   log(`${ok ? '✅' : '❌'} 登录(${role})  roles=${json.data?.user?.roles?.join(',') || '-'}`);
   if (!ok && role === 'admin') {
@@ -117,6 +122,11 @@ async function login(role) {
   }
   return ok ? json.data.accessToken : null;
 }
+
+/** 会话恢复契约要求的用户字段（2026-10-12）：
+ *  这几个字段在前端首帧渲染时被直接读取（PortalShell 的 deptName、HomeView 的 roles 等），
+ *  缺任何一个都会出现"某路径上渲染出 undefined"或"多一次串行 /auth/me 往返"。 */
+const SESSION_USER_FIELDS = ['id', 'username', 'realName', 'deptId', 'deptName', 'roles'];
 
 log(`═══ e2e 冒烟 @ ${BASE} ═══\n`);
 
@@ -135,6 +145,16 @@ for (const role of ['student', 'admin', 'counselor', 'teacher']) {
   tk[role] = await login(role);
 }
 if (!tk.student) { log('\nFATAL: 学生登录失败，终止'); process.exit(1); }
+
+// ── 2.1 登录返回体契约（2026-10-12 起：登录即返回完整档案，前端不再补发 /auth/me）──
+log('\n【2.1 登录返回体契约】');
+{
+  const u = sessions.student?.user || {};
+  const missing = SESSION_USER_FIELDS.filter((k) => u[k] === undefined);
+  assert('登录返回完整用户档案（省掉第二次 /auth/me 往返）',
+    missing.length === 0,
+    missing.length ? `缺字段 ${missing.join(',')}` : `deptName=${u.deptName} classId=${u.classId}`);
+}
 
 // ── 3. 学生视角（M1~M4 全模块只读）────────────────────────────
 log('\n【3. 学生视角】');
@@ -244,6 +264,30 @@ assert('原密码错误被拒 → 43704/42900',
 // 反向证明：上面这些失败调用没有误改密码（原 token 仍可用）
 const stillOk = await call('/api/auth/me', tk.student);
 assert('学生账号未被以上调用影响（原 token 仍有效）', stillOk.json.code === 0, `code=${stillOk.json.code}`);
+
+// ── 9. 会话恢复契约：refresh 必须一次给全用户档案 ─────────────
+// 为什么放最后：刷新令牌是「一次性轮换」的，调用后本脚本这次登录的旧令牌即作废。
+// 脚本自身之后不再使用它，故收尾执行；不影响浏览器里任何既有会话。
+log('\n【9. 会话恢复（refresh）契约】');
+const rRefresh = await postJson('/api/auth/refresh', null, { refreshToken: sessions.student?.refreshToken });
+assert('refresh 成功（一次性轮换）', rRefresh.json.code === 0,
+  `code=${rRefresh.json.code} msg=${rRefresh.json.message || ''}`);
+{
+  const u = rRefresh.json.data?.user || {};
+  const missing = SESSION_USER_FIELDS.filter((k) => u[k] === undefined);
+  assert('refresh 返回完整用户档案（首屏一次往返的关键）',
+    missing.length === 0,
+    missing.length ? `缺字段 ${missing.join(',')}` : `deptName=${u.deptName}`);
+  assert('refresh 同时下发新的访问令牌', !!rRefresh.json.data?.accessToken);
+}
+
+// ── 10. 首屏启动页上线契约（白屏修复的线上回归）──────────────
+// 白屏根因：index.html 的 #app 在 Vue 挂载前是空的。修复手段是把启动页静态内嵌进 #app。
+// 这里直接抓线上 HTML 断言它确实在——构建产物若把它丢了，这条会立刻变红。
+log('\n【10. 首屏启动页】');
+const html = await (await fetch(BASE + '/')).text();
+assert('index.html 内嵌启动页（#app 不再为空）',
+  /id="app"[\s\S]*zc-boot/.test(html), `html ${html.length} 字节`);
 
 // ── 汇总 ────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.pass);

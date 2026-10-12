@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
 import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
+import { buildSessionUser } from '../../lib/user-profile.js';
 import { preflight } from '../../lib/http.js';
 import { alert } from '../../lib/alert.js';
 
@@ -93,12 +94,11 @@ export async function onRequestPost(context) {
     }
 
     clearFail(lockKey);
-    const roles = (await query(
-      `SELECT r.code FROM sys_role r
-        JOIN sys_user_role ur ON ur.role_id = r.id
-        WHERE ur.user_id = ?`,
-      [user.id],
-    )).map((r) => r.code);
+    // ★ 直接返回与 /auth/me 同构的完整用户（2026-10-12）：此前这里只返回精简 user，
+    //   前端登录成功后必须再补发一次 GET /api/auth/me 才拿得到 deptName 等字段
+    //   → 用户点「登录」要白等两次串行往返。字段组装与 /auth/me、/auth/refresh 同源。
+    const profile = await buildSessionUser(user.id);
+    if (!profile) return fail(40101, '用户名或密码错误');
 
     // ★ 顺带清理（5% 概率触发，自助维护表体积）：过期超 7 天的刷新令牌 + 吊销超 30 天的令牌
     if (Math.random() < 0.05) {
@@ -111,7 +111,7 @@ export async function onRequestPost(context) {
       } catch { /* 清理失败不影响登录 */ }
     }
 
-    const accessToken = signAccessToken(user, roles);
+    const accessToken = signAccessToken(profile.user, profile.roles);
     const refreshToken = newRefreshToken();
     await saveRefreshToken(user.id, refreshToken);
     await query('UPDATE sys_user SET last_login_at = NOW() WHERE id = ?', [user.id]);
@@ -124,7 +124,7 @@ export async function onRequestPost(context) {
       accessToken,
       refreshToken,
       expiresIn: 2 * 60 * 60,
-      user: { id: user.id, username: user.username, realName: user.real_name, roles },
+      user: profile.user,
     });
   } catch (e) {
     return jsonError(e);

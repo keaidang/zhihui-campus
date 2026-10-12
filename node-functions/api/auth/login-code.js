@@ -3,6 +3,7 @@
 import { ok, fail, jsonError, preflight, readBody, clientIp } from '../../lib/http.js';
 import { query } from '../../lib/db.js';
 import { signAccessToken, newRefreshToken, saveRefreshToken } from '../../lib/auth.js';
+import { buildSessionUser } from '../../lib/user-profile.js';
 
 export { preflight as onRequestOptions };
 
@@ -56,15 +57,12 @@ export async function onRequestPost(context) {
       return fail(40300, '账号已过有效期，请联系管理员续期');
     }
 
-    // 查询角色
-    const roles = (await query(
-      `SELECT r.code FROM sys_role r
-        JOIN sys_user_role ur ON ur.role_id = r.id
-        WHERE ur.user_id = ?`,
-      [user.id],
-    )).map((r) => r.code);
+    // 字段组装统一走 lib/user-profile.js（与 /auth/login、/auth/me、/auth/refresh 同源），
+    // 顺带省掉前端免密登录后再补发一次 GET /api/auth/me 的串行往返
+    const profile = await buildSessionUser(user.id);
+    if (!profile) return fail(40401, '未找到该邮箱绑定的有效账号');
 
-    const accessToken = signAccessToken(user, roles);
+    const accessToken = signAccessToken(profile.user, profile.roles);
     const refreshToken = newRefreshToken();
     await saveRefreshToken(user.id, refreshToken);
     await query('UPDATE sys_user SET last_login_at = NOW() WHERE id = ?', [user.id]);
@@ -77,7 +75,7 @@ export async function onRequestPost(context) {
       accessToken,
       refreshToken,
       expiresIn: 2 * 60 * 60,
-      user: { id: user.id, username: user.username, realName: user.real_name, roles },
+      user: profile.user,
     }, '登录成功');
   } catch (e) {
     return jsonError(e);

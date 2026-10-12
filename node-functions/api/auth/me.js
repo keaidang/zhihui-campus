@@ -1,7 +1,7 @@
 // GET /api/auth/me — 获取当前登录用户信息（需 Bearer Token）
-import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, preflight } from '../../lib/http.js';
 import { verifyAccessToken } from '../../lib/auth.js';
+import { buildSessionUser } from '../../lib/user-profile.js';
 
 export { preflight as onRequestOptions };
 
@@ -18,43 +18,14 @@ export async function onRequestGet(context) {
       return fail(40100, '登录状态已失效', 401);
     }
 
-    const users = await query(
-      `SELECT u.id, u.username, u.real_name, u.user_no, u.email, u.phone, u.avatar_url,
-              u.campus_email, u.mail_enabled, u.last_login_at, u.dept_id, u.class_id,
-              d.name AS dept_name, c.name AS class_name
-         FROM sys_user u
-         LEFT JOIN sys_department d ON d.id = u.dept_id
-         LEFT JOIN sys_class c ON c.id = u.class_id
-        WHERE u.id = ? AND u.status = 1`,
-      [Number(payload.sub)],
-    );
-    const user = users[0];
-    if (!user) return fail(40100, '用户不存在或已禁用', 401);
-
-    // 角色以数据库为准（管理员刚改过角色时无需等令牌过期）
-    const roleRows = await query(
-      `SELECT r.code, r.name FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
-        WHERE ur.user_id = ?`,
-      [user.id],
-    );
+    // 字段组装统一走 lib/user-profile.js（与 /auth/login、/auth/refresh 同源，避免字段漂移）
+    const profile = await buildSessionUser(Number(payload.sub));
+    // status !== 1 视为不可用（此前该条件写在 SQL 的 WHERE 里，抽到公共模块后在此显式判定）
+    if (!profile || profile.status !== 1) return fail(40100, '用户不存在或已禁用', 401);
 
     return ok({
-      id: user.id,
-      username: user.username,
-      realName: user.real_name,
-      userNo: user.user_no,
-      email: user.email,
-      phone: user.phone,
-      avatarUrl: user.avatar_url,
-      campusEmail: user.campus_email,
-      mailEnabled: Number(user.mail_enabled) === 1,
-      lastLoginAt: user.last_login_at,
-      deptId: user.dept_id,
-      deptName: user.dept_name,
-      classId: user.class_id,
-      className: user.class_name,
-      roles: roleRows.map((r) => r.code),
-      roleNames: roleRows.map((r) => r.name),
+      ...profile.user,
+      // 令牌里带的角色，供前端对比"角色已变更但令牌未过期"的场景
       tokenRoles: payload.roles || [],
     });
   } catch (e) {

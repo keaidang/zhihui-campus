@@ -42,8 +42,11 @@ export const useAuthStore = defineStore('auth', {
         body: { username, password },
       });
       if (res.code === 0) {
+        // ★ /auth/login 现已返回与 /auth/me 同构的完整 user（2026-10-12），
+        //   故不再补发一次 /auth/me —— 这会省掉用户点「登录」后的一次串行往返。
+        //   保留 !this.user 兜底：万一上游返回体缺 user，仍能补回身份。
         this._applySession(res.data);
-        await this.fetchMe();
+        if (!this.user) await this.fetchMe().catch(() => {});
       }
       return res;
     },
@@ -55,8 +58,9 @@ export const useAuthStore = defineStore('auth', {
         body: { email, code },
       });
       if (res.code === 0) {
+        // 同上：免密登录接口也已返回完整 user
         this._applySession(res.data);
-        await this.fetchMe();
+        if (!this.user) await this.fetchMe().catch(() => {});
       }
       return res;
     },
@@ -106,7 +110,11 @@ export const useAuthStore = defineStore('auth', {
       if (!restoreInFlight) {
         restoreInFlight = (async () => {
           const okRefresh = await this.tryRefresh().catch(() => false);
-          if (okRefresh) await this.fetchMe().catch(() => {});
+          // ★ 不再补发 GET /api/auth/me（2026-10-12）：/api/auth/refresh 已返回与 me
+          //   同构的完整 user（含 deptName / avatarUrl 等），此前这次多余的**串行**往返
+          //   正是首屏「白屏」时长的一半（每次 2~3 秒）。
+          //   保留 !this.user 兜底：上游返回体若缺 user，仍能补回身份。
+          if (okRefresh && !this.user) await this.fetchMe().catch(() => {});
         })().finally(() => { restoreInFlight = null; });
       }
       await restoreInFlight;

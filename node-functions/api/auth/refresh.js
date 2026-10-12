@@ -1,7 +1,7 @@
 // POST /api/auth/refresh — 刷新访问令牌（轮换刷新令牌）
-import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody } from '../../lib/http.js';
 import { signAccessToken, rotateRefreshTokenAtomic } from '../../lib/auth.js';
+import { buildSessionUser } from '../../lib/user-profile.js';
 import { preflight } from '../../lib/http.js';
 
 export { preflight as onRequestOptions };
@@ -21,28 +21,23 @@ export async function onRequestPost(context) {
       return fail(40100, msg || '刷新失败', 401);
     }
 
-    const users = await query(
-      'SELECT id, username, real_name, status, valid_until FROM sys_user WHERE id = ?',
-      [result.userId],
-    );
-    const user = users[0];
-    if (!user || user.status !== 1) return fail(40300, '账号不可用', 403);
-    if (user.valid_until && new Date(user.valid_until).getTime() < Date.now()) {
+    // ★ 返回与 GET /api/auth/me 同构的完整用户（2026-10-12）。
+    //   为什么关键：客户端恢复会话原本是 refresh → me **两次串行往返**（单次 2~3 秒），
+    //   首屏「白屏」的时间一半来自这里。refresh 本来就要取用户行，改为直接返回完整
+    //   user 后，客户端一次往返即可拿到可直接渲染的对象（deptName/avatarUrl/... 齐全），
+    //   stores/auth.js 里那次多余的 /auth/me 随之取消。
+    //   字段组装与 /auth/login、/auth/me 共用 lib/user-profile.js，杜绝字段漂移。
+    const profile = await buildSessionUser(result.userId);
+    if (!profile || profile.status !== 1) return fail(40300, '账号不可用', 403);
+    if (profile.validUntil && new Date(profile.validUntil).getTime() < Date.now()) {
       return fail(40300, '账号已过有效期，请联系管理员续期', 403);
     }
 
-    const roles = (await query(
-      `SELECT r.code FROM sys_role r
-        JOIN sys_user_role ur ON ur.role_id = r.id
-        WHERE ur.user_id = ?`,
-      [user.id],
-    )).map((r) => r.code);
-
     return ok({
-      accessToken: signAccessToken(user, roles),
+      accessToken: signAccessToken(profile.user, profile.roles),
       refreshToken: result.nextToken,
       expiresIn: 2 * 60 * 60,
-      user: { id: user.id, username: user.username, realName: user.real_name, roles },
+      user: profile.user,
     });
   } catch (e) {
     return jsonError(e);

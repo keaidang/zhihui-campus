@@ -44,6 +44,25 @@ window.addEventListener('unhandledrejection', (e) => {
   console.error('[unhandled-rejection]', e.reason);
 });
 
-// 挂载前静默恢复会话：F5 后用 refreshToken 换回 accessToken，避免"刷新页面就掉线"
+// ============================================================
+// 首屏挂载门控（2026-10-12 修「白屏」）
+// ------------------------------------------------------------
+// 此前：`auth.restoreSession().finally(() => app.mount('#app'))`
+//   → 挂载被「会话恢复」单条链路阻塞，而 restoreSession 内部是
+//     tryRefresh() → fetchMe() 两次**串行**网络往返；期间 #app 是空 div，
+//     index.html 里也没有任何占位 → 用户看到的是**整页白屏**（实测 6 秒级）。
+//
+// 现在：门控等「会话恢复」与「首个路由就绪」**两者都完成**，然后挂载。
+//   ★ 两个都要等，缺一不可：
+//     - 只等 router.isReady()：首页 `/` 不需要鉴权、守卫立即放行，会带着
+//       auth.user === null 挂载 → HomeView / PortalShell 先渲染**游客态**，
+//       等会话恢复回来再跳成登录态（肉眼可见的闪烁）。
+//     - 只等 restoreSession()：路由 chunk 尚未就绪，首帧仍可能空白。
+//   ★ 等待期间由 index.html 的启动页顶着（随文档到达即绘制），
+//     「白屏」被替换为「有品牌的加载态」——这才是本次修复的可见效果。
+//   ★ 真实耗时下降来自服务端：/api/auth/refresh 现已返回与 /auth/me 同构的
+//     完整用户信息，restoreSession 不再需要第二次往返（详见 stores/auth.js）。
 const auth = useAuthStore(pinia);
-auth.restoreSession().catch(() => {}).finally(() => app.mount('#app'));
+const sessionReady = auth.restoreSession().catch(() => {});
+const routeReady = router.isReady().catch(() => {});
+Promise.all([sessionReady, routeReady]).finally(() => app.mount('#app'));
