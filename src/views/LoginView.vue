@@ -30,8 +30,20 @@
                 placeholder="密码"
                 :prefix-icon="Lock"
                 show-password
+                @keydown="checkCapsLock"
+                @keyup="checkCapsLock"
+                @blur="capsLockOn = false"
                 @keyup.enter="doLogin"
               />
+            </el-form-item>
+            <!-- 大写锁定提示：仅在密码框按键且 Caps Lock 开着时出现（输错密码的常见原因） -->
+            <div v-if="capsLockOn" class="caps-warning">
+              <el-icon class="caps-icon"><WarningFilled /></el-icon>
+              <span>大写锁定（Caps Lock）已开启</span>
+            </div>
+            <!-- 记住账号：只记用户名，不记密码；登录成功后才写入 -->
+            <el-form-item>
+              <el-checkbox v-model="rememberMe" class="remember-checkbox">记住账号</el-checkbox>
             </el-form-item>
             <el-button type="primary" class="w-full" size="large" :loading="loading" @click="doLogin">
               登录
@@ -176,10 +188,10 @@
 </template>
 
 <script setup>
-import { reactive, ref, onUnmounted } from 'vue';
+import { reactive, ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { User, Lock, Postcard, Message, Key, Promotion } from '@element-plus/icons-vue';
+import { User, Lock, Postcard, Message, Key, Promotion, WarningFilled } from '@element-plus/icons-vue';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../api/request';
 
@@ -189,6 +201,20 @@ const auth = useAuthStore();
 const mode = ref('login');
 const loading = ref(false);
 const loginForm = reactive({ username: '', password: '' });
+// 大写锁定检测（只在密码框按键时提示，避免用户输错密码却不知道原因）
+const capsLockOn = ref(false);
+// 记住账号：只存用户名，绝不存密码
+const rememberMe = ref(false);
+const REMEMBER_KEY = 'zc_remember_username';
+
+// 回填上次记住的用户名（只回填用户名）
+onMounted(() => {
+  const saved = localStorage.getItem(REMEMBER_KEY);
+  if (saved) {
+    loginForm.username = saved;
+    rememberMe.value = true;
+  }
+});
 const regForm = reactive({ realName: '', username: '', password: '', confirm: '', email: '', code: '', prefix: '', domain: 'keaidang.com' });
 const sending = ref(false);
 const codeCooldown = ref(0);
@@ -292,6 +318,13 @@ async function checkPrefix() {
   }
 }
 
+/** 密码框按键时检测大写锁定；失焦即隐藏提示 */
+function checkCapsLock(e) {
+  if (e && typeof e.getModifierState === 'function') {
+    capsLockOn.value = e.getModifierState('CapsLock');
+  }
+}
+
 async function doLogin() {
   if (!loginForm.username || !loginForm.password) {
     ElMessage.warning('请输入用户名和密码');
@@ -301,6 +334,9 @@ async function doLogin() {
   try {
     const res = await auth.login(loginForm.username, loginForm.password);
     if (res.code === 0) {
+      // 记住账号：只在**登录成功**后写入（避免把输错的用户名记下来）；未勾选则清除
+      if (rememberMe.value && loginForm.username) localStorage.setItem(REMEMBER_KEY, loginForm.username);
+      else localStorage.removeItem(REMEMBER_KEY);
       ElMessage.success(`欢迎回来，${res.data.user.realName || res.data.user.username}！`);
       const redirect = router.currentRoute.value.query.redirect;
       router.push(typeof redirect === 'string' && redirect ? redirect : '/workbench');
@@ -500,6 +536,31 @@ async function doForgotReset() {
   transition: opacity 0.2s ease;
 }
 .alt-login a:hover { opacity: 1; border-bottom-color: rgba(255, 255, 255, 0.7); }
+
+/* 大写锁定提示：紧贴密码框下方。琥珀警示色与门面页同体系；
+   图标用 EP 的 WarningFilled 而非 emoji（沿用项目「界面去彩色 emoji」的旧口径）。 */
+.caps-warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: -8px 0 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 3px;
+}
+.caps-icon { flex: 0 0 auto; font-size: 13px; }
+
+/* 记住账号：勾选框保留 EP 默认样式（深色卡片上白底方框对比清晰），只调文字与勾选色 */
+.remember-checkbox { margin: 0; height: auto; }
+.remember-checkbox :deep(.el-checkbox__label) { color: rgba(255, 255, 255, 0.78); font-size: 13px; }
+.remember-checkbox :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+}
 .forgot-tip { margin: 0 0 12px; font-size: 12.5px; color: #64748b; line-height: 1.6; }
 
 /* 输入框 + 操作按钮同行：按钮做成兄弟节点。
