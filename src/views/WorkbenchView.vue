@@ -282,11 +282,11 @@ function onOpen(m) {
   border-radius: 16px;
   padding: 24px 28px;
   color: #fff;
-  background: linear-gradient(135deg, rgba(14, 30, 56, 0.78) 0%, rgba(20, 44, 82, 0.73) 55%, rgba(28, 60, 110, 0.68) 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 12px 32px rgba(10, 24, 46, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(135deg, rgba(10, 24, 48, 0.65) 0%, rgba(16, 38, 76, 0.55) 55%, rgba(22, 50, 102, 0.48) 100%),
+    url('/web-pc.webp') center top / cover no-repeat;
+  box-shadow: 0 12px 32px rgba(10, 24, 46, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.22);
 }
 .wb-hero-main {
   position: relative;
@@ -329,7 +329,7 @@ function onOpen(m) {
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #fff;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
 }
 .wp-role-badge {
   display: inline-block;
@@ -338,7 +338,7 @@ function onOpen(m) {
   padding: 2px 10px;
   border-radius: 999px;
   color: #fff;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.35);
   backdrop-filter: blur(4px);
   white-space: nowrap;
@@ -354,9 +354,9 @@ function onOpen(m) {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 6px;
   padding: 3px 9px;
   backdrop-filter: blur(4px);
@@ -632,6 +632,11 @@ function onOpen(m) {
   .wb-hero-mail { width: 100%; }
 }
 @media (max-width: 680px) {
+  .wb-hero {
+    background-image:
+      linear-gradient(135deg, rgba(10, 24, 48, 0.68) 0%, rgba(16, 38, 76, 0.58) 55%, rgba(22, 50, 102, 0.50) 100%),
+      url('/web-phont.webp');
+  }
   .wb-grid { grid-template-columns: repeat(2, 1fr); }
   .wb-resrow-grid { grid-template-columns: repeat(2, 1fr); }
 }
