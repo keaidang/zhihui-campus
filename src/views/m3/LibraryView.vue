@@ -70,7 +70,7 @@
       <section v-show="tab === 'loans'" class="lib-panel">
         <el-alert v-if="overdueCount > 0" type="error" :closable="false" show-icon style="margin-bottom: 12px"
           :title="`你有 ${overdueCount} 本图书已逾期，请尽快归还`" />
-        <el-table :data="loans" stripe>
+        <el-table :data="loans" v-loading="loansLoading" stripe>
           <el-table-column prop="title" label="书名" min-width="180" show-overflow-tooltip />
           <el-table-column prop="author" label="作者" width="110" show-overflow-tooltip />
           <el-table-column label="借出日期" width="110">
@@ -102,12 +102,12 @@
           <el-button type="primary" @click="openAdd">添加书籍</el-button>
           <el-button @click="importDlg = true">批量导入</el-button>
           <el-button @click="exportTemplate">下载导入模板</el-button>
-          <el-input v-model="loansKeyword" placeholder="按书名/借阅人搜索借阅" clearable style="width: 240px; margin-left: auto" @keyup.enter="loadLoans" />
+          <el-input v-model="loansKeyword" placeholder="按书名/借阅人搜索借阅" clearable style="width: 240px; margin-left: auto" @keyup.enter="loadLoans" @clear="loadLoans" />
           <el-button @click="loadLoans">查询</el-button>
         </div>
         <p class="lib-hint">提示：批量导入支持 CSV（书名,作者,ISBN,出版社,分类,馆藏位置,副本数），首行为表头；也可粘贴 JSON 数组。</p>
 
-        <el-table :data="allLoans" stripe style="margin-top: 12px">
+        <el-table :data="allLoans" v-loading="loansLoading" stripe style="margin-top: 12px">
           <el-table-column prop="title" label="书名" min-width="160" show-overflow-tooltip />
           <el-table-column prop="borrowerName" label="借阅人" width="100" />
           <el-table-column prop="username" label="账号" width="120" show-overflow-tooltip />
@@ -193,7 +193,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import PortalShell from '../../components/PortalShell.vue';
 import ImgUploader from '../../components/ImgUploader.vue';
@@ -243,6 +243,7 @@ const total = ref(0);
 const loans = ref([]);
 const allLoans = ref([]);
 const loansKeyword = ref('');
+const loansLoading = ref(false);
 
 const detailDlg = ref(false);
 const current = ref(null);
@@ -277,13 +278,24 @@ async function load(page = 1) {
 }
 
 async function loadLoans() {
-  const scope = tab.value === 'manage' ? 'all' : 'mine';
-  const res = await api(`/api/lib/loans?scope=${scope}${scope === 'all' && loansKeyword.value ? `&keyword=${encodeURIComponent(loansKeyword.value)}` : ''}`);
-  if (res.code === 0) {
-    if (scope === 'all') allLoans.value = res.data.list;
-    else loans.value = res.data.list;
+  loansLoading.value = true;
+  try {
+    const scope = tab.value === 'manage' ? 'all' : 'mine';
+    const res = await api(`/api/lib/loans?scope=${scope}${scope === 'all' && loansKeyword.value ? `&keyword=${encodeURIComponent(loansKeyword.value)}` : ''}`);
+    if (res.code === 0) {
+      if (scope === 'all') allLoans.value = res.data.list;
+      else loans.value = res.data.list;
+    }
+  } finally {
+    loansLoading.value = false;
   }
 }
+
+watch(tab, (newTab) => {
+  if (newTab === 'loans' || newTab === 'manage') {
+    loadLoans();
+  }
+});
 
 function openBook(b) {
   current.value = b;

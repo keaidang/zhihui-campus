@@ -48,6 +48,19 @@ export const useAuthStore = defineStore('auth', {
       return res;
     },
 
+    async loginByCode(email, code) {
+      const res = await api('/api/auth/login-code', {
+        method: 'POST',
+        auth: false,
+        body: { email, code },
+      });
+      if (res.code === 0) {
+        this._applySession(res.data);
+        await this.fetchMe();
+      }
+      return res;
+    },
+
     async register(form) {
       return api('/api/auth/register', { method: 'POST', auth: false, body: form });
     },
