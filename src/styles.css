@@ -87,14 +87,15 @@ body { background: transparent; }
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.88);
   border-bottom: 1px solid rgba(23, 50, 92, 0.08);
-  box-shadow: 0 2px 12px rgba(15, 35, 66, 0.04);
+  box-shadow: 0 4px 20px rgba(15, 35, 66, 0.05);
+  transition: all 0.3s ease;
 }
 .zc-navbar .inner {
-  height: 64px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -102,12 +103,43 @@ body { background: transparent; }
 .zc-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   color: var(--zc-primary);
   cursor: pointer;
+  user-select: none;
+  padding: 4px 6px;
+  border-radius: 12px;
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.zc-logo .brand-logo { width: 36px; height: 36px; object-fit: contain; flex: none; }
-.zc-logo .brand-name { width: 128px; height: 38px; object-fit: cover; object-position: center; }
+.zc-logo:hover {
+  transform: translateY(-1px) scale(1.02);
+}
+.zc-logo .brand-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  flex: none;
+  border-radius: 50%;
+  filter: drop-shadow(0 3px 10px rgba(15, 35, 66, 0.22)) drop-shadow(0 0 1px rgba(15, 35, 66, 0.35));
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, filter;
+}
+.zc-logo:hover .brand-logo {
+  transform: rotate(-3deg) scale(1.08);
+  filter: drop-shadow(0 6px 18px rgba(29, 78, 216, 0.38)) drop-shadow(0 0 4px rgba(56, 189, 248, 0.45)) brightness(1.05);
+}
+.zc-logo .brand-name {
+  width: 156px;
+  height: 44px;
+  object-fit: contain;
+  object-position: center left;
+  filter: drop-shadow(0 2px 6px rgba(15, 35, 66, 0.16));
+  transition: all 0.35s ease;
+}
+.zc-logo:hover .brand-name {
+  transform: translateX(2px);
+  filter: drop-shadow(0 3px 10px rgba(15, 35, 66, 0.28)) brightness(0.96);
+}
 
 .nav-user-area {
   display: flex;
@@ -164,8 +196,10 @@ body { background: transparent; }
 
 
 @media (max-width: 640px) {
-  .zc-logo .brand-logo { width: 30px; height: 30px; }
-  .zc-logo .brand-name { width: 104px; height: 32px; }
+  .zc-navbar .inner { height: 62px; }
+  .zc-logo { gap: 10px; }
+  .zc-logo .brand-logo { width: 38px; height: 38px; }
+  .zc-logo .brand-name { width: 122px; height: 34px; }
 }
 
 /* ---------- Hero：左文案 + 右 macOS 旗舰视窗悬浮预览 ---------- */
@@ -189,68 +223,153 @@ body { background: transparent; }
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
   align-items: center;
   gap: 48px;
-  padding: 68px 0 72px;
+  padding: 56px 0 68px;
   text-align: left;
 }
 .zc-hero .hero-copy { min-width: 0; }
 
 .zc-hero .hero-eyebrow {
-  margin-bottom: 16px;
+  margin-bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.zc-hero .hero-badge {
+
+/* 上方空白位置充实：高校数智先导微标 */
+.hero-eyebrow-lead {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 14px 0 10px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  border-radius: 999px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: #ffffff;
+  gap: 8px;
+  color: rgba(186, 230, 253, 0.92);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.hero-eyebrow-lead .lead-sparkle {
+  color: #38bdf8;
   font-size: 13px;
-  font-weight: 600;
+  animation: heroLeadSparkle 2.5s ease-in-out infinite;
+}
+@keyframes heroLeadSparkle {
+  0%, 100% { opacity: 0.6; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); text-shadow: 0 0 8px #38bdf8; }
+}
+
+.hero-badge-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* 核心旗舰胶囊：问办合一 */
+.zc-hero .hero-badge-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 18px 0 12px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(56, 189, 248, 0.16) 100%);
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  border-radius: 999px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25), 0 0 16px rgba(56, 189, 248, 0.15);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.zc-hero .hero-badge-main:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.30) 0%, rgba(56, 189, 248, 0.26) 100%);
+  border-color: rgba(186, 230, 253, 0.8);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32), 0 0 22px rgba(56, 189, 248, 0.35);
+}
+
+.zc-hero .hero-badge-main .badge-spark-ring {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.zc-hero .hero-badge-main .badge-spark-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.3);
+  animation: heroRingPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes heroRingPulse {
+  0% { transform: scale(0.8); opacity: 0.9; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.zc-hero .hero-badge-main .badge-spark {
+  position: relative;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8, 0 0 14px #0284c7;
+}
+
+.zc-hero .hero-badge-main .badge-text {
+  color: #ffffff;
+  font-size: 15.5px;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: 1px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  letter-spacing: 1.2px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.zc-hero .hero-badge-main .badge-sep {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  font-weight: 300;
+}
+.zc-hero .hero-badge-main .badge-sub {
+  color: rgba(224, 242, 254, 0.92);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+.zc-hero .hero-badge-main .badge-arrow {
+  color: #38bdf8;
+  font-size: 13px;
+  transition: transform 0.25s ease;
+}
+.zc-hero .hero-badge-main:hover .badge-arrow {
+  transform: translateX(3px);
+  color: #7dd3fc;
+}
+
+/* 伴随辅助小胶囊 */
+.zc-hero .hero-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: rgba(241, 245, 249, 0.88);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   user-select: none;
   transition: all 0.25s ease;
 }
-.zc-hero .hero-badge:hover {
-  background: rgba(255, 255, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-}
-.zc-hero .hero-badge .badge-spark {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
-  animation: heroBadgePulse 2s ease-in-out infinite;
-}
-.zc-hero .hero-badge .badge-text {
+.zc-hero .hero-badge-chip:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 1px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-}
-
-@keyframes heroBadgePulse {
-  0%, 100% {
-    opacity: 0.65;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.15);
-    box-shadow: 0 0 12px #c7d2fe;
-  }
+  transform: translateY(-1px);
 }
 
 .zc-hero h1 {
@@ -471,6 +590,9 @@ body { background: transparent; }
      于是窄屏下文案左右零留白、直接贴着蒙版边缘，看上去就是"没对齐"。
      改用四值简写只改上下，左右沿用容器自己的 24px。 */
   .zc-hero .hero-inner { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 52px 24px 56px; text-align: center; }
+  .zc-hero .hero-eyebrow { align-items: center; }
+  .hero-eyebrow-lead { justify-content: center; }
+  .hero-badge-group { justify-content: center; }
   .zc-hero h1 { font-size: 32px; letter-spacing: 1px; }
   .zc-hero p { margin: 0 auto 24px; font-size: 15px; }
   .zc-hero .actions { justify-content: center; }
@@ -479,8 +601,13 @@ body { background: transparent; }
 }
 /* 超窄屏（手机竖屏）：标题/正文再降一档，避免长标题被压成两行后视觉失衡 */
 @media (max-width: 480px) {
-  .zc-hero .hero-eyebrow { margin-bottom: 10px; }
-  .zc-hero .hero-badge { font-size: 12px; height: 28px; padding: 0 12px 0 8px; letter-spacing: 0.8px; }
+  .zc-hero .hero-eyebrow { margin-bottom: 12px; gap: 8px; }
+  .hero-eyebrow-lead { font-size: 11px; letter-spacing: 0.8px; }
+  .zc-hero .hero-badge-main { height: 32px; padding: 0 12px 0 10px; }
+  .zc-hero .hero-badge-main .badge-text { font-size: 13px; }
+  .zc-hero .hero-badge-main .badge-sep,
+  .zc-hero .hero-badge-main .badge-sub { display: none; }
+  .zc-hero .hero-badge-chip { display: none; }
   .zc-hero h1 { font-size: 25px; letter-spacing: 0.5px; }
   .zc-hero p { font-size: 14px; line-height: 1.75; margin-bottom: 20px; }
   .zc-hero .actions { gap: 10px; }
