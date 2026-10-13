@@ -115,30 +115,30 @@ body { background: transparent; }
   transform: translateY(-1px);
 }
 .zc-logo .brand-logo {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   flex: none;
   border-radius: 50%;
-  filter: drop-shadow(0 2px 6px rgba(15, 35, 66, 0.2)) drop-shadow(0 0 1px rgba(15, 35, 66, 0.3));
+  filter: drop-shadow(0 2px 7px rgba(15, 35, 66, 0.22)) drop-shadow(0 0 1px rgba(15, 35, 66, 0.3));
   transition: all 0.3s ease;
   will-change: transform, filter;
 }
 .zc-logo:hover .brand-logo {
   transform: rotate(-3deg) scale(1.06);
-  filter: drop-shadow(0 4px 12px rgba(29, 78, 216, 0.35)) drop-shadow(0 0 3px rgba(56, 189, 248, 0.4)) brightness(1.04);
+  filter: drop-shadow(0 4px 14px rgba(29, 78, 216, 0.38)) drop-shadow(0 0 4px rgba(56, 189, 248, 0.45)) brightness(1.04);
 }
 .zc-logo .brand-name {
-  width: 124px;
-  height: 34px;
-  object-fit: contain;
-  object-position: center left;
-  filter: drop-shadow(0 1px 4px rgba(15, 35, 66, 0.14));
+  width: 154px;
+  height: 41px;
+  object-fit: cover;
+  object-position: center;
+  filter: drop-shadow(0 1.5px 5px rgba(15, 35, 66, 0.18));
   transition: all 0.25s ease;
 }
 .zc-logo:hover .brand-name {
   transform: translateX(1px);
-  filter: drop-shadow(0 2px 8px rgba(15, 35, 66, 0.24));
+  filter: drop-shadow(0 2.5px 8px rgba(15, 35, 66, 0.26));
 }
 
 .nav-user-area {
@@ -196,10 +196,10 @@ body { background: transparent; }
 
 
 @media (max-width: 640px) {
-  .zc-navbar .inner { height: 62px; }
+  .zc-navbar .inner { height: 54px; }
   .zc-logo { gap: 10px; }
-  .zc-logo .brand-logo { width: 38px; height: 38px; }
-  .zc-logo .brand-name { width: 122px; height: 34px; }
+  .zc-logo .brand-logo { width: 36px; height: 36px; }
+  .zc-logo .brand-name { width: 136px; height: 37px; object-fit: cover; object-position: center; }
 }
 
 /* ---------- Hero：左文案 + 右 macOS 旗舰视窗悬浮预览 ---------- */
