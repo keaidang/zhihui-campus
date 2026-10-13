@@ -42,25 +42,19 @@
       <div class="zc-container hero-inner">
         <div class="hero-copy">
           <div class="hero-eyebrow">
-            <div class="hero-eyebrow-lead">
-              <span class="lead-sparkle">✦</span>
-              <span class="lead-text">清北大学数字化智慧校园 · 全域数智驱动生态</span>
-            </div>
-            <div class="hero-badge-group">
-              <span class="hero-badge hero-badge-main" title="点击体验「问办合一」智能业务直达" @click="goAi">
-                <span class="badge-spark-ring">
-                  <span class="badge-spark"></span>
-                </span>
-                <span class="badge-text">问办合一</span>
-                <span class="badge-sep">/</span>
-                <span class="badge-sub">智能业务直达办理</span>
-                <el-icon class="badge-arrow"><ArrowRight /></el-icon>
+            <span class="hero-badge hero-badge-main" title="点击体验「问办合一」智能业务直达" @click="goAi">
+              <span class="badge-spark-ring">
+                <span class="badge-spark"></span>
               </span>
-              <span class="hero-badge-chip" @click="$router.push('/overview')">
-                <el-icon :size="13"><Platform /></el-icon>
-                <span>云边协同架构</span>
-              </span>
-            </div>
+              <span class="badge-text">问办合一</span>
+              <span class="badge-sep">/</span>
+              <span class="badge-sub">智能业务直达办理</span>
+              <el-icon class="badge-arrow"><ArrowRight /></el-icon>
+            </span>
+            <span class="hero-badge-chip" @click="$router.push('/overview')">
+              <el-icon :size="12"><Platform /></el-icon>
+              <span>全景架构</span>
+            </span>
           </div>
           <h1>一站式智慧校园服务平台</h1>
           <p>
