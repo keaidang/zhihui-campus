@@ -54,25 +54,33 @@ const TRANSIENT = [
   'ER_USER_LIMIT_REACHED',
   'ER_CON_COUNT_ERROR',
 ];
-function isTransient(e) {
+export function isTransient(e) {
   if (!e) return false;
   if (TRANSIENT.includes(e.code)) return true;
   if (typeof e.code === 'string' && (e.code.startsWith('PROTOCOL') || e.code.startsWith('ECONN'))) return true;
   // MySQL/TiDB 瞬时错误码：2006 服务器断开、2013 查询中失去连接、4031 等待超时
   if ([2006, 2013, 4031].includes(e.errno)) return true;
   const msg = String(e.message || '').toLowerCase();
+  // ★ 只认「连接层抖动」的完整表述（2026-10-14 收窄）：
+  //   旧版用 'ssl'/'timeout'/'socket'/'aborted'/'terminated' 五个**单词级**子串做匹配，
+  //   会把 "SSL certificate verify failed"（配置错误，重试无意义）、
+  //   "Query timeout"、"Statement aborted"、"Query terminated"（语义已完成/被中止）
+  //   等**不应重试**的错误误判为瞬时——对写操作盲目重试既掩盖真实缺陷，
+  //   也可能重复执行副作用，与 README「不让重试掩盖真实缺陷」的原则相悖。
+  //   连接类表述（handshake / connection lost / socket hang up）仍保留完整词组。
   return (
     msg.includes('malform packet') ||
     msg.includes('econnreset') ||
     msg.includes('connection lost') ||
     msg.includes('handshake') ||
-    msg.includes('ssl') ||
-    msg.includes('timeout') ||
+    msg.includes('ssl handshake') ||
+    msg.includes('connection timeout') ||
+    msg.includes('etimedout') ||
     msg.includes('too many connection') ||
-    msg.includes('terminated') ||
-    msg.includes('aborted') ||
-    msg.includes('socket') ||
-    msg.includes('bad handshake')
+    msg.includes('server has gone away') ||
+    msg.includes('socket hang up') ||
+    msg.includes('connection aborted') ||
+    msg.includes('connection terminated')
   );
 }
 
