@@ -1,17 +1,17 @@
 # DATABASE · 数据库设计（单一事实来源）
 
 > 目标库：TiDB Cloud Serverless（MySQL 8.0 兼容语法）。**任何表结构变更必须先改本文档，再改代码。**
-> **实际建表以 `database/schema-001~009-*.sql` 为准**（幂等可重复执行，`scripts/migrate.mjs` 跑批）；本文第 4 节起为未实现模块的规划草案。
+> **实际建表以 `database/schema-001~013-*.sql` 为准**（幂等可重复执行，`scripts/migrate.mjs` 跑批）；本文第 3 节起为未实现模块的规划草案。
 
 ## 1. 命名与通用规范
 
-- 表名：`snake_case`，按模块加前缀：`sys_`（系统/权限/组织/邮箱/附件）、`edu_`（教务）、`flow_`（审批流）、`af_`（学工事务）、`lib_`（图书）、`lf_`（失物招领）、`club_`（社团）、`forum_`（论坛）
+- 表名：`snake_case`，按模块加前缀：`sys_`（系统/权限/组织/邮箱/附件/配置）、`edu_`（教务）、`flow_`（审批流）、`af_`（学工事务）、`lib_`（图书）、`lf_`（失物招领）、`club_`（社团）、`forum_`（论坛）、`dorm_`（宿舍）、`ai_`（AI 能力与评估）
 - ~~点餐 meal_~~ 已砍（涉及支付，2026-09-17 决策）；~~mkt_ 二手~~ 已改为论坛 forum_（2026-09-20 决策）
 - 主键：`id BIGINT UNSIGNED AUTO_INCREMENT`
 - 通用字段：`created_at DATETIME`，需要时加 `updated_at`；状态用 `TINYINT`（含义注释写清楚）
 - 字符集 `utf8mb4`
 
-## 2. 已实现表清单（截至 2026-09-20）
+## 2. 已实现表清单（截至 2026-10-14，schema-001～013 共 40 张表）
 
 ### sys 系统与权限（schema-001 + schema-002）
 | 表 | 说明 | 关键点 |
@@ -99,6 +99,30 @@
 | 表 | 说明 | 关键点 |
 |---|---|---|
 | sys_message | 站内信/通知单表 | sender_id=0 系统通知；**biz 标记来源业务**（leave/club/repair/manual）；read_at NULL=未读；索引(receiver_id, read_at, created_at)；广播=批量插入 |
+
+### AI 能力（schema-012，2026-10-09）
+| 表 | 说明 | 关键点 |
+|---|---|---|
+| sys_config | 运行时配置（键值） | cfg_key 主键，cfg_value 统一存字符串、读取方自行转换；**AI 总开关与各能力开关落库**——环境变量改动需重新部署，落库改开关即时生效；updated_by/updated_at 留痕；只接受 `ai.*` 键 |
+| ai_kb | 校园知识库条目（C1 知识来源） | **UNIQUE(category, title) 作 seed 幂等键**；keywords 逗号分隔（中文无分词器，靠人工标注兜底）；content 纯文本不含 HTML；KEY(status, sort, id) |
+| ai_usage_log | AI 调用流水 | **双重用途：① 频控计数（DB 流水，铁律禁内存计数）② 论文 token/延迟统计**；kind 标记能力（chat/action/insight/review/study/alert/other）；KEY(user_id, kind, created_at) |
+| ai_review_log | 论坛 AI 审核留痕与人工复核队列（C2） | biz(thread/reply) + biz_id 定位原帖；verdict: ok/suspect/violation/**degraded**（AI 超时=放行并标记待复核）；handled 0 待复核 1 确认违规 2 误判放行 |
+| ai_alert_log | 告警邮件发送留痕（C3） | **dedupe_key 是去重依据**（同类告警 30 分钟窗口）；sent_to 实际收件人；ok/err 记录发送结果 |
+
+**既有表增列（schema-012 §6，全部 `IF NOT EXISTS`，可重复执行）**：
+| 表/字段 | 说明 |
+|---|---|
+| forum_thread.review_status / forum_reply.review_status | AI 审核状态：0 正常 1 待人工复核 2 已确认违规（隐藏） |
+| af_notice.summary | C9 公告 AI 摘要（≤80 字） |
+| af_repair.ai_triage | C8 智能分诊结果 JSON `{urgency,dept,selfService,reason}` |
+
+### AI 效果评估（schema-013，2026-10-09）
+| 表 | 说明 | 关键点 |
+|---|---|---|
+| ai_eval_case | 评估用例（人工标注数据集） | scene: qa/triage/review/insight；**幂等键用 `hash = md5(scene+input)` 而非联合唯一**——input 是 VARCHAR(1024)，utf8mb4 下联合唯一索引会超 TiDB 索引长度上限；note 记录标注依据（答辩可解释由谁按什么标准标的） |
+| ai_eval_run | 评估运行记录（指标来源） | 准确率落库 `accuracy = passed/(passed+failed)`，**指标是跑出来的而非手写**；detail 存逐条结果 JSON；**保留历史 → 可展示指标随版本演进的趋势**；只读评测不写业务数据，可反复运行与现场演示 |
+
+> 两个 AI schema 均为**纯新增**（新表 + 新列），不改动任何既有字段语义，向后兼容。配置默认值 20+ 条随 schema-012 `INSERT IGNORE` 幂等写入。
 
 ## 3. 未实现模块表规划（草案，实现前先按实情修订）
 
