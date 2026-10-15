@@ -11,6 +11,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "app:sync": "cap sync android",
+    "app:build": "npm run build && cap sync android && cap build android --androidreleasetype APK",
+    "app:open": "cap open android",
     "lint": "eslint src node-functions edge-functions tests",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -27,6 +30,8 @@
     "audit:prod": "npm audit --omit=dev --registry=https://registry.npmjs.org"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
     "@element-plus/icons-vue": "^2.3.1",
     "bcryptjs": "^2.4.3",
     "dompurify": "^3.4.17",
@@ -39,6 +44,7 @@
     "vue-router": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.1.2",
     "eslint": "^10.11.0",

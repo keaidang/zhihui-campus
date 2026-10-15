@@ -2,7 +2,7 @@
 
 > **毕业设计（论文题目）**：《基于云边协同与 Serverless 架构的"智汇校园"一站式服务平台设计与实现》
 >
-> 基于腾讯云 EdgeOne **云边协同全栈架构**的校园综合服务平台 · 单套代码同时适配桌面端与移动端
+> 基于腾讯云 EdgeOne **云边协同全栈架构**的校园综合服务平台 · 单套代码同时适配桌面端与移动端，并封装为可安装的 **Android 应用（APK）**
 
 **在线地址**：<https://c.9o.pw>　|　**技术栈**：Vue 3 · Element Plus · EdgeOne Pages（Edge + Node Functions）· TiDB Cloud Serverless
 
@@ -156,6 +156,7 @@
 | 数据库 | **TiDB Cloud Serverless**（MySQL 兼容） | 40 张表，强一致事务；连接走 TLS |
 | 外部集成 | keaidang mail 邮件开放 API（校园邮箱收发） | 可选，未配置时邮箱模块自动降级提示 |
 | 测试 | Vitest（单测）+ ESLint（flat config）+ 自研线上 e2e + 导入自检 + 数据体检 + AI 层连库检查 + README 自检 | `npm run check` 一条命令七段（见 §八）|
+| App 壳 | **Capacitor 7**（远程壳）→ Android APK | 包名 `com.keaidang.zhihuicampus`；`server.url` 指向线上站点，同源使前端**零改动**；见 §7.8 |
 | 部署 | EdgeOne Pages：Git 推送 → 自动构建部署 | 见 §7 |
 
 ---
@@ -356,6 +357,40 @@ git reset --hard <tag> && git push -f origin main   # 硬回退到某个 tag
 
 EdgeOne 会按新 HEAD 自动重新部署，约 3 分钟回到目标状态。仓库中保留了关键节点的 tag（如 `pre-home-redesign`）作为还原点。
 
+### 7.8 App（Android）打包
+
+多端策略（ADR-8）的落地：以 **Capacitor 7 远程壳**封装成可安装的 Android 应用，替代原小程序计划。
+
+| 项 | 值 |
+|---|---|
+| 壳方案 | Capacitor 7.6.9，`capacitor.config.json` 的 `server.url=https://c.9o.pw` |
+| 包名 / 标签 | `com.keaidang.zhihuicampus` / 智汇校园 |
+| SDK | minSdk 23 · targetSdk 35 · compileSdk 35 |
+| 前端改动 | **零** —— 前端请求全走相对路径 `/api/*`，远程壳下 WebView 的源即线上站点，同源天然成立 |
+
+```bash
+npm install
+npm run app:build     # vite build → cap sync android → cap build android --androidreleasetype APK
+# 产物：android/app/build/outputs/apk/release/app-release.apk（签名 release）
+# 调试包：cd android && ./gradlew assembleDebug
+```
+
+前置环境：**JDK 21**、**Android SDK**（`platform-tools` + `platforms;android-35` + `build-tools;35.0.0`，并设置 `ANDROID_HOME`）、在 `android/local.properties` 写入 `sdk.dir`。
+
+release 签名凭据放 `android/keystore.properties` 与 `android/keystore/*.jks`（**两者均已 gitignore，密钥严禁入库**；缺失时 `android/app/build.gradle` 自动跳过签名配置，不阻断构建）：
+
+```bash
+keytool -genkeypair -keystore android/keystore/zhihui-campus.jks -alias zhihui-campus \
+  -keyalg RSA -keysize 2048 -validity 10000 -storepass <密码> -keypass <密码> \
+  -dname "CN=Zhihui Campus, OU=Graduation Project, O=Qingbei University, L=Nanjing, ST=Jiangsu, C=CN"
+```
+
+> 本仓库实测产物：`release/zhihui-campus-1.0-debug.apk`（8.5 MB）与 `release/zhihui-campus-1.0-release.apk`（7.6 MB，`apksigner verify` 通过）。`release/` 为构建产物目录，已 gitignore。
+>
+> ⚠ 远程壳需联网才能显示界面、且无原生能力（不做推送/相机等）；iOS 上架 App Store 会撞 Guideline 4.2（Minimum Functionality），仅本地安装/答辩演示无影响。
+>
+> **壳内行为（v1.1 已修）**：① **返回键**在 WebView 内回退（等价浏览器「后退」，回上一级菜单），仅在首页/无历史时才退出应用；② **顶部不再被系统状态栏遮挡** —— 启用 Capacitor 内置 `android.adjustMarginsForEdgeToEdge: "auto"`（Android 15+ 强制 edge-to-edge 的官方适配开关），状态栏区域取站点主背景色 `#f0f7ff` + 深色图标。两处均为**纯原生改动**（`MainActivity` + `capacitor.config.json` + 主题），前端零改动、无需重新部署站点。
+
 ---
 
 ## 八、测试与质量保障
@@ -364,7 +399,7 @@ EdgeOne 会按新 HEAD 自动重新部署，约 3 分钟回到目标状态。仓
 
 ```bash
 npm run check        # = lint → 单测 → 导入自检 → 库体检 → AI 层检查 → 线上 e2e → README 自检（七段）
-
+name
 npm run lint         # ESLint（仅错误级规则，拦截真实缺陷而非风格噪音）
 npm test             # Vitest 单测
 npm run check:db     # 数据库 SQL 冒烟 + 数据一致性体检 + 项目盘点（只读）

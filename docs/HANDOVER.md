@@ -562,7 +562,7 @@
 | **Element Plus 按需引入** | ✅ 已完成（2026-09-21）：EP 单包 1088KB→最大 chunk 172KB、gzip 341KB→~145KB，见铁律 #33 |
 | ~~uni-app 小程序端~~ | ❌ **已决策砍掉**（2026-09-20）→ 替代为「移动端 H5 适配 + App 壳封装」，理由见 PRD §4 |
 | **移动端 H5 适配**（替代方案主体） | ✅ 已上线（门户壳汉堡+抽屉 / 表单与对话框全宽 / 网格 minmax(0,1fr) / 五页溢出归零；PC 端实测"移动端 DOM 数=0、侧栏仍 196px"零改动）**＋2026-10-10 追加两轮**：① 主界面 `.shell-bg` 在 ≤768px 切竖版背景图（此前漏切，横版 `cover` 到竖屏后两侧被裁 870px，看着像"加载不出来"，铁律 #58）② **全站 AI 模块手机端适配**（AIView/AiOrb/AiAdminView/ApproveView/LibraryView：`100dvh`、`min(72dvh,560px)`、iPhone 底部安全区、宽表格横向惯性滑动、输入框 16px 防 iOS 自动缩放） |
-| App 壳封装出 APK | ❌ 未开始（本机无 Java/Android SDK/Gradle，须云打包或另配工具链；PWABuilder 在线 TWA 为零环境首选路径，见第 8 节） |
+| **App 壳封装出 APK** | ✅ **已完成（2026-10-15）**：Capacitor 7.6.9 **远程壳**（`capacitor.config.json` 的 `server.url=https://c.9o.pw`，同源 → 前端**零改动**），包名 `com.keaidang.zhihuicampus`、标签「智汇校园」、minSdk 23 / targetSdk 35；本机自装工具链（JDK 21 + Android SDK 35 + Gradle 8.11.1）出包，**debug 8.5MB / 签名 release 7.6MB**，图标与启动图已换校徽；`npm run app:build` 一键重建，产物落 `release/`（已 gitignore）。口径见 ARCHITECTURE ADR-8 与 README §7.8 |
 | 全流程演示彩排 | ❌ 未开始（论文正文已成稿：Desktop/论文初稿10.6.docx 为唯一权威版） |
 
 ## 8. 下一步建议（优先级序）
@@ -573,11 +573,12 @@
    - **体检结论见 `docs/AUDIT-2026-10-10-AI.md`**（越权 / 静默错误 / 总开关失效 / 频控 TOCTOU 四类问题的发现与修复）。
    - **✅ 上游阻塞已解除**（2026-10-10 充值后复测通过，此前的 `400 Arrearage` 结论已作废，勿再当阻塞项）。**仍需补跑的复验项**：`working/final-check.mjs`（C13 线上最终验收 5 项：计数类必须给单值 + 越权防线）与 `npm run eval:ai`（效果评估跑分）。
    - **★ 排查教训**：欠费期 AI 全挂表现为 49430 + 兜底文案，我曾把它归为「上游聚合网关抖动」——**那是错的，它是账单问题**。可借鉴的改进已落地：上游错误分类落库（`upstream.http.arrearage`），不识别的归 `unknown`。通用判据：**被降级兜住的问题不等于解决了**，兜住只是止血，根因要查到底（见铁律 #48）。
-1. **【移动端】H5 适配已完成 ✅，仅剩 App 壳打包**（替代原 uni-app 小程序计划，2026-09-20 用户决策）：
+1. **【移动端】H5 适配 ✅ + App 壳打包 ✅ 均已完成**（替代原 uni-app 小程序计划，2026-09-20 用户决策；App 壳 2026-10-15 闭环）：
    - **为什么不做小程序**：①个人主体不能用 web-view（微信官方限制"仅支持非个人主体配置业务域名"）②纯 web-view 套壳极易被拒审（驳回原文"首页仅有一个 web-view、无小程序原生功能"，要求原生功能占视口 ≥15%）③小程序自身从 2023-09 起也强制 ICP 备案，教育类目对个人主体限制多
    - **为什么不能直接复用前端**：Element Plus 是 DOM 组件库，小程序无 DOM；Vue Router / Pinia / lucide / 现有 CSS 主题全需替换。**可复用的只有 Node Functions API + TiDB 表结构 + 外部集成**
    - **已完成**：`src/mobile.css`（媒体查询层，PC 零影响）+ `src/utils/device.js`（`useIsMobile`）+ PortalShell 汉堡与抽屉（`v-if="isMobile"`）+ 移动端网格单列化/溢出修复 + 表单对话框全宽 + 附带的驾驶舱 `[object Object]` 修复
-   - **⚠ 打包 APK 环境现状**：本机**无 Java / Android SDK / Gradle**，无法本地出包。三条路径：Capacitor（需装 Android Studio）、**PWABuilder**（先把站点 PWA 化再加 manifest+SW，在线生成 TWA 版 APK，零本地环境）、**HBuilderX 云打包**（webview 壳，需 DCloud 账号）。注意 iOS 上架 App Store 会撞 Guideline 4.2（纯 webview 无原生能力必被拒），只做本地安装/演示则无影响
+   - **✅ APK 打包已完成（2026-10-15）**：采用 **Capacitor 7.6.9 远程壳**——`server.url=https://c.9o.pw` 让 WebView 直接加载线上站点，**同源使前端相对路径 `/api` 天然成立 → 前端零改动**（若改「本地打包 dist」则必须把 API 基址改成绝对地址，会触碰 `src/api/request.js` 核心链路，故不采用）。工具链本机自装（`apt install openjdk-21-jdk-headless unzip zip` + Android cmdline-tools → `platform-tools / platforms;android-35 / build-tools;35.0.0`，`ANDROID_HOME=/opt/android-sdk`，`android/local.properties` 写 `sdk.dir`）。出包命令：`npm run app:build`（= `vite build` → `cap sync android` → `cap build android --androidreleasetype APK`，产出**签名 release**）或 `cd android && ./gradlew assembleDebug|assembleRelease`。产物落 `release/`（已 gitignore）。release 签名凭据在 `android/keystore.properties` + `android/keystore/*.jks`（**均 gitignore，密钥严禁入库**）。⚠ 远程壳属"薄壳"，无原生能力，iOS 上架 App Store 会撞 Guideline 4.2，本地安装/演示无影响
+   - **★ v1.1 两处体验修复（2026-10-15，纯原生改动，前端零改动）**：① **返回键一按就退出应用**——Capacitor 7 未装 `@capacitor/app` 时返回键走 Android 默认实现直接 `finish()` Activity；已在 `MainActivity` 注册 `OnBackPressedCallback`，优先 `getBridge().getWebView().goBack()` 回退上一路由（Vue Router history → popstate），无历史时才交回系统默认。② **顶部被系统状态栏遮挡**——`targetSdk 35` 在 Android 15+ 被强制 edge-to-edge；已启用内置 `android.adjustMarginsForEdgeToEdge: "auto"`，并把 `AppTheme.NoActionBar` 的窗口背景由 `@null` 改为 `#f0f7ff` + `windowLightStatusBar=true`（否则让出的状态栏条会露黑条）。改完须**重新出包**（`npm run app:build`），APK 版本已升到 `versionCode 2 / versionName 1.1`
    - **移动端验收方法**（可复用）：`node .shots/capture.mjs`（Playwright + 系统 Edge；本地 preview 把 `/api/*` 用 `route.fetch` 转发到线上；断言 `document.documentElement.scrollWidth === innerWidth` 且 PC 视口下 `.shell-burger` 数量为 0）
 2. **【低成本·见效快】图书封面补齐**：420 本全无封面。可用 picsum 随机图或按分类生成占位图，仅改 seed 脚本 + `lib_book.cover_url`。
 3. **【低成本】邮箱增强**：附件上传发信（keaidang mail 支持 attachment）、管理员邮箱用量统计页。

@@ -16,7 +16,7 @@
 ```
 全部跑在 EdgeOne Pages 上：
   ├─ Vue 3 前端（响应式） → Pages 静态托管（全球 CDN，同一产物适配桌面宽屏/移动窄屏）
-  ├─ App 壳              → 现有 H5 封装（Capacitor / TWA / 云打包 APK，见 ADR-8）
+  ├─ App 壳（已实现）     → Capacitor 7 远程壳，Android APK（2026-10-15 落地，见 ADR-8）
   ├─ Edge Functions      → 边缘原生轻端点（KV 访问统计/诊断）、静态内容边缘缓存
   ├─ Node Functions      → 核心业务 API（连 MySQL）+ 入口限流（登录/注册/找回等）
   ├─ KV                  → 访问统计计数、功能开关、热数据计数
@@ -88,6 +88,19 @@
 - **为什么不能直接复用前端代码**：Element Plus 是 DOM 组件库，小程序无 DOM；Vue Router / Pinia / lucide / 现有 CSS 主题全需替换。可复用的只有 **Node Functions API + TiDB 表结构 + 外部集成**（`wx.request` 无同源限制，但需在小程序后台配「服务器域名」白名单）
 - **新方案**：同一套 Vue 构建产物做响应式（桌面宽屏 / 移动窄屏共用），App 端由现有 H5 封装成壳。**零主体门槛、零审核**，同样可在答辩演示"多端共用一套后端"
 - **代价与注意**：① 需改造门户壳（窄屏抽屉菜单）与 14 个 el-table 页面；② App 壳仅封装、无原生能力，iOS 上架 App Store 会撞 Guideline 4.2（Minimum Functionality），只做本地安装/演示则无影响；③ 本机无 Java/Android SDK/Gradle，出包需云打包或另配工具链
+- **✅ 实施落地（2026-10-15，Capacitor 7.6.9 远程壳）**：
+  - **方案选型**：采用**远程壳**（`capacitor.config.json` → `server.url=https://c.9o.pw`）而非「本地打包 dist」。判据：前端全部请求走**相对路径** `/api/*`（`src/api/request.js` 的 `fetch(url)`），远程壳下 WebView 的源即 `c.9o.pw`，**同源天然成立、前端零改动**；而本地打包模式的源是 `https://localhost`，必须把 API 基址改成绝对地址，会触碰认证/请求核心链路，收益不抵风险
+  - **工程产物**：`capacitor.config.json`（appId `com.keaidang.zhihuicampus` / appName「智汇校园」/ webDir `dist`）+ `android/`（Capacitor 生成的 Gradle 工程，**应入库**；构建产物由 `android/.gitignore` 排除）+ 依赖 `@capacitor/{core,android}@^7.6.9` 与 `@capacitor/cli@^7.6.9`（devDep）
+  - **工具链**（本机自装，前述"无 Java/SDK/Gradle"的结论已被此步取代）：JDK 21（apt）+ Android cmdline-tools（`platform-tools` / `platforms;android-35` / `build-tools;35.0.0`，`ANDROID_HOME=/opt/android-sdk`，`android/local.properties` 写 `sdk.dir`）+ Gradle 8.11.1（wrapper 自动拉取；AGP 8.7.2，与 Capacitor 7 的 compileSdk 35 匹配）
+  - **构建命令**：`npm run app:build`（`vite build` → `cap sync android` → `cap build android --androidreleasetype APK`）一键出**签名 release APK**；调试包用 `cd android && ./gradlew assembleDebug`。产物统一复制到 `release/`（gitignore）
+  - **签名**：`android/app/build.gradle` 从 `android/keystore.properties` 读凭据（缺失则自动跳过签名配置、不阻断构建）；`keystore.properties` 与 `*.jks` 均 gitignore —— 与"密钥严禁入库"铁律一致
+  - **品牌**：应用图标（自适应前景 + 传统方形/圆形）与启动图由 `public/logo.webp` 生成，底色取站点主背景 `#f0f7ff`
+  - **实测产物**：`app-debug.apk` 8.5 MB / `app-release.apk` 7.6 MB（`apksigner verify` 通过，证书 CN=Zhihui Campus）；`aapt dump badging` 确认包名、标签、minSdk 23 / targetSdk 35、INTERNET 权限与启动 Activity 齐备
+  - **已知边界**：远程壳必须联网才能显示界面（纯在线壳）、无原生能力（不做推送/相机等）；答辩口径为"App 壳封装 + 多端共用一套后端"
+  - **★ 2026-10-15 壳内两处体验修复（APK v1.1，均为纯原生改动 → 前端零改动、无需重新部署）**：
+    - **① 返回键不再直接退出应用**：Capacitor 7 在**未安装 `@capacitor/app` 插件**时，返回键走 Android 默认实现直接 `finish()` 掉 Activity（用户实测"一按返回就退出，回不到上一级菜单"）。修法：在 `MainActivity` 注册 `OnBackPressedCallback`，**优先 `webView.goBack()`**（前端是 Vue Router history 模式，goBack 触发 popstate 正常切回上一路由），仅当 `canGoBack()` 为 false（已到首页/无历史）时才交回系统默认行为。刻意**不引入 `@capacitor/app` 依赖**：既少一个依赖，也避免"前端改完还得重新部署 EdgeOne 才生效"
+    - **② 顶部不再被系统状态栏遮挡**：`targetSdk 35` 在 Android 15+ 被系统**强制 edge-to-edge**，WebView 内容顶到屏幕最顶端、与状态栏重叠。修法：启用 Capacitor **内置**开关 `android.adjustMarginsForEdgeToEdge: "auto"`（7.1.0+ 提供；官方口径：在 Android 15 且未设置 `windowOptOutEdgeToEdgeEnforcement` 时，自动为 WebView 调整边距），使内容整体让出状态栏/导航栏区域；配套把窗口背景由 `@null` 改为站点主背景色 `#f0f7ff` 并置 `windowLightStatusBar=true`，让让出的状态栏条与前端顶栏观感一致（否则 `@null` 会露出黑条）
+    - 排查依据：`BridgeActivity` 源码**未**覆写 `onBackPressed`、`capacitor.plugins.json` 为 `[]`（无原生插件）→ 确认返回键无任何接管；`CapConfig` 源码含 `adjustMarginsForEdgeToEdge` 字段（默认 `disable`，Capacitor 8 将改为 `auto`）
 
 ### ADR-9 AI 能力融合：qwen3.8-omni-flash（阿里云）+ lib/ai.js 统一出口（2026-10-09 定版，同日修订，未实施）
 

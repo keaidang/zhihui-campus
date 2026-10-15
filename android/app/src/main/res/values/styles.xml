@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <!-- Customize your theme here. -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <!-- 窗口背景：Android 15+ 强制 edge-to-edge 时，WebView 被让出的状态栏/导航栏区域由它填充
+             （原模板是 @null → 会露出黑条）。取站点主背景色，与前端顶栏观感一致。 -->
+        <item name="android:background">#f0f7ff</item>
+        <!-- 浅色底 → 状态栏使用深色图标（否则深色模式下白字压浅底，看不清） -->
+        <item name="android:windowLightStatusBar">true</item>
+        <!-- Android ≤14 非 edge-to-edge 时，系统状态栏自身的底色（与窗口背景保持一致） -->
+        <item name="android:statusBarColor">#f0f7ff</item>
+    </style>
+
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+    </style>
+</resources>

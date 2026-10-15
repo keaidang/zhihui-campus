@@ -57,6 +57,15 @@ dist.old-tmp/
 build/
 .unpackage/
 
+# App（Capacitor）打包产物：本地产物不入库；重建方式见 README「App 打包」一节
+release/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/keystore/
+
 # 系统文件
 .DS_Store
 Thumbs.db

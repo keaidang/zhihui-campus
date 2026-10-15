@@ -12,6 +12,8 @@
 - **AI 融合已落地（2026-10-12：C1~C18 共 18 项能力全量上线）**：模型 **qwen3.8-omni-flash**（阿里云 DashScope 兼容网关，实测上下文 40 万字、`reasoning_content` 独立字段）。唯一口径见 **ARCHITECTURE ADR-9**，能力清单与验收见 **AI-FEATURES.md**。**⚠ 开发测试期只用文本输入输出、禁碰多模态（计费高）；思考模式默认关**。新增落地：C14（对话式业务直达）、C15（智能公文邮件助理）、C16（智能排课选课避坑）、C17（数据驾驶舱态势简报）、C18（知识库规章长文切分入库）。首页与控制台同步更新为 18 项能力，全站单测 23 套件 436 项全绿。
 - **真实业务数据千人规模扩充（2026-10-12 落地）**：TiDB 免费层（5 GiB）无成本扩容，全校注册用户升至 **1,002 人**（学生 883、教师 65、校领导 39、辅导员 15、超管 1），涵盖 30 个教学班、881 个宿舍床位、9,751 条选课与历史成绩、300 笔请假、200 笔报修、311 笔图书借还、104 条论坛帖及 126 封站内信。数据一致性体检与 AI 问答/问数评估 100% 通过。
 - **首屏白屏修复（2026-10-12）**：#app 内静态内嵌启动页 + 挂载门控改为等「会话恢复 ∧ 首个路由就绪」+ 会话用户字段收敛到 `lib/user-profile.js`（会话恢复 2 次串行往返 → 1 次）。实测未登录 2.4s / 已登录 3.3s 出内容，等待期全程有品牌启动页。见 **PERFORMANCE.md §7** 与 **HANDOVER 铁律 #64**
+- **App 壳（Android）已出包（2026-10-15）**：Capacitor 7 远程壳，`npm run app:build` 一键重建；产物 `release/zhihui-campus-1.0-{debug,release}.apk`（debug 8.5MB / 签名 release 7.6MB）。至此 PRD §5 验收清单**全部打勾**（此前唯一遗留的"App 壳打包"已闭环）。
+- **App 壳体验修复（2026-10-15，v1.1）**：用户实机反馈两处问题，均已修复（**纯原生改动，前端零改动**）——① **返回键一按就退出**：Capacitor 7 无 `@capacitor/app` 插件时返回键直接 finish Activity → 改在 `MainActivity` 用 `OnBackPressedCallback` 优先 `webView.goBack()` 回退上一路由；② **顶部被系统状态栏遮挡**：targetSdk 35 在 Android 15+ 强制 edge-to-edge → 启用内置 `adjustMarginsForEdgeToEdge: "auto"` + 窗口背景改 `#f0f7ff` + `windowLightStatusBar`。详见 ARCHITECTURE ADR-8「壳内两处体验修复」
 - 新会话/新 Agent 开工：**先读 docs/HANDOVER.md**
 
 - 2026-09-16：TiDB Cloud Starter 集群 `biyesheji`（ap-southeast-1）创建完成
@@ -72,7 +74,7 @@
 
 ### 阶段 5 · 收尾（未开始，全部剩余项集中在此）
 - [x] **移动端 H5 适配**（2026-09-20 完成）——① 门户壳汉堡 + 抽屉菜单（移动端专属，用 `v-if="isMobile"`，PC 视口下 DOM 根本不存在）② 表单与对话框窄屏全宽化 ③ 网格改 `minmax(0,1fr)` + flex 传导链阻断，五个代表页横向溢出归零 ④ 新增 `src/mobile.css` 独立适配层（只含媒体查询，PC 零回归 —— 铁律 #27/#28）
-- [ ] **App 壳封装出 APK**（⚠ 本机无 Java / Android SDK / Gradle，须走云打包（PWABuilder / HBuilderX 云打包）或在有 Android Studio 的机器上做）
+- [x] **App 壳封装出 APK**（**2026-10-15 完成**）：Capacitor 7.6.9 **远程壳**方案（`server.url=https://c.9o.pw`，同源天然成立 → 前端零改动），包名 `com.keaidang.zhihuicampus`、标签「智汇校园」、minSdk 23 / targetSdk 35。本机自装工具链（JDK 21 + Android SDK 35 + Gradle 8.11.1）出包：**debug 8.5MB + 签名 release 7.6MB**，图标/启动图已换为校徽；`npm run app:build` 一键重建。产物落 `release/`（gitignore）。口径见 ARCHITECTURE ADR-8 与 README §7.8
 - [ ] 全流程演示彩排（演示前须先预热 TiDB，见"已知坑"冷启动条）
 - [ ] 论文正文（开题报告 2026-09-20 已定稿约 6000 字；正文三章核心素材：选课并发控制 / 审批流引擎 / 云边协同）
 - [ ] 图书封面补齐（420 本**全部** `cover_url` 为空，当前显示首字占位）

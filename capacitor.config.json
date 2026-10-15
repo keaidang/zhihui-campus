@@ -1,0 +1,16 @@
+{
+  "appId": "com.keaidang.zhihuicampus",
+  "appName": "智汇校园",
+  "webDir": "dist",
+  "server": {
+    "url": "https://c.9o.pw",
+    "androidScheme": "https",
+    "allowNavigation": ["c.9o.pw", "*.c.9o.pw"]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#f0f7ff",
+    "webContentsDebuggingEnabled": false,
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
