@@ -27,6 +27,14 @@ export async function onRequestGet(context) {
     const features = enabled ? resolveFeatures(roles, cfg, configured) : {};
     const variant = variantOf(roles);
 
+    // ★ 动作清单必须按**注册表**返回，而不是挂在 `features.adminAction` 上（2026-10-20 修复）。
+    //   原因：`adminAction` 的 roles 只有 admin，而注册表里 counselor 有 9 个、teacher 有 3 个动作
+    //   （禁用/启用本院账号、批准/驳回请假、发/撤公告）。原写法让这两个角色拿到空数组，
+    //   前端 `routeOf()` 因此永远走"纯问答"分支 —— **后端支持、页面上却用不了**，
+    //   用户感受到的就是"审批请假怎么说都没用"。
+    const actionSwitch = cfg['ai.admin_console.enabled'] === undefined ? true : String(cfg['ai.admin_console.enabled']) === '1';
+    const actionList = configured && enabled && actionSwitch ? actionCatalog({ userId: 0, roles }) : [];
+
     return ok({
       ...aiMeta(), // { provider, model, configured }
       role: roles[0] || 'student',
@@ -37,7 +45,9 @@ export async function onRequestGet(context) {
       features,
       catalog: featureCatalog(roles, features),
       // C5：该角色可用的系统操作白名单（前端据此渲染"能力清单"；无权限时为空数组）
-      actions: features.adminAction ? actionCatalog({ userId: 0, roles }) : [],
+      actions: actionList,
+      // 动作注册表对全员可见的能力项（前端用来决定是否走"指令"链路）
+      canAct: actionList.length > 0,
       // C6：该角色可用的问数模板（校领导/管理员）
       insights: features.insight ? insightCatalog({ userId: 0, roles }) : [],
       suggestions: features.chat ? suggestionsFor(variant) : [],

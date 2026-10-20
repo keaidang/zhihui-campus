@@ -19,9 +19,10 @@ import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { identityBlock, loadIdentity } from '../../lib/ai-identity.js';
 import { KB_PROFILE, buildKnowledgeContext } from '../../lib/ai-kb.js';
 import { buildAnswerSystem } from '../../lib/ai-prompt.js';
-import { ACTIONS, actionCatalog, actionPromptFor, executeConfirmedAction, previewWriteAction, runReadAction } from '../../lib/ai-actions.js';
+import { ACTIONS, actionCatalog, actionPromptFor, canTrigger, executeConfirmedAction, previewWriteAction, runReadAction } from '../../lib/ai-actions.js';
 import { canInsight, entityPromptSections, insightPromptFor, runInsight } from '../../lib/ai-insight.js';
 import { runStructuredQuery } from '../../lib/ai-query.js';
+import { classifyIntent, extractTargets, hasUsableParams, mergeParams, slotsForAction } from '../../lib/ai-intent.js';
 
 export { preflight as onRequestOptions };
 
@@ -167,9 +168,35 @@ export async function onRequestPost(context) {
       costMs: Date.now() - t0,
     });
 
-    const key = parsed.action === null || parsed.action === undefined ? null : String(parsed.action);
-    const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
+    // ---- 规则层：确定性意图 + 槽位（模型没抽到 / 抽反时兜底）----
+    // ★ 为什么必须有这一层（2026-10-20 用户反馈"说姓名没用、很多说法都用不了"）：
+    //   单靠模型抽参，措辞一变（"把假批了""给过了吧"）或把姓名塞错字段（usernames vs keyword）
+    //   就会得到"没有匹配到可操作的目标"。规则层是**纯文本匹配**，不依赖模型稳定性，
+    //   并且只提供候选 —— 最终命中仍由服务端 SQL + 数据范围决定（不新增越权面）。
+    const rule = classifyIntent(text);
+    const modelParams = parsed.params && typeof parsed.params === 'object' ? parsed.params : {};
 
+    let key = parsed.action === null || parsed.action === undefined ? null : String(parsed.action);
+    let via = 'model';
+    const ruleUsable = Boolean(rule && ACTIONS[rule.action] && canTrigger(actor, ACTIONS[rule.action]));
+    if (!key || !ACTIONS[key]) {
+      // 模型说"这不是一条指令"或给了不存在的 key → 规则层接住
+      if (ruleUsable) {
+        key = rule.action;
+        via = 'rule';
+      }
+    } else if (ruleUsable && rule.action !== key) {
+      // 模型选的动作与规则判断不一致：只在"模型什么都没抽到"或"规则非常确定（≥4 分）"时纠偏，
+      // 避免为了覆盖长尾而把模型正确的判断改坏。
+      if (!hasUsableParams(modelParams) || rule.score >= 4) {
+        key = rule.action;
+        via = 'rule_override';
+      }
+    }
+
+    // 槽位合并：模型优先、规则补空；与动作无关的候选一律丢弃
+    const slots = ruleUsable ? slotsForAction(extractTargets(text), key) : {};
+    const params = mergeParams(modelParams, slots);
     // ★ 计数兜底：模型选了"列表型"动作但用户明显只想要个数时，改成计数。
     //   例："一共有多少个账号" → 模型选 query_users（列表）→ 这里改成只返回总数。
     //   判定刻意保守：必须同时满足「模型没给 countOnly」+「原句含计数词」，
@@ -261,7 +288,7 @@ export async function onRequestPost(context) {
       //   漏传时即使服务端算出了总数（如 query_users 的 countOnly → 101），
       //   前端仍会渲染那 1 行表格 —— 用户问"有多少"却看到表格，正是要修的那个问题。
       return ok({
-        intent: { action: key, label: def.label },
+        intent: { action: key, label: def.label, via },
         kind: 'read',
         rows: r.rows || [],
         summary: r.summary || '',
@@ -276,13 +303,13 @@ export async function onRequestPost(context) {
     //   只是"重复了一次没有意义的操作"（2026-10-10 用户反馈"回的是找不到"）。
     if (p.noop) {
       return ok({
-        intent: { action: p.action, label: p.label },
+        intent: { action: p.action, label: p.label, via },
         kind: 'none',
         reply: p.noop,
         skipped: p.noopSkipped,
       });
     }
-    return ok({ intent: { action: p.action, label: p.label }, kind: 'write', preview: p.preview, confirmToken: p.confirmToken });
+    return ok({ intent: { action: p.action, label: p.label, via }, kind: 'write', preview: p.preview, confirmToken: p.confirmToken });
   } catch (e) {
     return jsonError(e);
   } finally {

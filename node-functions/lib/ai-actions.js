@@ -42,7 +42,12 @@ const withLabel = (list) => (list || []).map((u) => ({ ...u, label: brief(u) }))
 
 /** 把"学生姓名/账号"这类关键字统一成 findUsers 的筛选 */
 const userFilters = (p = {}) => ({
-  keyword: p.keyword ? String(p.keyword).slice(0, 32) : '',
+  // 模型有时把姓名放在 names 数组里（而不是 keyword），这里统一收口
+  keyword: p.keyword
+    ? String(p.keyword).slice(0, 32)
+    : Array.isArray(p.names) && p.names[0]
+      ? String(p.names[0]).slice(0, 32)
+      : '',
   role: p.role ? String(p.role).slice(0, 32) : '',
   status: p.status === 0 || p.status === '0' ? '0' : p.status === 1 || p.status === '1' ? '1' : '',
 });
@@ -59,7 +64,7 @@ const userFilters = (p = {}) => ({
  * @param {string} raw
  * @returns {string[]} 候选（首个是原样，其余是收窄后的）
  */
-const NAME_NOISE = /(的)?(账号|帐号|账户|用户|老师|同学|学生|教师|工号|学号|这条|那条|这个|那个)/g;
+const NAME_NOISE = /(的)?(账号|帐号|账户|用户|老师|同学|学生|教师|工号|学号|这条|那条|这个|那个|请假单|请假条|请假|假条|假单|销假|病假|事假|审批|申请|记录|单号|编号)/g;
 export function nameVariants(raw) {
   const s = String(raw ?? '').trim().slice(0, 64);
   if (!s) return [];
@@ -111,6 +116,35 @@ async function resolveUserTargets(actor, p = {}) {
       }
     }
     return { targets: withLabel(found), warnings };
+  }
+
+  // ---- 情况 A2：没给 usernames，但给了姓名/关键字（模型与规则层最常见的两种写法）----
+  // ★ 原实现走到这里会直接抛「请说明要对哪些账号执行」——
+  //   于是「禁用方欣雪」「把 teacher01 停用」这类**看起来再明确不过**的话被拒绝。
+  //   现在按"≤5 个算明确目标、>5 个要求收窄"处理：既能用，又不会一句话批量误伤。
+  //   ⚠ 只有真的带了姓名/关键字才走这条；完全没给范围时仍按原口径引导（防"一句话把全校禁了"）。
+  const nameHints = [...(Array.isArray(p.names) ? p.names : []), p.keyword].filter(Boolean);
+  if (!p.all && nameHints.length) {
+    const cands = nameHints.flatMap(nameVariants).slice(0, 8);
+    for (const c of [...new Set(cands)]) {
+      const rows = await findUsers(actor, { ...userFilters({ keyword: c }), limit: 6 });
+      if (!rows.length) continue;
+      if (rows.length > 5) {
+        throw new HttpError(
+          49402,
+          `关键字「${c}」匹配到 6 个以上账号，请给出具体账号名或加角色范围（例如"所有学生"）`,
+        );
+      }
+      return {
+        targets: withLabel(rows),
+        warnings: [`按关键字「${c}」匹配到 ${rows.length} 个账号，请核对清单后确认`],
+      };
+    }
+    const name = cands[0] || '';
+    const near = name ? await suggestUsers(actor, name) : '';
+    warnings.push(`未找到账号（或不在你的数据范围内）：${name}`);
+    if (near) warnings.push(`你要找的是不是：${near}`);
+    return { targets: [], warnings };
   }
 
   // ---- 情况 B：按筛选批量 → 必须显式 all:true ----
@@ -241,11 +275,13 @@ export const ACTIONS = {
     params: {
       status: { type: 'enum', values: ['1', '2', '3', '4'], desc: '1=审批中 2=已批准 3=已驳回 4=已销假' },
       keyword: { type: 'string', desc: '学生姓名/学号关键字' },
+      names: { type: 'array', desc: '学生姓名候选（可多个）' },
     },
     run: async (actor, p) => {
       // ★ 关键字下推到 SQL：原实现是"先取最新 100 条、再内存过滤"，
       //   当待审批超过 100 条时，点名更早的单子会查不到（2026-10-20 实测 113 条）。
-      const kw = String(p.keyword || '').trim();
+      //   姓名候选（规则层抽出 / 模型给在 usernames 里）也在这里统一收口。
+      const kw = String(p.keyword || (Array.isArray(p.names) ? p.names[0] : '') || (Array.isArray(p.usernames) ? p.usernames[0] : '') || '').trim();
       const r = await listLeaves(actor, {
         status: p.status ? String(p.status) : undefined,
         keyword: kw || undefined,
@@ -377,6 +413,7 @@ export const ACTIONS = {
     params: {
       leaveIds: { type: 'array', desc: '请假单号列表（数字）' },
       keyword: { type: 'string', desc: '学生姓名关键字，用于匹配待审批单据' },
+      names: { type: 'array', desc: '学生姓名候选（可多个，如 ["方欣雪"]）' },
       all: { type: 'boolean', desc: '是否批准【全部】待审批单据，必须为 true 才允许批量' },
       opinion: { type: 'string', desc: '审批意见（可选）' },
     },
@@ -407,6 +444,7 @@ export const ACTIONS = {
     params: {
       leaveIds: { type: 'array', desc: '请假单号列表（数字）' },
       keyword: { type: 'string', desc: '学生姓名关键字' },
+      names: { type: 'array', desc: '学生姓名候选（可多个）' },
       all: { type: 'boolean', desc: '是否驳回【全部】待审批单据' },
       opinion: { type: 'string', desc: '驳回原因' },
     },
@@ -458,7 +496,8 @@ export const ACTIONS = {
     desc: '撤回（下架）一条公告',
     params: { noticeId: { type: 'number', desc: '公告编号' } },
     resolve: async (actor, p) => {
-      const id = Number(p.noticeId);
+      // 编号可能被规则层抽成 noticeId，也可能被模型塞进 leaveIds（通用数字槽）
+      const id = Number(p.noticeId) || Number((Array.isArray(p.leaveIds) ? p.leaveIds[0] : 0)) || 0;
       if (!id) throw new HttpError(49402, '请给出要撤回的公告编号');
       // ★ 按 id 直接取 + 服务层权限校验；原实现是"拉最新 50 条再内存找"，
       //   公告一多，早先发的那条就永远撤不回（2026-10-20 同类缺陷一并修掉）。
@@ -482,7 +521,7 @@ export const ACTIONS = {
       on: { type: 'boolean', desc: 'true=置顶 false=取消置顶' },
     },
     resolve: async (actor, p) => {
-      const id = Number(p.noticeId);
+      const id = Number(p.noticeId) || Number((Array.isArray(p.leaveIds) ? p.leaveIds[0] : 0)) || 0;
       if (!id) throw new HttpError(49402, '请给出要操作的公告编号');
       // 同 revoke_notice：按 id 直接取，避免"只看得到最新 50 条"
       const hit = await loadNoticeForWrite(actor, id);
@@ -509,7 +548,7 @@ export const ACTIONS = {
       penalty: { type: 'boolean', desc: '是否同时对作者禁言' },
     },
     resolve: async (actor, p) => {
-      const id = Number(p.reviewId);
+      const id = Number(p.reviewId) || Number((Array.isArray(p.leaveIds) ? p.leaveIds[0] : 0)) || 0;
       if (!id) throw new HttpError(49402, '请给出要处置的审核记录编号');
       // ★ 按 id 直接取（原实现只扫最新 50 条，较早的记录永远处置不了）
       const hit = await getReviewRecord(id);
@@ -535,38 +574,78 @@ export const ACTIONS = {
 async function resolveLeaveTargets(actor, p = {}) {
   const warnings = [];
   const ids = Array.isArray(p.leaveIds) ? p.leaveIds.map(Number).filter(Boolean).slice(0, 200) : [];
-  const kw = String(p.keyword || '').trim().slice(0, 32);
 
-  if (!ids.length && !kw && !p.all) {
+  // ★ 姓名可能来自三个地方（keyword / names / usernames）——模型和规则层写法不统一。
+  //   统一"去噪 + 去重"后再查：`方欣雪的请假` → `方欣雪`，`教师账号xxx` 也顺带归一化。
+  const nameCands = [
+    ...new Set(
+      [...(Array.isArray(p.names) ? p.names : []), p.keyword, ...(Array.isArray(p.usernames) ? p.usernames : [])]
+        .filter(Boolean)
+        .flatMap(nameVariants)
+        .map((s) => String(s).trim().slice(0, 32))
+        .filter(Boolean),
+    ),
+  ]
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 8);
+
+  if (!ids.length && !nameCands.length && !p.all) {
     throw new HttpError(49402, '请说明要处理哪一条：给出单号、学生姓名，或明确说"全部待审批"');
   }
 
   // ★★ 过滤必须下推到 SQL，不能"先取最新 100 条再内存筛"。
   //   线上实测（2026-10-20）：待审批共 113 条，而 listLeaves 的 LIMIT 100 把
   //   第 101 条及其后的单子彻底挡在 AI 视野之外 —— 点名某个学生也照样"找不到"。
-  //   现在 keyword / 单号都由 SQL 过滤，limit 只用于"全部待审批"这类批量场景。
   const limit = p.all ? 200 : 100;
-  const r = await listLeaves(actor, {
-    status: '1', // 只对"审批中"的单子动手
-    keyword: kw || undefined,
-    ids: ids.length ? ids : undefined,
-    limit,
-  });
-  const pending = r.data.list;
+  let pending = [];
+  let usedName = '';
 
-  const matched = pending;
   if (ids.length) {
+    pending = (await listLeaves(actor, { status: '1', ids, limit })).data.list;
     const got = new Set(pending.map((x) => Number(x.id)));
     const missing = ids.filter((id) => !got.has(id));
     if (missing.length) warnings.push(`以下单号不在"审批中"状态或不在你的范围内：#${missing.join('、#')}`);
+  } else if (nameCands.length) {
+    // 逐个候选试（长候选优先），命中即停：`方欣雪` 命中后不再用更短的候选扩大范围
+    for (const c of nameCands) {
+      const r = await listLeaves(actor, { status: '1', keyword: c, limit });
+      if (r.data.list.length) {
+        pending = r.data.list;
+        usedName = c;
+        break;
+      }
+    }
+    if (!pending.length) {
+      const near = await suggestUsers(actor, nameCands[0]);
+      throw new HttpError(
+        49402,
+        `没有找到「${nameCands[0]}」名下"审批中"的请假单${near ? `。你要找的是不是：${near}` : '（可能已审批完，或不在你的数据范围）'}`,
+      );
+    }
+    if (usedName && usedName !== nameCands[0]) warnings.push(`按「${usedName}」匹配到请假单`);
+  } else {
+    pending = (await listLeaves(actor, { status: '1', limit })).data.list;
+  }
+
+  // ★ 姓名可能一次命中太多（例如只说"张"）→ 不静默批量，要求收窄。
+  //   这是"能听懂"和"别误伤"之间的分界：≤10 条直接进确认清单，>10 条先反问。
+  if (!p.all && !ids.length && pending.length > 10) {
+    const sample = pending
+      .slice(0, 5)
+      .map((x) => `#${x.id} ${x.real_name || x.username}`)
+      .join('、');
+    throw new HttpError(
+      49402,
+      `「${usedName || nameCands[0]}」匹配到 ${pending.length} 条待审批请假，范围太大。请给出单号或更完整的姓名，例如：${sample}`,
+    );
   }
   if (pending.length >= limit) {
     warnings.push(`符合条件的有 ${limit} 条以上，本次只处理最新的 ${limit} 条；要处理更多请分批发或指定姓名/单号`);
   }
 
-  if (!matched.length && !warnings.length) throw new HttpError(49402, '没有匹配到"审批中"的请假单');
+  if (!pending.length && !warnings.length) throw new HttpError(49402, '没有匹配到"审批中"的请假单');
   return {
-    targets: matched.map((x) => ({ id: x.id, real_name: x.real_name, label: `#${x.id} ${x.real_name || x.username} · ${x.type} · ${x.status_text}` })),
+    targets: pending.map((x) => ({ id: x.id, real_name: x.real_name, label: `#${x.id} ${x.real_name || x.username} · ${x.type} · ${x.status_text}` })),
     skipped: [],
     warnings,
   };

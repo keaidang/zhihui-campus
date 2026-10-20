@@ -296,13 +296,70 @@ return { targets: kept, skipped, warnings };                            // targe
 | `tests/unit/ai-actions.spec.js` | `nameVariants` 4 条 + 结构自检 2 条 |
 | `tests/unit/ai-hardening.spec.js` | 连库回归：批准请假（单号/姓名）、账号名归一化 |
 | `scripts/ai-check.mjs` | 新增第 7 节「写操作的目标解析」5 项（批准请假 ×2、>100 条可见性、账号名归一化、公告按 id 取），纳入 `npm run check:ai` |
+| `node-functions/lib/ai-intent.js` | **新增**：确定性意图识别 + 槽位抽取（`classifyIntent` / `extractNames` / `extractTargets` / `slotsForAction` / `mergeParams`），纯函数零 IO |
+| `node-functions/api/ai/status.js` | 动作清单改为按**注册表**返回（counselor 9 个 / teacher 3 个不再为空），新增 `canAct` |
+| `tests/unit/ai-intent.spec.js` | **新增 59 条**：33 种说法 → 动作、姓名候选、槽位、合并、按动作过滤 |
 
-## 6. 验证方式
+---
 
+## 7. ★ 追加（同日）：确定性意图层 —— 让"各种说法"都能对上指令
+
+**用户反馈**：「审批请假怎么说都很难实现，说姓名没用，感觉这些功能很多说法都用不了。」
+
+**问题本质**：在此之前，一句话能不能变成动作**完全押在模型抽参上**。模型的稳定性不受我们控制，
+于是同一意图换个说法（"把假批了""给过了吧"）就抽不出参数；把姓名塞错字段
+（`usernames` vs `keyword`）就必然落空。**这不是模型不够聪明，而是我们不该把"能不能用"押在它身上。**
+
+**新增 `lib/ai-intent.js`（纯函数、零 IO、可穷举单测）**
+
+| 能力 | 说明 |
+|---|---|
+| `classifyIntent(text)` | 动词（强 2 分 / 弱 1 分）+ 宾语（1 分）打分，**并列最高分时返回 null 交还模型**；必须"有动词 + （有宾语 或 有明确目标 或 两个强动词）"才算操作意图 |
+| `extractNames(text)` | 剥掉动词/宾语/噪声后剩下的 2~4 字中文片段即**姓名候选**（`通过方欣雪的请假` → `方欣雪`）；只是候选，命中仍由 SQL 判定 |
+| `extractTargets(text)` | 单号（标签位≥2 位 / 裸数字≥4 位）、账号（含数字的 ASCII）、请假状态、账号状态、批量、意见、公告标题/正文、公告与审核记录编号 |
+| `slotsForAction()` | 按动作过滤槽位：发公告时不会把"周末电"当人名去查库 |
+| `mergeParams()` | **模型优先、规则补空、数组取并集**（"方欣雪和唐晨凡"不会只处理一半） |
+
+**接入方式（`api/ai/action.js`）**：模型仍然是首选；只有两种情况规则层才接管 ——
+① 模型说"这不是指令"或给了不存在的 key；② 模型抽到了 action 但**参数全空**，
+或规则判断非常确定（≥4 分）却与模型不一致。响应里的 `intent.via` 会标注
+`model` / `rule` / `rule_override`，便于线上复盘。
+
+**同时修掉的两处"用不了"**：
+
+1. **辅导员/教师在页面上根本拿不到动作链路**：`api/ai/status.js` 原先把动作清单挂在
+   `features.adminAction`（其 roles 只有 admin）上，于是 counselor 的 9 个动作、teacher 的 3 个动作
+   在 `/api/ai/status` 里是空数组，前端 `routeOf()` 永远走"纯问答"分支 —— **后端支持、页面上却用不了**。
+   现在按注册表返回，并新增 `canAct` 字段。
+2. **"只给姓名"被当成"没给范围"拒绝**：`disable_users` 原本要求 `usernames` 或 `all:true`，
+   `{keyword:'方欣雪'}` 会直接抛「请说明要对哪些账号执行」。现在 ≤5 个命中即视为明确目标，
+   >5 个要求收窄 —— 既听得懂，又不会一句话批量误伤。
+
+**实测（规则层单独跑，**完全不调用模型**，只走 preview 不写库）**：
+
+```
+审批通过方欣雪的请假 → approve_leaves {"names":["方欣雪"]} → ✔ #2120413 方欣雪 · 病假 · 审批中
+把方欣雪的假批了     → approve_leaves {"names":["方欣雪"]} → ✔ 同上
+驳回方欣雪的请假     → reject_leaves  {"names":["方欣雪"]} → ✔ 同上
+给方欣雪过了吧       → approve_leaves {"names":["方欣雪"]} → ✔ 同上
+禁用教师账号teacher01 → disable_users {"usernames":["teacher01"]} → ✔ 王志远（teacher01）
+把teacher01停用      → disable_users {"usernames":["teacher01"]} → ✔ 同上
+禁用方欣雪           → disable_users {"names":["方欣雪"]} → ✔ 方欣雪（student580）
+看看待审批的请假     → query_leaves  {"status":"1"} → ✔ 113 条，显示前 50
+有多少个禁用的账号   → query_users   {"countOnly":"1","status":"0"} → ✔ 42 个
+```
+
+**安全边界没有松动**：规则层不知道 actor 是谁、不查库、不执行任何写操作；
+它只产出**候选**，命中与否由 SQL + `dataScope` 决定，写操作仍必须走预览 + 二次确认。
+新增 59 条单测（`tests/unit/ai-intent.spec.js`）覆盖 33 种说法 + 槽位/合并/过滤。
+
+---
+
+## 8. 验证方式
 ```bash
-npm test                 # 478 个单测（含本次新增 26 个），0 失败
+npm test                 # 536 个单测（本轮累计新增 85 个），0 失败
 npm run lint             # 0 error
-npm run check:import     # 101 个模块加载自检，0 失败
+npm run check:import     # 102 个模块加载自检，0 失败
 npm run check:ai         # 连真实库 21 项：21 通过 / 0 失败（含新增第 7 节）
 npm run build            # 构建通过
 ```
