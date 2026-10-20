@@ -9,6 +9,7 @@ import {
   PWD_MAX,
   isPasswordLengthOk,
   checkNewPassword,
+  resolveResetPassword,
 } from '../../node-functions/lib/password-rules.js';
 
 describe('isPasswordLengthOk · 长度边界', () => {
@@ -85,5 +86,44 @@ describe('★ 重构等价性：与重构前各入口的字面量规则一致', 
     for (const p of ['a'.repeat(8), 'a'.repeat(64), 'a'.repeat(7), 'a'.repeat(65), '', null, undefined, 12345678]) {
       expect(isPasswordLengthOk(p)).toBe(oldOk(p));
     }
+
+// ============================================================
+// 2026-10-20：管理员重置密码的取值口径（用户要求"重置为默认密码"）
+// ============================================================
+describe('resolveResetPassword · 管理员重置时设成什么口令', () => {
+  const DEF = 'Zhihui@2026';
+
+  it('★ 不传密码 → 重置为统一默认密码（原实现是随机生成一串）', () => {
+    expect(resolveResetPassword('', DEF)).toEqual({ password: DEF, isDefault: true });
+    expect(resolveResetPassword(undefined, DEF)).toEqual({ password: DEF, isDefault: true });
+    expect(resolveResetPassword(null, DEF)).toEqual({ password: DEF, isDefault: true });
+    expect(resolveResetPassword('   ', DEF)).toEqual({ password: DEF, isDefault: true });
+  });
+
+  it('传了自定义密码 → 按传入的来（导入/统一发号场景）', () => {
+    expect(resolveResetPassword('Class@2026', DEF)).toEqual({ password: 'Class@2026', isDefault: false });
+  });
+
+  it('首尾空格被裁掉（避免管理员以为设了带空格的密码）', () => {
+    expect(resolveResetPassword('  Class@2026  ', DEF).password).toBe('Class@2026');
+  });
+
+  it('★ 长度不合法时返回 error，而不是静默改成默认密码', () => {
+    const short = resolveResetPassword('abc', DEF);
+    expect(short.error, '过短必须报错').toContain('8~64');
+    expect(short.password).toBeUndefined();
+    expect(resolveResetPassword('a'.repeat(65), DEF).error).toContain('8~64');
+  });
+
+  it('非字符串输入按"未传"处理（数字/对象不会变成口令）', () => {
+    expect(resolveResetPassword(12345678, DEF)).toEqual({ password: DEF, isDefault: true });
+    expect(resolveResetPassword({}, DEF)).toEqual({ password: DEF, isDefault: true });
+  });
+
+  it('默认密码本身必须通过强度规则（否则重置出来的口令连注册都过不了）', () => {
+    expect(isPasswordLengthOk(DEF)).toBe(true);
+  });
+});
+
   });
 });

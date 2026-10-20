@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import { HttpError, dataScope, opLog } from '../guard.js';
 import { query, withTransaction } from '../db.js';
 import { auditDetail, isAdmin } from './_actor.js';
+import { resolveResetPassword } from '../password-rules.js';
 
 const PAGE_MAX = 100;
 const USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/;
@@ -242,6 +243,7 @@ export async function createUsers(actor, body = {}, { batch = false } = {}) {
   const created = [];
   const skipped = [];
   const seen = new Set();
+  let singlePwd = DEFAULT_PWD; // 单条创建时回传给前端展示的"初始密码"
   let customHashCache = { pwd: null, hash: null };
   const hashOf = async (pwd) => {
     const p = String(pwd || '').trim();
@@ -268,7 +270,8 @@ export async function createUsers(actor, body = {}, { batch = false } = {}) {
         continue;
       }
       seen.add(username);
-      const { hash } = await hashOf(r.password);
+      const { pwd, hash } = await hashOf(r.password);
+      if (!batch) singlePwd = pwd; // 单条创建：把**实际生效**的初始密码回给前端展示
       const deptId = r.deptId ? Number(r.deptId) : null;
       const classId = r.classId ? Number(r.classId) : null;
       const userNo = String(r.userNo || '').trim().slice(0, 32);
@@ -294,7 +297,8 @@ export async function createUsers(actor, body = {}, { batch = false } = {}) {
     actor.ip,
   );
   return {
-    data: { created, skipped, defaultPassword: !batch && created.length ? DEFAULT_PWD : undefined },
+    // 单条创建回传**实际生效**的初始密码（自定义密码时不能回默认密码，否则界面会显示错的）
+    data: { created, skipped, defaultPassword: !batch && created.length ? singlePwd : undefined },
     message: `成功创建 ${created.length} 个账号${skipped.length ? `，跳过 ${skipped.length} 个` : ''}`,
   };
 }
@@ -389,21 +393,75 @@ export async function setUserValidUntil(actor, targetId, validUntil) {
   return { data: { userId: target.id, validUntil: vu }, message: vu ? '有效期已更新' : '已设为长期有效' };
 }
 
-/** 重置登录密码（admin 独占；不能重置其他 admin 主账号） */
+/**
+ * 重置**登录密码**（admin 独占）
+ *
+ * ★ 2026-10-20 两处行为修正（用户反馈「没有给账号重置密码的功能，重置密码只能重置邮箱的密码」）：
+ *   1. **不传密码 → 重置为统一默认密码 `DEFAULT_PWD`**（原来会随机生成一串，
+ *      管理员得抄给用户，口令经聊天工具扩散、用户第二天又忘）。
+ *      传了自定义密码仍按传入的来（导入/统一发号场景）。
+ *   2. **不能重置自己的密码**：这条路径会吊销全部 refresh token，
+ *      管理员误点就会把自己踢下线；改自己的密码请走顶栏【修改登录密码】。
+ *      （与「不能禁用自己」同一条防自锁原则）
+ *
+ * 权限：admin 可重置任何人（学生/教师/辅导员/校领导）；辅导员仅本院 —— 由 loadTarget 保证。
+ * 唯一硬护栏：不能重置**其他账号名为 admin 的主账号**密码（防夺权）。
+ * 副作用：吊销该用户全部 refresh token（口令可能已泄露或已告知他人）。
+ */
 export async function resetUserPassword(actor, targetId, password) {
   const target = await loadTarget(actor, Number(targetId));
   if (!isAdmin(actor)) throw new HttpError(40301, '仅超级管理员可重置登录密码', 403);
-  if (target.username === 'admin' && target.id !== actor.userId) {
-    throw new HttpError(41009, '不能重置其他管理员的主账号密码');
+  if (target.id === actor.userId) {
+    throw new HttpError(41005, '不能在这里重置自己的密码，请用顶栏【修改登录密码】');
   }
-  let pwd = String(password || '').trim();
-  if (!pwd) pwd = `Zh${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`;
-  if (pwd.length < 8) throw new HttpError(41008, '密码至少 8 位');
-  const hash = await bcrypt.hash(pwd, 10);
+  if (target.username === 'admin') {
+    throw new HttpError(41009, '不能重置管理员主账号 admin 的密码');
+  }
+  const decided = resolveResetPassword(password, DEFAULT_PWD);
+  if (decided.error) throw new HttpError(41008, decided.error);
+  const hash = await bcrypt.hash(decided.password, 10);
   await query('UPDATE sys_user SET password_hash = ? WHERE id = ?', [hash, target.id]);
   await query('DELETE FROM sys_refresh_token WHERE user_id = ?', [target.id]);
-  await opLog(actor.userId, 'user.resetPassword', `user:${target.id}`, auditDetail(actor, target.username), actor.ip);
-  return { data: { userId: target.id, password: pwd }, message: `密码已重置：${pwd}（请立即告知用户）` };
+  await opLog(
+    actor.userId,
+    'user.resetPassword',
+    `user:${target.id}`,
+    auditDetail(actor, `${target.username} default=${decided.isDefault ? 1 : 0}`),
+    actor.ip,
+  );
+  return {
+    data: { userId: target.id, username: target.username, password: decided.password, isDefault: decided.isDefault },
+    message: decided.isDefault
+      ? `已将 ${target.username} 的密码重置为默认密码 ${decided.password}（该账号已下线，请告知用户尽快修改）`
+      : `已将 ${target.username} 的密码重置为指定密码（该账号已下线）`,
+  };
+}
+
+/**
+ * 批量重置登录密码（admin 独占）
+ *
+ * 逐个走 loadTarget（辅导员只能碰本院）与防自锁/防夺权护栏；
+ * 不存在的、无权的、admin 主账号一律进 skipped 并说明原因，**不静默跳过**。
+ * @param {number[]} userIds 最多 100 个
+ */
+export async function resetUsersPassword(actor, userIds) {
+  if (!isAdmin(actor)) throw new HttpError(40301, '仅超级管理员可重置登录密码', 403);
+  const ids = Array.isArray(userIds) ? [...new Set(userIds.map(Number).filter(Boolean))].slice(0, 100) : [];
+  if (!ids.length) throw new HttpError(41001, '缺少 userIds');
+  const reset = [];
+  const skipped = [];
+  for (const id of ids) {
+    try {
+      const r = await resetUserPassword(actor, id, '');
+      reset.push({ id: r.data.userId, username: r.data.username });
+    } catch (e) {
+      skipped.push({ id, reason: e?.message || '重置失败' });
+    }
+  }
+  return {
+    data: { reset, skipped, defaultPassword: DEFAULT_PWD },
+    message: `已重置 ${reset.length} 个账号的登录密码为默认密码${skipped.length ? `，跳过 ${skipped.length} 个` : ''}`,
+  };
 }
 
 /** 删除单个账号（admin 独占；admin 角色账号受保护；不能删自己） */
@@ -504,6 +562,8 @@ export async function handleUserAction(actor, body = {}) {
     if (action === 'create') return createUsers(actor, body, { batch: false });
     if (action === 'batchCreate') return createUsers(actor, body, { batch: true });
     if (action === 'batchDelete') return batchDeleteUsers(actor, body.userIds);
+    // 批量重置登录密码（2026-10-20 新增）：重置为统一默认密码
+    if (action === 'batchResetPassword') return resetUsersPassword(actor, body.userIds);
     throw new HttpError(41001, '缺少 userId');
   }
 

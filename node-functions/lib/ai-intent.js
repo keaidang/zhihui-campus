@@ -32,6 +32,17 @@ const STRONG = {
   query_users: ['查询', '查看', '查一下', '查下', '列出', '看看', '看一下', '显示', '统计', '有多少', '多少个'],
   query_notices: ['查询', '查看', '查一下', '查下', '列出', '看看', '看一下', '显示'],
   query_review_queue: ['查询', '查看', '查一下', '列出', '看看', '显示'],
+  reset_user_password: ['重置密码', '重置登录密码', '重置账号密码', '密码重置', '恢复默认密码', '改密码', '重置为默认密码', '重置', '重设'],
+};
+
+/** 反例词：出现这些词说明**不是**该动作（防止"重置邮箱密码"被当成重置登录密码） */
+const EXCLUDE = {
+  reset_user_password: ['邮箱', 'mail'],
+};
+
+/** 必须带宾语才算数的动作（否则"重置一下筛选条件"会被当成重置密码） */
+const REQUIRE_OBJ = {
+  reset_user_password: true,
 };
 
 /** 弱动词：只在有明确宾语时才算数（权重 1）——「审批」本身既可能是查询也可能是批准 */
@@ -47,6 +58,7 @@ const OBJECTS = {
   users: ['账号', '帐号', '账户', '用户', '教师', '老师', '学生', '辅导员', '管理员'],
   notice: ['公告', '通知', '通告'],
   review: ['违规', '待复核', '复核', '审核记录', '审核'],
+  pwd: ['密码', '口令'],
 };
 
 /** 动作 → 允许的宾语域（不在域内的宾语不算分） */
@@ -63,6 +75,7 @@ const ACTION_OBJECTS = {
   query_notices: ['notice'],
   confirm_violation: ['review'],
   query_review_queue: ['review'],
+  reset_user_password: ['users', 'pwd'],
 };
 
 /** 噪声词：抽姓名时先剔除（按长度降序剔除，避免「的请假」被拆成两半） */
@@ -76,6 +89,7 @@ const NAME_NOISE = [
   '账号', '帐号', '账户', '用户', '老师', '教师', '同学', '学生', '辅导员', '管理员', '工号', '学号',
   '公告', '通知', '通告', '发布', '撤回', '撤销', '下架', '删除', '删掉', '置顶', '打回', '过了', '过吧',
   '记录', '单子', '单据', '申请', '情况', '列表', '信息', '数据', '一下', '的', '了', '吧', '吗', '呢', '啊',
+  '密码', '登录密码', '账号密码', '默认密码', '口令', '重置', '重设', '改密', '改',
   '今天', '昨天', '明天', '本周', '这周', '上周', '最近', '刚才', '上面', '下面',
 ];
 
@@ -170,11 +184,14 @@ export function classifyIntent(text) {
   let best = null;
   let tie = false;
   for (const action of Object.keys(ACTION_OBJECTS)) {
+    // 反例词：命中即整条规则作废（如"重置**邮箱**密码"不是重置登录密码）
+    if ((EXCLUDE[action] || []).some((w) => t.includes(w))) continue;
     const s = scoreAction(action, t);
     if (!s.score) continue;
     // ★ 资格门槛：**必须有一个动词**，并且满足其一（有宾语 / 有明确目标 / 两个强动词）。
     //   只靠宾语（如「请假流程是什么」）一律不算操作意图 —— 那种句子交给模型回答。
     const qualified = s.verbs > 0 && (s.objs.length > 0 || hasTarget || s.strong.length >= 2);
+    if (REQUIRE_OBJ[action] && !s.objs.length) continue;
     if (!qualified) continue;
     if (!best || s.score > best.score) {
       best = { action, ...s, reason: `strong=${s.strong.join('/') || '-'} weak=${s.weak.join('/') || '-'} obj=${s.objs.join('/') || '-'}` };
@@ -312,6 +329,8 @@ export function slotsForAction(slots = {}, action = '') {
       return pick('names', 'usernames', 'status');
     case 'disable_users':
     case 'enable_users':
+      return pick('usernames', 'names', 'all');
+    case 'reset_user_password':
       return pick('usernames', 'names', 'all');
     case 'query_users': {
       // 账号状态（禁用/正常）要带上，否则「有多少个禁用的账号」会返回全校总数

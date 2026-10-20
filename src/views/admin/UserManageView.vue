@@ -41,7 +41,11 @@
       <el-button @click="reset">重置</el-button>
       <div class="um-spacer"></div>
       <template v-if="auth.isAdmin">
-        <el-button :icon="Plus" type="primary" plain @click="batchDlg = true">批量添加</el-button>
+        <el-button :icon="Plus" type="primary" plain @click="openCreate">新增账号</el-button>
+        <el-button :icon="Plus" plain @click="batchDlg = true">批量添加</el-button>
+        <el-button :icon="Key" plain :disabled="!selected.length" @click="resetSelectedPwd">
+          重置选中密码({{ selected.length }})
+        </el-button>
         <el-button :icon="Delete" type="danger" plain :disabled="!selected.length" @click="batchRemove">
           删除选中({{ selected.length }})
         </el-button>
@@ -97,13 +101,24 @@
         <el-table-column prop="created_at" label="注册时间" width="170">
           <template #default="{ row }">{{ fmt(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="390" fixed="right">
+        <el-table-column label="操作" width="470" fixed="right">
           <template #default="{ row }">
             <!-- PC 端：按钮平铺。窄屏由 mobile.css 隐藏本块，改收进右侧「更多」下拉 -->
             <span class="op-full">
               <el-button size="small" @click="openProfile(row)">归属</el-button>
               <el-button v-if="auth.isAdmin" size="small" type="primary" @click="openRoles(row)">角色</el-button>
               <el-button v-if="auth.isAdmin" size="small" @click="openValid(row)">有效期</el-button>
+              <el-button
+                v-if="auth.isAdmin"
+                size="small"
+                type="warning"
+                plain
+                :disabled="row.id === auth.user?.id"
+                :title="row.id === auth.user?.id ? '改自己的密码请用顶栏【修改登录密码】' : '把登录密码重置为默认密码'"
+                @click="resetOnePwd(row)"
+              >
+                重置密码
+              </el-button>
               <el-button
                 v-if="auth.isAdmin && row.campus_email"
                 size="small"
@@ -157,6 +172,13 @@
                   <el-dropdown-item command="profile">归属</el-dropdown-item>
                   <el-dropdown-item v-if="auth.isAdmin" command="roles">角色</el-dropdown-item>
                   <el-dropdown-item v-if="auth.isAdmin" command="valid">有效期</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="auth.isAdmin"
+                    command="resetpwd"
+                    :disabled="row.id === auth.user?.id"
+                  >
+                    重置登录密码
+                  </el-dropdown-item>
                   <el-dropdown-item v-if="auth.isAdmin && row.campus_email" command="mail">
                     {{ row.mail_enabled ? '关闭对外收发' : '开通对外收发' }}
                   </el-dropdown-item>
@@ -248,11 +270,55 @@
       </template>
     </el-dialog>
 
+    <!-- 新增账号（单个）：密码留空 = 默认密码，创建后立即显示初始密码 -->
+    <el-dialog v-model="createDlg" title="新增账号" width="520px">
+      <el-alert
+        type="info"
+        :closable="false"
+        style="margin-bottom: 12px"
+        title="密码留空即使用默认密码 Zhihui@2026；创建成功后会立刻把初始密码显示给你"
+        description="账号规则：4~32 位，字母开头，可含数字与下划线，例如 stu260101。"
+      />
+      <el-form label-width="92px">
+        <el-form-item label="账号" required>
+          <el-input v-model="createForm.username" placeholder="如 stu260101" />
+        </el-form-item>
+        <el-form-item label="姓名" required>
+          <el-input v-model="createForm.realName" placeholder="真实姓名" />
+        </el-form-item>
+        <el-form-item label="初始密码">
+          <el-input v-model="createForm.password" show-password placeholder="留空 = 默认密码 Zhihui@2026（8~64 位）" />
+        </el-form-item>
+        <el-form-item label="学号/工号">
+          <el-input v-model="createForm.userNo" placeholder="可空" />
+        </el-form-item>
+        <el-form-item label="院系">
+          <el-select v-model="createForm.deptId" clearable placeholder="可空" style="width: 100%">
+            <el-option v-for="d in meta.departments" :key="d.id" :label="d.name" :value="String(d.id)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="班级">
+          <el-select v-model="createForm.classId" clearable placeholder="可空" style="width: 100%">
+            <el-option v-for="c in createClassOptions" :key="c.id" :label="c.name" :value="String(c.id)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="createForm.roles" multiple placeholder="默认学生" style="width: 100%">
+            <el-option v-for="r in meta.roles" :key="r.code" :label="r.name" :value="r.code" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDlg = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitCreate">创建账号</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量添加账号 -->
     <el-dialog v-model="batchDlg" title="批量添加账号" width="620px">
       <el-alert type="info" :closable="false" style="margin-bottom: 12px"
         title="每行一个账号：账号,姓名,密码,学号/工号（密码可省略，默认统一初始密码 Zhihui@2026）"
-        description="示例：stu260101,张三,,20260101" />
+        description="示例：stu260101,张三,,20260101 ｜ 若某个账号登不上，在列表里点【重置密码】即可恢复为默认密码" />
       <el-input v-model="batchText" type="textarea" :rows="8" placeholder="账号,姓名,密码,学号/工号\nstu260101,张三,,20260101\nstu260102,李四,,20260102" />
       <div class="um-dlg-tip" style="margin-top: 8px">
         已识别 <b>{{ batchRows.length }}</b> 行；也可
@@ -293,7 +359,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Delete, Download, Message, ArrowDown } from '@element-plus/icons-vue';
+import { Plus, Delete, Download, Message, ArrowDown, Key } from '@element-plus/icons-vue';
 import PortalShell from '../../components/PortalShell.vue';
 import { api, download } from '../../api/request';
 import { useAuthStore } from '../../stores/auth';
@@ -440,6 +506,113 @@ async function saveValid(v) {
   }
 }
 
+/* ---- 重置登录密码（2026-10-20 新增：此前只能重置**邮箱**密码） ---- */
+// 与后端 services/users.js 的 DEFAULT_PWD 同口径（新建账号与重置都用它）
+const DEFAULT_PWD = 'Zhihui@2026';
+
+async function resetOnePwd(row) {
+  const ok = await ElMessageBox.confirm(
+    `确定把 ${row.username}（${row.real_name || '未填姓名'}）的登录密码重置为默认密码 ${DEFAULT_PWD}？\n该账号会被强制下线，需要用新密码重新登录。`,
+    '重置登录密码',
+    { type: 'warning' },
+  ).catch(() => false);
+  if (!ok) return;
+  const res = await api('/api/admin/users', { method: 'POST', body: { userId: row.id, action: 'resetPassword' } });
+  if (res.code === 0) {
+    // 直接把初始密码显示出来：管理员不必去猜/去翻日志
+    ElMessageBox.alert(
+      `<p>账号：<b>${res.data.username}</b></p>` +
+        `<p>新的登录密码：<b style="user-select:all">${res.data.password}</b></p>` +
+        '<p style="color:#b45309">请告知该用户，并提醒 TA 登录后在【顶栏 → 修改登录密码】里改掉。</p>',
+      '密码已重置',
+      { dangerouslyUseHTMLString: true },
+    );
+  } else {
+    ElMessage.error(res.message || '重置失败');
+  }
+}
+
+async function resetSelectedPwd() {
+  const ids = selected.value.map((r) => r.id);
+  if (!ids.length) return;
+  const ok = await ElMessageBox.confirm(
+    `确定把选中的 ${ids.length} 个账号的登录密码重置为默认密码 ${DEFAULT_PWD}？\n这些账号都会被强制下线。`,
+    '批量重置登录密码',
+    { type: 'warning' },
+  ).catch(() => false);
+  if (!ok) return;
+  const res = await api('/api/admin/users', { method: 'POST', body: { action: 'batchResetPassword', userIds: ids } });
+  if (res.code === 0) {
+    const skipped = res.data.skipped || [];
+    ElMessageBox.alert(
+      `已重置 ${res.data.reset.length} 个账号的密码为默认密码 <b>${res.data.defaultPassword}</b>` +
+        (skipped.length
+          ? `<br/>跳过 ${skipped.length} 个：${skipped.map((s) => `#${s.id}（${s.reason}）`).join('、')}`
+          : ''),
+      '批量重置结果',
+      { dangerouslyUseHTMLString: true },
+    );
+    load();
+  } else {
+    ElMessage.error(res.message || '重置失败');
+  }
+}
+
+/* ---- 新增账号（单个） ---- */
+const createDlg = ref(false);
+const createForm = reactive({ username: '', realName: '', password: '', userNo: '', deptId: '', classId: '', roles: [] });
+const createClassOptions = computed(() =>
+  createForm.deptId ? meta.classes.filter((c) => String(c.dept_id) === String(createForm.deptId)) : meta.classes,
+);
+
+function openCreate() {
+  Object.assign(createForm, { username: '', realName: '', password: '', userNo: '', deptId: '', classId: '', roles: [] });
+  createDlg.value = true;
+}
+
+async function submitCreate() {
+  if (!createForm.username.trim() || !createForm.realName.trim()) {
+    ElMessage.warning('账号与姓名必填');
+    return;
+  }
+  saving.value = true;
+  try {
+    const res = await api('/api/admin/users', {
+      method: 'POST',
+      body: {
+        action: 'create',
+        username: createForm.username.trim(),
+        realName: createForm.realName.trim(),
+        password: createForm.password,
+        userNo: createForm.userNo,
+        deptId: createForm.deptId || null,
+        classId: createForm.classId || null,
+        roles: createForm.roles.length ? createForm.roles : ['student'],
+      },
+    });
+    if (res.code === 0) {
+      if (!res.data.created.length) {
+        ElMessage.error(`创建失败：${res.data.skipped.map((s) => s.reason).join('、') || '未知原因'}`);
+        return;
+      }
+      // ★ 必须把初始密码明确显示出来 —— "创建完却登不上"多半就是不知道初始密码
+      ElMessageBox.alert(
+        `<p>账号：<b>${createForm.username.trim()}</b></p>` +
+          `<p>初始密码：<b style="user-select:all">${res.data.defaultPassword || DEFAULT_PWD}</b></p>` +
+          '<p style="color:#b45309">请立即告知该用户；若 TA 忘记，可在列表里点【重置密码】重置为默认密码。</p>',
+        '账号创建成功',
+        { dangerouslyUseHTMLString: true },
+      );
+      createDlg.value = false;
+      load(1);
+    } else {
+      ElMessage.error(res.message || '创建失败');
+    }
+  } finally {
+    saving.value = false;
+  }
+}
+
 /* ---- 批量添加 ---- */
 const batchDlg = ref(false);
 const batchText = ref('');
@@ -471,7 +644,9 @@ async function submitBatch() {
     });
     if (res.code === 0) {
       ElMessageBox.alert(
-        `创建 ${res.data.created.length} 个：${res.data.created.join('、') || '无'}${res.data.skipped.length ? `<br/>跳过 ${res.data.skipped.length} 个：${res.data.skipped.map((s) => `${s.username}(${s.reason})`).join('、')}` : ''}`,
+        `创建 ${res.data.created.length} 个：${res.data.created.join('、') || '无'}${res.data.skipped.length ? `<br/>跳过 ${res.data.skipped.length} 个：${res.data.skipped.map((s) => `${s.username}(${s.reason})`).join('、')}` : ''}` +
+          '<p style="color:#b45309;margin:8px 0 0">初始密码：第 3 列填了密码的按你填的；<b>没填的为默认密码 Zhihui@2026</b>。' +
+          '若用户说登不上，在列表里点【重置密码】即可恢复为默认密码。</p>',
         '导入结果',
         { dangerouslyUseHTMLString: true },
       );
@@ -492,6 +667,7 @@ function onRowMore(cmd, row) {
     profile: () => openProfile(row),
     roles: () => openRoles(row),
     valid: () => openValid(row),
+    resetpwd: () => resetOnePwd(row),
     mail: () => toggleMail(row),
     mailpwd: () => viewMailPwd(row),
     addr: () => openAddr(row),

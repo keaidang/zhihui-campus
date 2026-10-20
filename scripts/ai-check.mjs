@@ -169,6 +169,31 @@ if (anyNotice) {
   check('按 id 预览"撤回公告" → 最早的一条也能取到', Boolean(r?.preview?.count), r?.message || `count=${r?.preview?.count} id=${anyNotice.id}`);
 }
 
+// ── 8. 重置登录密码（2026-10-20 新增能力）────────────────────────
+// 用户原话：「没有给账号重置密码的功能，重置密码只能重置邮箱的密码」——
+// 这里只做**预览**（一行数据都不改），确认目标解析与"重置为默认密码"的提示都到位。
+console.log('\n[8] 重置登录密码（预览，不写库）');
+const [anyTeacher] = await query(
+  `SELECT u.username FROM sys_user u
+    WHERE u.status = 1 AND u.username <> 'admin' AND u.id <> 2000001
+      AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
+                   WHERE ur.user_id = u.id AND r.code IN ('teacher','leader'))
+    LIMIT 1`,
+);
+if (!anyTeacher) {
+  check('存在教师/校领导账号（用于验证重置密码）', false, '库里没有可测试的教师/校领导账号');
+} else {
+  const r = await previewWriteAction(admin, 'reset_user_password', { usernames: [anyTeacher.username] }).catch((e) => e);
+  check('预览"重置登录密码" → 给出确认清单', Boolean(r?.preview?.count), r?.message || `count=${r?.preview?.count}`);
+  check(
+    '预览里必须写明会重置为默认密码',
+    String((r?.preview?.warnings || []).join(' ')).includes('默认密码'),
+    String((r?.preview?.warnings || []).join(' ')).slice(0, 80),
+  );
+}
+const selfReset = await previewWriteAction(admin, 'reset_user_password', { usernames: ['admin'] }).catch((e) => e);
+check('★ 不能通过这条路径重置自己的密码（防自锁）', selfReset?.code === 49402 && /不能重置自己/.test(String(selfReset.message)), String(selfReset?.message || '').slice(0, 60));
+
 console.log(`\n=== 合计 ${pass + fail} 项，通过 ${pass}，失败 ${fail} ===`);
 if (fail > 0) {
   console.error('✖ AI 能力层检查未通过');

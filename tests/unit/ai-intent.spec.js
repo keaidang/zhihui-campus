@@ -55,6 +55,11 @@ describe('classifyIntent · 各种说法必须落到同一个动作', () => {
     // ---- 审核 ----
     ['确认违规记录 8', 'confirm_violation'],
     ['看看待复核的审核记录', 'query_review_queue'],
+    // ---- 重置登录密码（2026-10-20 新增能力）----
+    ['把teacher01的密码重置了', 'reset_user_password'],
+    ['重置 nstu20260855 的登录密码', 'reset_user_password'],
+    ['重置张海涛的账号密码', 'reset_user_password'],
+    ['给方欣雪改密码', 'reset_user_password'],
   ];
 
   for (const [text, expected] of cases) {
@@ -67,9 +72,13 @@ describe('classifyIntent · 各种说法必须落到同一个动作', () => {
   }
 
   it('★ 不是操作的句子一律交还模型（不能被宾语误触发）', () => {
-    for (const text of ['你好', '请假流程是什么', '学校有几个学院', '这道题怎么写']) {
+    for (const text of ['你好', '请假流程是什么', '学校有几个学院', '这道题怎么写', '重置一下筛选条件']) {
       expect(classifyIntent(text), text).toBeNull();
     }
+  });
+
+  it('★ 反例词：重置"邮箱"密码不是重置登录密码（两者是完全不同的能力）', () => {
+    expect(classifyIntent('重置 teacher01 的邮箱密码')).toBeNull();
   });
 
   it('打了平手时返回 null（宁可交给模型，也不猜）', () => {

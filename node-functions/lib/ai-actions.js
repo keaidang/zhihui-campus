@@ -19,7 +19,8 @@ import { HttpError } from './guard.js';
 import { ROLE_LABEL } from './ai-identity.js';
 import { jwtSecret } from './auth.js';
 import { hasRole, isAdmin } from './services/_actor.js';
-import { countUsers, findUsers, findUsersByNames, setUserStatus } from './services/users.js';
+import { countUsers, findUsers, findUsersByNames, resetUserPassword, setUserStatus } from './services/users.js';
+import { DEFAULT_PWD } from './services/users.js';
 import { decideLeave, listLeaves } from './services/leave.js';
 import { loadNoticeForWrite, listNotices, publishNotice, revokeNotice, setNoticePinned } from './services/notice.js';
 import { getReviewRecord, handleReview, listReviewQueue } from './ai-review.js';
@@ -401,6 +402,54 @@ export const ACTIONS = {
         done.push(brief(t));
       }
       return { message: `已启用 ${done.length} 个账号`, affected: done };
+    },
+  },
+
+  reset_user_password: {
+    label: '重置登录密码',
+    roles: ['admin'],
+    kind: 'write',
+    destructive: true,
+    desc: '把指定账号的**登录密码**重置为统一默认密码（会强制该用户下线，需重新登录）',
+    params: {
+      usernames: { type: 'array', desc: '要重置密码的账号名（或姓名）列表，如 ["teacher01"]' },
+      names: { type: 'array', desc: '姓名候选（可多个）' },
+      keyword: { type: 'string', desc: '账号/姓名/学号关键字' },
+      all: { type: 'boolean', desc: '是否对该筛选范围内的【全部】账号执行' },
+    },
+    resolve: async (actor, p) => {
+      const { targets, warnings } = await resolveUserTargets(actor, p);
+      // 重置密码没有"目标状态"概念，只排除两类硬护栏目标（与 services/users.js 同口径）
+      const kept = [];
+      const skipped = [];
+      for (const u of targets) {
+        if (Number(u.id) === Number(actor.userId)) {
+          skipped.push({ id: u.id, label: brief(u), code: 'self', reason: '不能重置自己的密码（请用顶栏【修改登录密码】）' });
+          continue;
+        }
+        if (String(u.username) === 'admin') {
+          skipped.push({ id: u.id, label: brief(u), code: 'admin', reason: '不能重置管理员主账号 admin 的密码' });
+          continue;
+        }
+        kept.push(u);
+      }
+      return {
+        targets: kept,
+        skipped,
+        warnings: [
+          ...(warnings || []),
+          `将把 ${kept.length} 个账号的登录密码重置为默认密码 ${DEFAULT_PWD}`,
+          '被重置的账号会立即被强制下线，需用新密码重新登录',
+        ],
+      };
+    },
+    run: async (actor, p, targets) => {
+      const done = [];
+      for (const t of targets) {
+        await resetUserPassword(actor, t.id, '');
+        done.push(brief(t));
+      }
+      return { message: `已重置 ${done.length} 个账号的登录密码为默认密码 ${DEFAULT_PWD}`, affected: done };
     },
   },
 

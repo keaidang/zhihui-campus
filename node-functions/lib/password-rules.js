@@ -14,6 +14,28 @@ export function isPasswordLengthOk(p) {
 }
 
 /**
+ * 管理员重置密码时决定"最终设成什么口令"。
+ *
+ * ★ 为什么单独抽出来（2026-10-20 用户反馈）：
+ *   用户原话「重置是重置为默认密码」。而原实现是"不传密码就随机生成一串"，
+ *   于是每次重置的结果都不一样，管理员必须把随机串抄给用户 ——
+ *   口令经聊天工具/纸条扩散，且用户第二天忘了又得再重置一次。
+ *   现在：**不传就重置为统一默认密码**（与新建账号同一口径），传了就按传入的来。
+ *
+ * 纯函数，边界由 tests/unit/password-rules.spec.js 覆盖。
+ *
+ * @param {unknown} input 管理员传入的密码（可为空）
+ * @param {string} defaultPwd 统一默认密码
+ * @returns {{password:string, isDefault:boolean} | {error:string}}
+ */
+export function resolveResetPassword(input, defaultPwd) {
+  const p = typeof input === 'string' ? input.trim() : '';
+  if (!p) return { password: defaultPwd, isDefault: true };
+  if (!isPasswordLengthOk(p)) return { error: `密码长度须为 ${PWD_MIN}~${PWD_MAX} 位` };
+  return { password: p, isDefault: false };
+}
+
+/**
  * 自助改密的完整校验：长度 + 不得与原密码相同。
  * （"与原密码相同"只对改密场景有意义，故不并入 isPasswordLengthOk）
  * @returns {{ ok: true } | { ok: false, reason: string }}

@@ -71,7 +71,7 @@
 |---|---|---|---|
 | GET | /api/admin/meta | admin / counselor | 角色列表 + 院系列表（含 dept_type）+ 班级列表 + 当前数据范围 |
 | GET | /api/admin/users | admin / counselor | 分页用户列表，支持 keyword(含 campus_email) / role / deptId / status / lastLogin(never/30/60/90 僵尸筛选) 过滤（counselor 仅本院） |
-| POST | /api/admin/users | admin / counselor | `{userId, action, value}`；action=`setStatus`(改启停) / `setRoles`(仅 admin) / `setProfile`(学号工号+院系班级) / `resetPassword`(仅 admin，随机密码+吊销会话) |
+| POST | /api/admin/users | admin / counselor | `{userId, action, value}`；action=`setStatus`(改启停) / `setRoles`(仅 admin) / `setProfile`(学号工号+院系班级) / `resetPassword`(仅 admin，**默认重置为统一默认密码**，可传 `password` 指定；吊销该用户全部会话，且不能重置自己或 admin 主账号) / `create`(单条新建，`password` 留空=默认密码) / `batchCreate` / `batchResetPassword`(仅 admin，`userIds`≤100，逐个重置为默认密码并回传跳过原因) / `batchDelete` |
 | GET | /api/admin/departments | admin / counselor | 院系列表（含用户数/班级数/dept_type） |
 | POST | /api/admin/departments | admin | `{action: create \| setStatus \| update \| delete}`（下有人员或班级禁删） |
 | GET/POST | /api/admin/classes | counselor(读)/admin(写) | 班级 CRUD（`create/update/delete`，有在读学生禁删；GET 返回辅导员名单） |
