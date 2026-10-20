@@ -26,9 +26,11 @@ export async function onRequestPost(context) {
     if (Number(rlHour[0].n) >= 3) return fail(42900, '操作过于频繁，请 1 小时后再试', 429);
 
     // 账号存在 + 绑定邮箱匹配（不泄露账号是否存在：统一成功文案）
+    // ★ 账号列同时接受**用户名或学号/工号**（2026-10-20）：用户记不住用户名是常态，
+    //   而忘记密码恰恰是最需要"能用学号找到自己"的场景。
     const users = await query(
-      'SELECT id, status FROM sys_user WHERE username = ? AND email = ?',
-      [username, email],
+      'SELECT id, status FROM sys_user WHERE (username = ? OR (user_no <> \'\' AND user_no = ?)) AND email = ?',
+      [username, username, email],
     );
     if (users.length === 0) {
       return fail(43502, '账号与绑定邮箱不匹配，请确认后重试');

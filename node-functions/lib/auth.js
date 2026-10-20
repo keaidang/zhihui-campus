@@ -50,6 +50,42 @@ export async function saveRefreshToken(userId, token) {
   );
 }
 
+/**
+ * 从"可能匹配多行"的候选里挑出唯一登录账号（纯函数，便于单测）。
+ *
+ * ★ 为什么要有这个函数（2026-10-20）：真实登录日志显示用户会用**学号**（`20260855`）
+ *   和**校园邮箱**（`a2026010@keaidang.com`）当用户名登录 —— 而登录只查 `username`，
+ *   于是全部以"用户名或密码错误"收场，用户完全不知道自己错在哪（同一天 6 次失败）。
+ *   现在支持三种标识，但**优先级与唯一性必须显式**：
+ *     username（唯一索引） > campus_email（唯一索引） > user_no（**无唯一索引**）
+ *   user_no 可能重复，一旦同一标识命中多行就**拒绝登录**并要求改用用户名 ——
+ *   宁可让用户多打几个字，也不能在"不确定是哪个账号"的情况下比对密码。
+ *
+ * @param {Array<{username?:string, campus_email?:string, user_no?:string}>} rows
+ * @param {string} ident 用户输入的登录标识
+ * @returns {{row:object|null, by:'username'|'campus_email'|'user_no'|null, ambiguous?:boolean}}
+ */
+export function pickLoginRow(rows = [], ident = '') {
+  const id = String(ident ?? '').trim();
+  if (!id) return { row: null, by: null };
+  const lower = id.toLowerCase();
+  const list = Array.isArray(rows) ? rows : [];
+
+  const byUsername = list.filter((r) => String(r.username ?? '') === id);
+  if (byUsername.length === 1) return { row: byUsername[0], by: 'username' };
+  if (byUsername.length > 1) return { row: null, by: null, ambiguous: true };
+
+  const byEmail = list.filter((r) => String(r.campus_email ?? '').toLowerCase() === lower);
+  if (byEmail.length === 1) return { row: byEmail[0], by: 'campus_email' };
+  if (byEmail.length > 1) return { row: null, by: null, ambiguous: true };
+
+  const byNo = list.filter((r) => String(r.user_no ?? '') === id);
+  if (byNo.length === 1) return { row: byNo[0], by: 'user_no' };
+  if (byNo.length > 1) return { row: null, by: null, ambiguous: true };
+
+  return { row: null, by: null };
+}
+
 /** 校验并轮换刷新令牌；返回 user_id。检测到重放则吊销该用户全部令牌。 */
 export async function rotateRefreshToken(token) {
   const hash = sha256(token);

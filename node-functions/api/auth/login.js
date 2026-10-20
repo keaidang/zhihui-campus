@@ -2,7 +2,7 @@
 import bcrypt from 'bcryptjs';
 import { query } from '../../lib/db.js';
 import { ok, fail, jsonError, readBody, clientIp } from '../../lib/http.js';
-import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail } from '../../lib/auth.js';
+import { signAccessToken, newRefreshToken, saveRefreshToken, isLocked, recordFail, clearFail, pickLoginRow } from '../../lib/auth.js';
 import { buildSessionUser } from '../../lib/user-profile.js';
 import { preflight } from '../../lib/http.js';
 import { alert } from '../../lib/alert.js';
@@ -71,11 +71,22 @@ export async function onRequestPost(context) {
     );
     if (Number(fi[0].n) >= 60) return fail(42900, '请求过于频繁，请稍后再试', 429);
 
-    const users = await query(
-      'SELECT id, username, password_hash, real_name, status, valid_until FROM sys_user WHERE username = ?',
-      [username],
+    // ★ 登录标识支持三种（2026-10-20）：用户名 / 学号工号 / 校园邮箱。
+    //   真实日志显示用户会用后两者登录（`20260855`、`a2026010@keaidang.com`），
+    //   而原先只查 username，于是全部以"用户名或密码错误"收场 —— 用户根本不知道错在哪。
+    //   唯一性由 pickLoginRow 把关：user_no 没有唯一索引，命中多行时拒绝登录并提示用用户名。
+    const candidates = await query(
+      `SELECT id, username, password_hash, real_name, status, valid_until, campus_email, user_no
+         FROM sys_user
+        WHERE username = ? OR campus_email = ? OR (user_no <> '' AND user_no = ?)
+        LIMIT 5`,
+      [username, username.toLowerCase(), username],
     );
-    const user = users[0];
+    const picked = pickLoginRow(candidates, username);
+    const user = picked.row;
+    if (picked.ambiguous) {
+      return fail(40101, '该学号/邮箱对应多个账号，请改用用户名登录');
+    }
     const valid = user && (await bcrypt.compare(password, user.password_hash));
 
     if (!valid) {

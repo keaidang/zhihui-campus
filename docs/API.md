@@ -56,12 +56,12 @@
 | POST | /api/auth/register/send-code | 公开 | `{email}` 发 6 位验证码（10 分钟，60s 重发/每邮箱日 10 封/每 IP 日 20 封），发件人 system@keaidang.com |
 | GET | /api/auth/register/prefix-check?prefix=&domain= | 公开 | 校园邮箱前缀占用校验（库内 + 邮件服务器双重） |
 | GET | /api/auth/register/domains | 公开 | 校园邮箱可选域名列表（keaidang mail 实时 active 域名，10 分钟缓存，兜底 keaidang.com） |
-| POST | /api/auth/login | 公开 | 登录，返回双令牌 + user{roles} |
+| POST | /api/auth/login | 公开 | 登录，返回双令牌 + user{roles}。**登录标识支持三种**：用户名 / 学号工号 / 校园邮箱（优先级 username > campus_email > user_no；user_no 无唯一索引，命中多行时拒绝登录并要求改用用户名） |
 | POST | /api/auth/refresh | 公开 | 刷新令牌轮换（重放检测） |
 | POST | /api/auth/logout | 登录 | 吊销刷新令牌 |
 | GET | /api/auth/me | 登录 | 当前用户（含 user_no / dept / class / campus_email / mail_enabled + 数据库实时角色） |
-| POST | /api/auth/password/forgot-send-code | 公开 | 忘记密码发码：`{username, email}` 账号+绑定邮箱匹配才发（purpose='reset'） |
-| POST | /api/auth/password/forgot-reset | 公开 | `{username, email, code, newPassword}` 校验后重置 + 删 sys_refresh_token 吊销全部会话 |
+| POST | /api/auth/password/forgot-send-code | 公开 | 忘记密码发码：`{username, email}` 账号（**用户名或学号/工号**）+ 绑定邮箱匹配才发（purpose='reset'） |
+| POST | /api/auth/password/forgot-reset | 公开 | `{username, email, code, newPassword}` 校验后重置 + 删 sys_refresh_token 吊销全部会话（账号列同样接受用户名或学号/工号） |
 | POST | /api/me/password | 登录 | **登录后自助修改登录密码**：`{oldPassword, newPassword}` —— 必须验原密码（防会话劫持后把真实用户锁在门外）；新密码 8~64 位且不得与原密码相同；成功后**吊销该用户全部 refresh token**（改密即视为口令可能已泄露）；原密码错误 10 分钟 5 次限流（DB 流水计数） |
 | GET | /api/health | 公开 | 健康检查（db / jwtConfigured / protocol 诊断位） |
 

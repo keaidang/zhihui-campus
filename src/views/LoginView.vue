@@ -21,7 +21,7 @@
         <el-form v-if="mode === 'login'" :model="loginMode === 'code' ? codeForm : loginForm" size="large" @submit.prevent>
           <template v-if="loginMode === 'password'">
             <el-form-item>
-              <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" clearable />
+              <el-input v-model="loginForm.username" placeholder="用户名 / 学号 / 校园邮箱" :prefix-icon="User" clearable />
             </el-form-item>
             <el-form-item>
               <el-input
@@ -161,8 +161,11 @@
     <el-dialog v-model="forgotDlg" title="找回密码" width="420px">
       <template v-if="forgotStep === 1">
         <p class="forgot-tip">输入账号与注册时绑定的邮箱，验证码将发送至该邮箱</p>
-        <el-input v-model="forgotForm.username" placeholder="账号（用户名）" style="margin-bottom: 12px" />
+        <el-input v-model="forgotForm.username" placeholder="账号（用户名或学号/工号）" style="margin-bottom: 12px" />
         <el-input v-model="forgotForm.email" placeholder="绑定邮箱（注册时验证的邮箱）" />
+        <p class="forgot-tip" style="margin-top: 10px">
+          账号未绑定邮箱、或邮箱也收不到验证码？请联系管理员在【账号管理】里把密码重置为默认密码。
+        </p>
       </template>
       <template v-else>
         <p class="forgot-tip">验证码已发送至 {{ forgotForm.email }}（10 分钟内有效，未收到请查垃圾邮件）</p>

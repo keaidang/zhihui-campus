@@ -42,6 +42,8 @@ const ACCOUNTS = {
 };
 
 const results = [];
+/** 被平台 WAF 拦截的角色（环境问题，不算业务失败；依赖它的断言跳过） */
+const envBlocked = [];
 /** role → 登录返回体（含 refreshToken / user），供"会话恢复契约"断言使用 */
 const sessions = {};
 const log = (s) => console.log(s);
@@ -59,6 +61,18 @@ async function call(path, token) {
  *     POST body 被平台重复读取 → 50000 "Body is unusable: Body has already been read"，
  *     部署窗口期（新旧函数混跑）更容易撞上，与业务代码无关。
  *     这里**只对这一种消息**重试，其它 500 一律照常判失败，避免把真实缺陷掩盖成"抖动"。 */
+/**
+ * 平台偶发的「请求体读不到」抖动识别。
+ *
+ * ★ 2026-10-20 修正：`lib/http.js` 把这类抖动从 `50000 服务器内部错误` 改成了
+ *   **`49406 网络传输不完整，请重试一次`（HTTP 503）**，但本脚本的重试条件还写着
+ *   旧的 `50000 + 消息含 Body` —— 于是**抖动被当成了真实失败**：
+ *   本次全量跑出现 4 个 ❌，其中「原密码错误被拒」拿到的就是 49406。
+ *   这里统一成一个判据，`postJson` 与 `login` 共用，避免下次再漏。
+ */
+const isTransientBodyFlake = (json) =>
+  json?.code === 49406 || (json?.code === 50000 && String(json.message || '').includes('Body'));
+
 async function postJson(path, token, body) {
   const doCall = async () => {
     const res = await fetch(BASE + path, {
@@ -73,8 +87,8 @@ async function postJson(path, token, body) {
     return { http: res.status, json };
   };
   let r = await doCall();
-  if (r.json.code === 50000 && String(r.json.message || '').includes('Body')) {
-    log('     [transient] 命中 EdgeOne 偶发 body-read 错误，重试一次…');
+  if (isTransientBodyFlake(r.json)) {
+    log('     [transient] 命中平台偶发 body-read 抖动，重试一次…');
     await new Promise((s) => setTimeout(s, 400));
     r = await doCall();
   }
@@ -83,6 +97,12 @@ async function postJson(path, token, body) {
 
 /** 断言业务码符合预期；expect 传数组表示"多种可接受结果"（如正常态与业务态都算通过） */
 async function check(name, path, token, expect = 0) {
+  // ★ 只有**明确传了 null** 才算"该角色没拿到 token"（登录失败/被平台拦）→ 跳过；
+  //   完全没传 token 的是【公开端点】检查（如 /api/health），必须照常执行。
+  if (token === null) {
+    log(`⛔ ${name}  跳过（该角色未取得 token：登录被平台拦截或失败）`);
+    return {};
+  }
   try {
     const { http, json } = await call(path, token);
     const pass = Array.isArray(expect) ? expect.includes(json.code) : json.code === expect;
@@ -104,18 +124,53 @@ function assert(name, pass, detail = '') {
   log(`${pass ? '✅' : '❌'} ${name}${detail ? `  ${detail}` : ''}`);
 }
 
+/** 该响应是否为「平台 WAF 拦截」：HTTP 567 + AccessDeny HTML（环境问题，不是业务缺陷） */
+const isWafBlocked = (json) =>
+  json?.code === 'NON_JSON' && (Number(json._http) === 567 || /AccessDeny|Restricted Access/i.test(String(json.message || '')));
+
 async function login(role) {
   const { username, password } = ACCOUNTS[role];
-  const res = await fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-  const json = await res.json().catch(() => ({}));
+  const doCall = async () => {
+    const res = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // ★ 非 JSON 响应（平台错误页/网关拦截）以前会显示成 `code=undefined msg=`，等于没有信息。
+      //   这里把 HTTP 状态与正文片段带出来，才看得出是"被网关挡了"还是"业务报错"。
+      json = { code: 'NON_JSON', message: text.slice(0, 160) };
+    }
+    json._http = res.status;
+    return json;
+  };
+  let json = await doCall();
+  // ★ 连续登录会被平台抖动/限流（2026-10-20 实测：直接单发请求成功，脚本里第 4 个角色登录失败，
+  //   响应非 JSON）。这里按"抖动"处理：等 1 秒重试一次，仍失败才判 ❌。
+  if (isTransientBodyFlake(json) || json.code === 'NON_JSON' || Number(json._http) >= 500) {
+    log(`     [transient] 登录(${role}) http=${json._http} code=${json.code}，1 秒后重试一次…`);
+    await new Promise((s) => setTimeout(s, 1000));
+    json = await doCall();
+  }
   const ok = json.code === 0;
   if (ok) sessions[role] = json.data;
+  // ★ 平台 WAF 拦截（HTTP 567 AccessDeny）属**环境问题**：不记为业务失败，
+  //   但必须显著标注 —— 依赖该角色 token 的断言会一并跳过（见 check() 的 token 判空）。
+  if (!ok && isWafBlocked(json)) {
+    envBlocked.push(role);
+    log(`⛔ 登录(${role})  被平台安全策略拦截（HTTP 567 AccessDeny）—— 环境问题，不计为失败`);
+    log('     ↳ 同一 IP 短时间连续登录会触发；稍后重跑即可，与业务代码无关。');
+    return null;
+  }
   results.push({ name: `登录(${role})`, pass: ok, code: json.code });
-  log(`${ok ? '✅' : '❌'} 登录(${role})  roles=${json.data?.user?.roles?.join(',') || '-'}`);
+  log(
+    `${ok ? '✅' : '❌'} 登录(${role})  http=${json._http} roles=${json.data?.user?.roles?.join(',') || '-'}` +
+      (ok ? '' : ` code=${json.code} msg=${String(json.message || '').slice(0, 120)}`),
+  );
   if (!ok && role === 'admin') {
     log('     ↳ admin 密码可能已被自助修改（属正常运维动作）。需校验 admin 专属端点时，');
     log('       请以 E2E_ADMIN_PWD=<当前密码> 重跑本脚本；其余角色断言不受影响。');
@@ -139,10 +194,13 @@ await check('注册可用域名', '/api/auth/register/domains');
 await check('邮箱前缀占用检查', '/api/auth/register/prefix-check?prefix=zzsmoke&domain=keaidang.com');
 
 // ── 2. 登录（四角色）──────────────────────────────────────────
+// ★ 2026-10-20：必须**间隔**登录。实测同一 IP 连续登录第 4 次会被 EdgeOne 安全策略
+//   拦下（HTTP 567 `AccessDeny`），表现为"teacher 登录失败"这种假故障。
 log('\n【2. 四角色登录】');
 const tk = {};
 for (const role of ['student', 'admin', 'counselor', 'teacher']) {
   tk[role] = await login(role);
+  await new Promise((s) => setTimeout(s, 600));
 }
 if (!tk.student) { log('\nFATAL: 学生登录失败，终止'); process.exit(1); }
 
@@ -293,8 +351,12 @@ assert('index.html 内嵌启动页（#app 不再为空）',
 const failed = results.filter((r) => !r.pass);
 log('\n─────────────────────');
 log(`合计 ${results.length} 项，通过 ${results.length - failed.length}，失败 ${failed.length}`);
+if (envBlocked.length) {
+  log(`⛔ 环境拦截：${envBlocked.join('、')} 的登录被平台安全策略挡下（HTTP 567 AccessDeny）——`);
+  log('   这不是代码缺陷：同一 IP 短时间连续登录即会触发，相关断言已跳过，稍后重跑即可。');
+}
 if (failed.length) {
   log(`失败项：${failed.map((f) => f.name).join(' | ')}`);
   process.exit(1);
 }
-log('ALL-PASS');
+log(envBlocked.length ? 'ALL-PASS（部分断言因平台拦截被跳过）' : 'ALL-PASS');

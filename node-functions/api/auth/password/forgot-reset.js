@@ -25,7 +25,11 @@ export async function onRequestPost(context) {
     // 接口限流：重置动作依托发码侧 3 次/hour/IP 的 DB 限流（无码无法重置，验证码另有 5 次尝试上限）
     // ——此处不再单独计数，避免同 IP 正常用户"发码+重置"两步被重复限制误伤
 
-    const users = await query('SELECT id, status FROM sys_user WHERE username = ? AND email = ?', [username, email]);
+    // 账号列同时接受用户名或学号/工号（与 forgot-send-code 同口径）
+    const users = await query(
+      'SELECT id, status FROM sys_user WHERE (username = ? OR (user_no <> \'\' AND user_no = ?)) AND email = ?',
+      [username, username, email],
+    );
     if (users.length === 0) return fail(43502, '账号与绑定邮箱不匹配');
     const user = users[0];
     if (Number(user.status) !== 1) return fail(43503, '该账号已被停用');
