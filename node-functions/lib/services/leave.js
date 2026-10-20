@@ -19,8 +19,20 @@ const MAX_DAYS = 30;
 /**
  * 请假单列表
  * 数据范围：学生本人 / 辅导员本院 / 校领导与超管全校（与 lib/guard.js 的 dataScope 一致）
+ *
+ * @param {object} [o]
+ * @param {string|number} [o.status]  1 审批中 / 2 已批准 / 3 已驳回 / 4 已销假
+ * @param {string} [o.keyword] 学生姓名/学号/账号关键字（**在 SQL 里过滤**）
+ * @param {number[]} [o.ids]   指定单号（AI 目标解析用）
+ * @param {number} [o.limit]   行数上限，默认 100，硬夹 500
+ *
+ * ★ keyword / ids 为什么必须下推到 SQL（2026-10-20 修复）：
+ *   原实现固定 `LIMIT 100`，调用方（AI 的 query_leaves / 审批目标解析）再在
+ *   **这 100 条**里做内存筛选。线上待审批有 113 条，于是最新的 13 条对 AI
+ *   完全不可见 —— 用户点名某个学生，AI 也只会回"没有匹配到"。
+ *   这与 users.js 的 findUsersByNames 是同一类坑（"分页后内存筛"），处理方式保持一致。
  */
-export async function listLeaves(actor, { status } = {}) {
+export async function listLeaves(actor, { status, keyword, ids, limit } = {}) {
   const isStudentOnly = !hasRole(actor, STAFF);
   const where = ['1 = 1'];
   const params = [];
@@ -48,6 +60,18 @@ export async function listLeaves(actor, { status } = {}) {
     where.push('l.status = ?');
     params.push(Number(status));
   }
+  const kw = String(keyword || '').trim().slice(0, 32);
+  if (kw) {
+    where.push('(u.real_name LIKE ? OR u.user_no LIKE ? OR u.username LIKE ?)');
+    const like = `%${kw}%`;
+    params.push(like, like, like);
+  }
+  const idList = Array.isArray(ids) ? [...new Set(ids.map(Number).filter(Boolean))].slice(0, 200) : [];
+  if (idList.length) {
+    where.push(`l.id IN (${idList.map(() => '?').join(',')})`);
+    params.push(...idList);
+  }
+  const maxRows = Math.min(500, Math.max(1, Number(limit) || 100));
 
   const rows = await query(
     `SELECT l.id, l.type, l.reason, l.start_at, l.end_at, l.status, l.back_at, l.created_at,
@@ -61,7 +85,7 @@ export async function listLeaves(actor, { status } = {}) {
        LEFT JOIN flow_node fn ON fn.instance_id = fi.id AND fn.node_order = fi.current_node
       WHERE ${where.join(' AND ')}
       ORDER BY l.id DESC
-      LIMIT 100`,
+      LIMIT ${maxRows}`,
     params,
   );
   return { data: { list: rows.map((r) => ({ ...r, status_text: LEAVE_STATUS[r.status] })) }, message: 'ok' };

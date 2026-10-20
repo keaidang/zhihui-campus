@@ -258,6 +258,24 @@ export async function alertViolation({ actor, store, biz, bizId, blocked = false
 }
 
 /**
+ * 按 id 取一条审核记录（供 AI 目标解析用）
+ *
+ * ★ 2026-10-20 新增：AI 的 `confirm_violation.resolve` 原先是"拉最新 50 条再内存找"，
+ *   队列一长，较早的记录就永远处置不了 —— 与请假单 `LIMIT 100` 是同一类缺陷。
+ *   处置本身走 `handleReview`，这里的权限口径与它一致（管理员动作，白名单先行）。
+ */
+export async function getReviewRecord(id) {
+  const rows = await query(
+    `SELECT l.*, u.real_name AS author_name, u.username
+       FROM ai_review_log l
+       LEFT JOIN sys_user u ON u.id = l.author_id
+      WHERE l.id = ?`,
+    [Number(id) || 0],
+  );
+  return rows[0] || null;
+}
+
+/**
  * 处置一条审核记录（管理员复核）
  * @param {'confirm_violation'|'false_positive'} action
  */

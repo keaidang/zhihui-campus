@@ -34,9 +34,14 @@ export function fetchAiStatus() {
  *   · none  → reply 是一句正常回答（可直接当助手消息展示）
  *   · read  → rows/summary 是查询结果
  *   · write → preview + confirmToken（**此时一行数据都没改**，需用户点确认）
+ *
+ * @param {string} text 用户这句话
+ * @param {Array<{role:string,content:string}>} [history] 最近几轮对话
+ *   ★ 必须带上：否则"审批通过它""驳回刚才那条"这类指代无从解析
+ *   （后端只把历史当上下文，权限与二次确认完全不受影响）
  */
-export function runAiAction(text) {
-  return api('/api/ai/action', { method: 'POST', body: { text } });
+export function runAiAction(text, history = []) {
+  return api('/api/ai/action', { method: 'POST', body: { text, history } });
 }
 
 /** C6 信息问数（校领导/管理员）：模型选模板 + 抽参数 → 服务端参数化查询 */

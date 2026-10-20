@@ -469,7 +469,7 @@ async function send() {
   const hasImages = imgs.length > 0;
   // 多模态图片提问强制走 streamChat，指令/问数接口不支持图片识别
   const route = mode.value === 'study' ? 'study' : (hasImages ? 'chat' : routeOf());
-  if (route === 'action') await sendViaAction(promptText, reply);
+  if (route === 'action') await sendViaAction(promptText, reply, history);
   else if (route === 'insight') await sendViaInsight(promptText, reply);
   else await sendViaStream(route === 'study' ? streamStudy : streamChat, promptText, history, reply, imgs);
 
@@ -489,9 +489,44 @@ async function send() {
   scrollToBottom();
 }
 
+/**
+ * 把「标题 + 摘要 + 表格前 5 行」压成一段纯文本，存进消息的 content。
+ *
+ * ★ 为什么要把行内容也写进去（2026-10-20）：下一轮对话时 `history` 只带 content。
+ *   以前 read/data 的 content 只有"共 1 条请假单"，模型不知道那一条的**单号与姓名**，
+ *   于是用户接着说"审批通过它/这条"时完全无从落地。
+ *   压入前 5 行既能让指代有依据，又不会把整张表塞进历史（长度与成本都可控）。
+ */
+function contentWithRows(label, summary, rows) {
+  const head = `${label || ''} ${summary || ''}`.trim();
+  const list = Array.isArray(rows) ? rows.slice(0, 5) : [];
+  if (!list.length) return head;
+  const digest = list.map((r) => Object.entries(r || {}).map(([k, v]) => `${k}:${v ?? ''}`).join(' ')).join('；');
+  return `${head}\n明细（前${list.length}条）：${digest}`.trim();
+}
+
+/**
+ * 指令链路用的历史：最多 4 条 × 300 字。
+ *
+ * ★ 必须比问答链路更省（2026-10-20）：`/api/ai/action` 的请求体上限是 8KB，
+ *   而中文按 UTF-8 是 3 字节/字 —— 6 条 × 400 字轻松顶到 7~9KB，会被 413 挡掉。
+ *   这里与后端 `aiJson` 的裁剪口径一致（4 条 × 400 字），再留一档余量。
+ */
+function historyForAction(history) {
+  return (Array.isArray(history) ? history : [])
+    .slice(-4)
+    .map((h) => ({
+      role: h?.role === 'assistant' ? 'assistant' : 'user',
+      content: String(h?.content ?? '').slice(0, 300),
+    }))
+    .filter((h) => h.content.trim());
+}
+
 /** C5：一条结构化链路（可执行 / 可查询 / 纯回答） */
-async function sendViaAction(text, reply) {
-  const res = await runAiAction(text);
+async function sendViaAction(text, reply, history = []) {
+  // ★ 带上最近几轮对话（2026-10-20）：否则"审批通过它""驳回刚才那条"无法落地 ——
+  //   此前这里是 `runAiAction(text)`，每条指令都被当成孤立的一句。
+  const res = await runAiAction(text, historyForAction(history));
   reply.pending = false;
 
   if (res.code !== 0) {
@@ -534,13 +569,13 @@ async function sendViaAction(text, reply) {
     reply.summary = d.summary || '';
     reply.rows = d.rows || [];
     // 表格内容也存一份纯文本，保证"清空/回看历史"时不丢上下文
-    reply.content = `${reply.label} ${reply.summary}`.trim();
+    reply.content = contentWithRows(reply.label, reply.summary, reply.rows);
   } else if (d.kind === 'data') {
     reply.periodLabel = d.periodLabel || '';
     reply.summary = d.summary || '';
     reply.rows = d.rows || [];
     reply.extra = d.extra || null;
-    reply.content = `${reply.label} ${reply.summary}`.trim();
+    reply.content = contentWithRows(reply.label, reply.summary, reply.rows);
   } else if (d.kind === 'write') {
     reply.preview = d.preview;
     reply.confirmToken = d.confirmToken;

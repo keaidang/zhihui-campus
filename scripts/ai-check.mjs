@@ -126,6 +126,49 @@ releaseAiQuota(fakeId);
 check('不 limit（perMin=0）不被在途标记误伤', (await consumeAiQuota(fakeId, 'check', { perMin: 0, perDay: 0 })).ok === true);
 releaseAiQuota(fakeId);
 
+// ── 7. 目标解析：**能查到 ≠ 能操作**（2026-10-20 线上反馈）──────────
+// 两个"明明有数据，AI 却说找不到"的真实问题，都属于"解析层静默失败"：
+//   · 批准请假：resolve 解构了不存在的字段 → targets 恒为空（从上线起 100% 失败）
+//   · 禁用「教师账号teacher01」：精确 IN 匹配，名字带角色前缀就落空
+console.log('\n[7] 写操作的目标解析');
+const [pendingLeave] = await query(
+  `SELECT l.id, u.real_name FROM af_leave l JOIN sys_user u ON u.id = l.student_id
+    WHERE l.status = 1 ORDER BY l.id ASC LIMIT 1`,
+);
+if (!pendingLeave) {
+  check('存在待审批请假单（用于验证批准链路）', false, '库里没有 status=1 的请假单');
+} else {
+  const byId = await previewWriteAction(admin, 'approve_leaves', { leaveIds: [Number(pendingLeave.id)] }).catch((e) => e);
+  check('按单号预览"批准请假" → 必须给出确认清单', Boolean(byId?.preview?.count), byId?.message || `count=${byId?.preview?.count}`);
+  const byName = await previewWriteAction(admin, 'approve_leaves', { keyword: pendingLeave.real_name }).catch((e) => e);
+  check('按学生姓名预览"批准请假" → 必须命中（不再只筛最新 100 条）', Boolean(byName?.preview?.count), byName?.message || `count=${byName?.preview?.count}`);
+  const older = await runReadAction(admin, 'query_leaves', { status: '1', keyword: pendingLeave.real_name });
+  check('按姓名查请假单覆盖最早的单子（过滤已下推到 SQL）', older.rows.length >= 1, `rows=${older.rows.length} keyword=${pendingLeave.real_name}`);
+}
+
+const [anyUser] = await query(
+  `SELECT u.username FROM sys_user u
+    WHERE u.status = 1 AND u.id <> 2000001
+      AND NOT EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
+                       WHERE ur.user_id = u.id AND r.code = 'admin')
+    ORDER BY u.id DESC LIMIT 1`,
+);
+if (anyUser) {
+  const r = await previewWriteAction(admin, 'disable_users', { usernames: [`教师账号${anyUser.username}`] }).catch((e) => e);
+  check(
+    '「教师账号<username>」能归一化解析到真实账号',
+    Boolean(r?.preview?.items?.some((i) => String(i.label).includes(anyUser.username))),
+    r?.message || `count=${r?.preview?.count}`,
+  );
+}
+
+// 公告：按 id 直接取（不能只扫最新 50 条）。只预览，不撤回。
+const [anyNotice] = await query('SELECT id FROM af_notice ORDER BY id ASC LIMIT 1');
+if (anyNotice) {
+  const r = await previewWriteAction(admin, 'revoke_notice', { noticeId: Number(anyNotice.id) }).catch((e) => e);
+  check('按 id 预览"撤回公告" → 最早的一条也能取到', Boolean(r?.preview?.count), r?.message || `count=${r?.preview?.count} id=${anyNotice.id}`);
+}
+
 console.log(`\n=== 合计 ${pass + fail} 项，通过 ${pass}，失败 ${fail} ===`);
 if (fail > 0) {
   console.error('✖ AI 能力层检查未通过');

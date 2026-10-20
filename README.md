@@ -459,6 +459,7 @@ npm run seed:eval    # AI 效果评估的标注用例入库（幂等）
 | [`AI-FEATURES.md`](docs/AI-FEATURES.md) | **AI 能力唯一口径**：C1~C18 设计、安全边界、分级配色、实施计划与验收 |
 | [`AUDIT-2026-09-21.md`](docs/AUDIT-2026-09-21.md) | 全项目体检报告：缺陷修复、健康确认、技术债分级 |
 | [`AUDIT-2026-10-10-AI.md`](docs/AUDIT-2026-10-10-AI.md) | **AI 能力层专项体检**：越权 / 静默错误 / 总开关失效 / 频控 TOCTOU 的发现与修复 |
+| [`AUDIT-2026-10-20-AI-CAPABILITY.md`](docs/AUDIT-2026-10-20-AI-CAPABILITY.md) | **AI 能力盘点与升级方向**：批准请假 100% 失败、账号名解析、>100 条不可见的复盘 + 缺口清单 + 三阶段路线 |
 | [`论文要点.md`](docs/论文要点.md) | 论文核心贡献梳理与章节篇幅建议 |
 | [`RESEARCH-*.md`](docs/) | 行业与功能架构调研（商用校园平台对比） |
 

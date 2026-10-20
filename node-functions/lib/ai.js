@@ -249,13 +249,25 @@ function stripFence(s) {
  *   给出总预算后，剩余时间不足就**不再重试**，宁可返回 null 走降级（调用方会回友好文案），
  *   也不要把请求推到平台墙上。
  *
+ * ★ history（2026-10-20 新增，可选）：
+ *   仅用于「对话式执行」这条链路 —— 让"驳回刚才那条""按这个再查一次"能落到具体目标上。
+ *   历史**只做上下文**，不构成权限依据：角色/数据范围仍由服务端实时查库决定，
+ *   写操作仍必须走预览 + 二次确认。因此把用户自己说过的话回传没有引入新的信任面。
+ *
  * @param {object} [o]
+ * @param {Array<{role:string,content:string}>} [o.history] 最近若干轮对话（会被裁剪）
  * @param {number} [o.totalBudgetMs] 整个函数（含重试）的墙钟上限
  * @returns {Promise<object|null>}
  */
-export async function aiJson({ system, user, maxTokens = 512, temperature = 0.1, timeoutMs, thinking = false, totalBudgetMs } = {}) {
+export async function aiJson({ system, user, history, maxTokens = 512, temperature = 0.1, timeoutMs, thinking = false, totalBudgetMs } = {}) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
+  // 历史轮次：最多 4 条、每条 400 字（与 chat.js 的 MAX_HISTORY* 同口径，控制成本）
+  for (const h of Array.isArray(history) ? history.slice(-4) : []) {
+    const role = h?.role === 'assistant' ? 'assistant' : 'user';
+    const content = String(h?.content ?? '').trim().slice(0, 400);
+    if (content) messages.push({ role, content });
+  }
   messages.push({ role: 'user', content: String(user ?? '') });
 
   const t0 = Date.now();

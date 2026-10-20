@@ -11,6 +11,7 @@ import {
   actionPromptFor,
   canTrigger,
   executeConfirmedAction,
+  nameVariants,
   previewWriteAction,
   runReadAction,
   signConfirmToken,
@@ -201,3 +202,62 @@ describe('参数校验 · 批量操作必须显式给出范围', () => {
     await expect(executeConfirmedAction(admin, token)).rejects.toThrowError();
   });
 });
+
+// ============================================================
+// 2026-10-20：两个"静默失败"的缺陷锁死
+// ============================================================
+describe('nameVariants · 账号名归一化（"教师账号teacher01" 必须能落到 teacher01）', () => {
+  it('剥掉角色前后缀与标点', () => {
+    expect(nameVariants('教师账号teacher01')).toContain('teacher01');
+    expect(nameVariants('teacher01的账号')).toContain('teacher01');
+    expect(nameVariants('王志远老师')).toContain('王志远');
+    expect(nameVariants(' teacher01 ')).toContain('teacher01');
+  });
+
+  it('原样保留 + 去重，且含常见中英文标点', () => {
+    const v = nameVariants('「方欣雪」');
+    expect(v).toContain('「方欣雪」');
+    expect(v).toContain('方欣雪');
+    // 去重：不会把同一个候选重复放进来
+    expect(new Set(v).size).toBe(v.length);
+  });
+
+  it('纯数字串不产生候选（username / real_name 里没有数字账号，白查一次没有意义）', () => {
+    expect(nameVariants('学号2120413')).not.toContain('2120413');
+  });
+
+  it('空值 / 非字符串安全降级为空数组，不抛', () => {
+    expect(nameVariants('')).toEqual([]);
+    expect(nameVariants(null)).toEqual([]);
+    expect(nameVariants(undefined)).toEqual([]);
+  });
+});
+
+describe('★ 审批请假的 resolve 必须返回 targets（曾因解构 kept 而恒为空）', () => {
+  // 缺陷回顾：approve_leaves.resolve 写成
+  //     const { kept } = await resolveLeaveTargets(...); return { targets: kept }
+  //   而 resolveLeaveTargets 返回的是 { targets } —— kept 恒为 undefined，
+  //   于是任何"审批通过 XXX 的请假"都只会回一句「没有匹配到可操作的目标」，
+  //   从上线起没有成功过一次（2026-10-20 复现）。
+  //   这里做**结构断言**：不需要连库 —— 参数为空时 resolve 会先抛引导性错误，
+  //   说明它确实走到了解析逻辑，而不是静默返回空数组。
+  it('approve_leaves 与 reject_leaves 对同一个返回值使用同一份口径（给不出范围时都要明确引导）', async () => {
+    await expect(previewWriteAction(admin, 'approve_leaves', {})).rejects.toThrowError(/请说明要处理哪一条/);
+    await expect(previewWriteAction(admin, 'reject_leaves', {})).rejects.toThrowError(/请说明要处理哪一条/);
+  });
+
+  it('resolve 的返回值必须是 { targets: 数组 } —— 缺字段时抛内部错误，而不是伪装成"没找到"', async () => {
+    const broken = { ...ACTIONS.approve_leaves, resolve: async () => ({ kept: [] }) };
+    // 直接验证 previewWriteAction 的防线：用临时注册表替换（不污染全局）
+    const orig = ACTIONS.approve_leaves;
+    ACTIONS.approve_leaves = broken;
+    try {
+      const e = await previewWriteAction(admin, 'approve_leaves', { keyword: 'x' }).catch((x) => x);
+      expect(e.code, '缺少 targets 应为 49500 内部错误，而不是 49402 看起来像数据不存在').toBe(49500);
+      expect(String(e.message)).toContain('targets');
+    } finally {
+      ACTIONS.approve_leaves = orig;
+    }
+  });
+});
+

@@ -131,10 +131,16 @@ export async function revokeNotice(actor, id) {
   return { data: { id: n.id }, message: '公告已撤回' };
 }
 
-/** 取公告并校验写权限（作者本人或超管） */
-async function loadNoticeForWrite(actor, id) {
+/**
+ * 取公告并校验写权限（作者本人或超管）
+ *
+ * ★ 2026-10-20 起对外导出：AI 的「撤回/置顶公告」必须按 id 直接取，
+ *   不能"先拉最新 50 条再内存找"——公告超过 50 条时，较早的那条永远撤不回，
+ *   与请假单的 `LIMIT 100` 是同一类坑。
+ */
+export async function loadNoticeForWrite(actor, id) {
   const nid = Number(id);
-  const rows = await query('SELECT id, publisher_id, pinned FROM af_notice WHERE id = ?', [nid]);
+  const rows = await query('SELECT id, publisher_id, pinned, title FROM af_notice WHERE id = ?', [nid]);
   if (rows.length === 0) throw new HttpError(45004, '公告不存在');
   const n = rows[0];
   if (!isAdmin(actor) && n.publisher_id !== actor.userId) throw new HttpError(40301, '只能管理自己发布的公告', 403);

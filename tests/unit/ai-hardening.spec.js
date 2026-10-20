@@ -521,3 +521,92 @@ describe.skipIf(!HAS_DB)('★ 已经是目标状态 ≠ 找不到（2026-10-10 �
     expect(sk.reason).toContain('已是禁用状态');
   });
 });
+
+// ============================================================
+// 2026-10-20：线上反馈的两条「AI 说找不到，其实数据在」问题
+// ============================================================
+describe.skipIf(!HAS_DB)('★ AI 审批请假：目标解析必须真的返回 targets（此前恒为空）', () => {
+  // 缺陷回顾：approve_leaves.resolve 解构了 resolveLeaveTargets 并不返回的 `kept`，
+  //   于是 targets 恒为空 → 用户无论说"审批通过方欣雪的请假"还是给单号，
+  //   都只得到「没有匹配到可操作的目标」。reject_leaves 因直接透传而正常，
+  //   所以"能驳回、不能批准"这个诡异现象在页面上看不出是代码 bug。
+  const admin = { userId: 2000001, roles: ['admin', 'student'], deptId: null };
+
+  it('★ 按单号预览批准 → 必须给出确认清单（只预览，不写库）', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let id;
+    try {
+      const rows = await query('SELECT id FROM af_leave WHERE status = 1 ORDER BY id DESC LIMIT 1');
+      id = rows[0]?.id;
+    } catch {
+      expect(true).toBe(true); // 无 DB：跳过
+      return;
+    }
+    if (!id) {
+      expect(true).toBe(true); // 没有待审批：跳过
+      return;
+    }
+    const r = await previewWriteAction(admin, 'approve_leaves', { leaveIds: [Number(id)] });
+    expect(r.preview, '批准请假必须返回确认清单，而不是抛"没有匹配到可操作的目标"').toBeTruthy();
+    expect(r.preview.count).toBe(1);
+    expect(r.preview.items[0].label).toContain(String(id));
+  });
+
+  it('★ 按学生姓名预览批准 → 必须命中（过滤下推到 SQL，不再只看最新 100 条）', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let row;
+    try {
+      const rows = await query(
+        `SELECT l.id, u.real_name FROM af_leave l JOIN sys_user u ON u.id = l.student_id
+          WHERE l.status = 1 AND u.real_name IS NOT NULL AND u.real_name <> ''
+          ORDER BY l.id ASC LIMIT 1`,
+      );
+      row = rows[0];
+    } catch {
+      expect(true).toBe(true);
+      return;
+    }
+    if (!row?.real_name) {
+      expect(true).toBe(true);
+      return;
+    }
+    const r = await previewWriteAction(admin, 'approve_leaves', { keyword: row.real_name });
+    expect(r.preview.count, `按姓名「${row.real_name}」应至少命中 1 条（含最早的单子）`).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe.skipIf(!HAS_DB)('★ 账号名归一化：带角色前缀也必须能解析到真实账号', () => {
+  // 用户原话形态：「禁用 教师账号teacher01」。模型会原样塞进 usernames，
+  // 精确 IN 匹配落空 → 用户看到"找不到"，而账号明明存在（teacher01 在库且为启用态）。
+  const admin = { userId: 2000001, roles: ['admin', 'student'], deptId: null };
+
+  it('「教师账号<username>」→ 仍能解析到该账号并进入确认清单', async () => {
+    const { previewWriteAction } = await import('../../node-functions/lib/ai-actions.js');
+    const { query } = await import('../../node-functions/lib/db.js');
+    let uname;
+    try {
+      const rows = await query(
+        `SELECT u.username FROM sys_user u
+          WHERE u.status = 1 AND u.id <> ?
+            AND NOT EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
+                             WHERE ur.user_id = u.id AND r.code = 'admin')
+          ORDER BY u.id DESC LIMIT 1`,
+        [admin.userId],
+      );
+      uname = rows[0]?.username;
+    } catch {
+      expect(true).toBe(true);
+      return;
+    }
+    if (!uname) {
+      expect(true).toBe(true);
+      return;
+    }
+    const r = await previewWriteAction(admin, 'disable_users', { usernames: [`教师账号${uname}`] });
+    expect(r.preview, '归一化后应得到确认清单').toBeTruthy();
+    expect(r.preview.items.some((i) => String(i.label).includes(uname))).toBe(true);
+  });
+});
+

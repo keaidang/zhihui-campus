@@ -21,8 +21,8 @@ import { jwtSecret } from './auth.js';
 import { hasRole, isAdmin } from './services/_actor.js';
 import { countUsers, findUsers, findUsersByNames, setUserStatus } from './services/users.js';
 import { decideLeave, listLeaves } from './services/leave.js';
-import { listNotices, publishNotice, revokeNotice, setNoticePinned } from './services/notice.js';
-import { handleReview, listReviewQueue } from './ai-review.js';
+import { loadNoticeForWrite, listNotices, publishNotice, revokeNotice, setNoticePinned } from './services/notice.js';
+import { getReviewRecord, handleReview, listReviewQueue } from './ai-review.js';
 
 export const CONFIRM_TTL_SEC = 5 * 60; // 确认令牌 5 分钟有效
 const ROLES_ALL = ['admin', 'counselor', 'teacher', 'leader'];
@@ -48,6 +48,44 @@ const userFilters = (p = {}) => ({
 });
 
 /**
+ * ★ 账号名的「同一性」归一化 —— 只做字符串收窄，不做模糊匹配。
+ *
+ * 为什么需要（2026-10-20 实测）：用户会说「禁用教师账号teacher01」「王志远老师的账号」，
+ * 模型会**原样**把这些片段塞进 `usernames`，于是 `findUsersByNames` 的精确 `IN` 必然落空，
+ * 用户看到的就是一句「找不到」——而账号明明存在。
+ * 这里把「角色前缀 / 后缀 / 标点 / 空格」剥掉，再补一个 ASCII 账号名候选，
+ * **命中与否仍由 SQL 精确 IN 决定**（不引入 `LIKE`，因此不会误伤同名前缀的账号）。
+ *
+ * @param {string} raw
+ * @returns {string[]} 候选（首个是原样，其余是收窄后的）
+ */
+const NAME_NOISE = /(的)?(账号|帐号|账户|用户|老师|同学|学生|教师|工号|学号|这条|那条|这个|那个)/g;
+export function nameVariants(raw) {
+  const s = String(raw ?? '').trim().slice(0, 64);
+  if (!s) return [];
+  const out = new Set([s]);
+  const cleaned = s.replace(NAME_NOISE, '').replace(/[\s,，、:：;；"'“”‘’()（）「」『』【】《》〈〉]/g, '').trim();
+  // 纯数字不收：findUsersByNames 只比对 username / real_name，数字串只会白查一次
+  if (cleaned.length >= 2 && !/^\d+$/.test(cleaned)) out.add(cleaned);
+  for (const m of s.matchAll(/[A-Za-z][A-Za-z0-9_.-]{2,31}/g)) out.add(m[0]);
+  return [...out].slice(0, 4);
+}
+
+/**
+ * 为找不到的名字给出**范围内**的相近账号建议。
+ * ★ 只用 actor 自己的数据范围去查（findUsers 内部已按 scope 过滤），
+ *   所以不会因为"提示"而泄露范围外账号是否存在。
+ */
+async function suggestUsers(actor, raw) {
+  const candidates = nameVariants(raw).sort((a, b) => b.length - a.length).slice(0, 2);
+  for (const c of candidates) {
+    const rows = await findUsers(actor, { keyword: c.slice(0, 32), limit: 5 });
+    if (rows.length) return rows.slice(0, 3).map(brief).join('、');
+  }
+  return '';
+}
+
+/**
  * 解析用户目标集合（写操作与预览共用）
  * @param {{all?:boolean, usernames?:string[], role?:string, keyword?:string, status?:any}} p
  */
@@ -57,10 +95,21 @@ async function resolveUserTargets(actor, p = {}) {
 
   // ---- 情况 A：模型明确列了账号名 → 按名字**精确 SQL 查**（不能拉一页再内存筛，见该函数注释）----
   if (explicit.length) {
-    const found = await findUsersByNames(actor, explicit);
+    // 归一化：一个输入可能派生出多个候选（如「教师账号teacher01」→ teacher01）
+    const names = [...new Set(explicit.flatMap(nameVariants))];
+    const found = await findUsersByNames(actor, names);
     const hitNames = new Set(found.flatMap((u) => [String(u.username).toLowerCase(), String(u.real_name || '').toLowerCase()]));
-    const missing = explicit.filter((n) => !hitNames.has(String(n).toLowerCase()));
-    if (missing.length) warnings.push(`未找到账号（或不在你的数据范围内）：${missing.join('、')}`);
+    const missing = explicit.filter((n) => !nameVariants(n).some((v) => hitNames.has(v.toLowerCase())));
+    if (missing.length) {
+      // ★ 必须区分「账号不存在」与「存在但不在你的数据范围」——
+      //   两种情况此前共用一句"（或不在你的数据范围内）"，用户无从判断该找谁。
+      const scopeNote = hasRole(actor, ['admin']) ? '' : '（你的数据范围不是全校，只能操作本院账号）';
+      warnings.push(`未找到账号${scopeNote}：${missing.join('、')}`);
+      for (const n of missing.slice(0, 3)) {
+        const near = await suggestUsers(actor, n);
+        if (near) warnings.push(`你要找的是不是：${near}`);
+      }
+    }
     return { targets: withLabel(found), warnings };
   }
 
@@ -194,10 +243,15 @@ export const ACTIONS = {
       keyword: { type: 'string', desc: '学生姓名/学号关键字' },
     },
     run: async (actor, p) => {
-      const r = await listLeaves(actor, { status: p.status ? String(p.status) : undefined });
-      let list = r.data.list;
+      // ★ 关键字下推到 SQL：原实现是"先取最新 100 条、再内存过滤"，
+      //   当待审批超过 100 条时，点名更早的单子会查不到（2026-10-20 实测 113 条）。
       const kw = String(p.keyword || '').trim();
-      if (kw) list = list.filter((x) => `${x.real_name || ''}${x.user_no || ''}${x.username || ''}`.includes(kw));
+      const r = await listLeaves(actor, {
+        status: p.status ? String(p.status) : undefined,
+        keyword: kw || undefined,
+        limit: 200,
+      });
+      const list = r.data.list;
       const shown = list.slice(0, 50);
       return {
         rows: shown.map((x) => ({
@@ -208,7 +262,7 @@ export const ACTIONS = {
           状态: x.status_text,
           事由: String(x.reason || '').slice(0, 30),
         })),
-        summary: `共 ${list.length} 条请假单${kw ? `（按关键字「${kw}」过滤）` : ''}${p.status ? `，状态=${p.status}` : ''}，显示前 ${shown.length} 条`,
+        summary: `共 ${list.length}${list.length >= 200 ? '+' : ''} 条请假单${kw ? `（按关键字「${kw}」过滤）` : ''}${p.status ? `，状态=${p.status}` : ''}，显示前 ${shown.length} 条`,
       };
     },
   },
@@ -327,8 +381,12 @@ export const ACTIONS = {
       opinion: { type: 'string', desc: '审批意见（可选）' },
     },
     resolve: async (actor, p) => {
-      const { kept, skipped, warnings } = await resolveLeaveTargets(actor, p);
-      return { targets: kept, skipped, warnings };
+      // ★★ 这里曾经写成 `const { kept } = await resolveLeaveTargets(...)`，
+      //   而 resolveLeaveTargets 返回的是 `{ targets }` —— kept 恒为 undefined，
+      //   于是 previewWriteAction 收到空目标，**任何"批准请假"都只会回一句
+      //   「没有匹配到可操作的目标」，从上线起就没成功过一次**（2026-10-20 复现确认）。
+      //   现在与 reject_leaves 一样直接透传，避免同一个返回值出现两种解构口径。
+      return resolveLeaveTargets(actor, p);
     },
     run: async (actor, p, targets) => {
       const done = [];
@@ -402,10 +460,10 @@ export const ACTIONS = {
     resolve: async (actor, p) => {
       const id = Number(p.noticeId);
       if (!id) throw new HttpError(49402, '请给出要撤回的公告编号');
-      const r = await listNotices(actor, { page: 1, pageSize: 50 });
-      const hit = r.data.list.find((n) => Number(n.id) === id);
-      if (!hit) throw new HttpError(45004, '公告不存在或不在你的管理范围内');
-      return { targets: [{ id, label: `《${String(hit.title).slice(0, 30)}》` }], skipped: [], warnings: [] };
+      // ★ 按 id 直接取 + 服务层权限校验；原实现是"拉最新 50 条再内存找"，
+      //   公告一多，早先发的那条就永远撤不回（2026-10-20 同类缺陷一并修掉）。
+      const hit = await loadNoticeForWrite(actor, id);
+      return { targets: [{ id, label: `《${String(hit.title || '').slice(0, 30)}》` }], skipped: [], warnings: [] };
     },
     run: async (actor, p) => {
       const r = await revokeNotice(actor, p.noticeId);
@@ -426,11 +484,10 @@ export const ACTIONS = {
     resolve: async (actor, p) => {
       const id = Number(p.noticeId);
       if (!id) throw new HttpError(49402, '请给出要操作的公告编号');
-      const r = await listNotices(actor, { page: 1, pageSize: 50 });
-      const hit = r.data.list.find((n) => Number(n.id) === id);
-      if (!hit) throw new HttpError(45004, '公告不存在');
+      // 同 revoke_notice：按 id 直接取，避免"只看得到最新 50 条"
+      const hit = await loadNoticeForWrite(actor, id);
       return {
-        targets: [{ id, label: `《${String(hit.title).slice(0, 30)}》` }],
+        targets: [{ id, label: `《${String(hit.title || '').slice(0, 30)}》` }],
         skipped: [],
         warnings: [`目标状态：${p.on ? '置顶' : '取消置顶'}（当前：${Number(hit.pinned) === 1 ? '已置顶' : '未置顶'}）`],
       };
@@ -454,11 +511,11 @@ export const ACTIONS = {
     resolve: async (actor, p) => {
       const id = Number(p.reviewId);
       if (!id) throw new HttpError(49402, '请给出要处置的审核记录编号');
-      const q = await listReviewQueue({ handled: 'all', page: 1, pageSize: 50 });
-      const hit = q.list.find((x) => Number(x.id) === id);
+      // ★ 按 id 直接取（原实现只扫最新 50 条，较早的记录永远处置不了）
+      const hit = await getReviewRecord(id);
       if (!hit) throw new HttpError(49431, '审核记录不存在');
       return {
-        targets: [{ id, label: `#${id} ${hit.verdict} · ${String(hit.excerpt || '').slice(0, 30)}` }],
+        targets: [{ id, label: `#${id} ${hit.verdict || ''} · ${String(hit.excerpt || '').slice(0, 30)}` }],
         skipped: [],
         warnings: [
           `作者：${hit.author_name || hit.username || '-'}`,
@@ -477,22 +534,34 @@ export const ACTIONS = {
 /** 解析请假单目标集合 */
 async function resolveLeaveTargets(actor, p = {}) {
   const warnings = [];
-  const r = await listLeaves(actor, { status: '1' }); // 只对"审批中"的单子动手
-  const pending = r.data.list;
-  const ids = Array.isArray(p.leaveIds) ? p.leaveIds.map(Number).filter(Boolean) : [];
-  const kw = String(p.keyword || '').trim();
+  const ids = Array.isArray(p.leaveIds) ? p.leaveIds.map(Number).filter(Boolean).slice(0, 200) : [];
+  const kw = String(p.keyword || '').trim().slice(0, 32);
 
-  let matched = [];
-  if (ids.length) {
-    matched = pending.filter((x) => ids.includes(Number(x.id)));
-    const missing = ids.filter((id) => !pending.some((x) => Number(x.id) === id));
-    if (missing.length) warnings.push(`以下单号不在"审批中"状态或不在你的范围内：#${missing.join('、#')}`);
-  } else if (kw) {
-    matched = pending.filter((x) => `${x.real_name || ''}${x.user_no || ''}${x.username || ''}`.includes(kw));
-  } else if (p.all) {
-    matched = pending;
-  } else {
+  if (!ids.length && !kw && !p.all) {
     throw new HttpError(49402, '请说明要处理哪一条：给出单号、学生姓名，或明确说"全部待审批"');
+  }
+
+  // ★★ 过滤必须下推到 SQL，不能"先取最新 100 条再内存筛"。
+  //   线上实测（2026-10-20）：待审批共 113 条，而 listLeaves 的 LIMIT 100 把
+  //   第 101 条及其后的单子彻底挡在 AI 视野之外 —— 点名某个学生也照样"找不到"。
+  //   现在 keyword / 单号都由 SQL 过滤，limit 只用于"全部待审批"这类批量场景。
+  const limit = p.all ? 200 : 100;
+  const r = await listLeaves(actor, {
+    status: '1', // 只对"审批中"的单子动手
+    keyword: kw || undefined,
+    ids: ids.length ? ids : undefined,
+    limit,
+  });
+  const pending = r.data.list;
+
+  const matched = pending;
+  if (ids.length) {
+    const got = new Set(pending.map((x) => Number(x.id)));
+    const missing = ids.filter((id) => !got.has(id));
+    if (missing.length) warnings.push(`以下单号不在"审批中"状态或不在你的范围内：#${missing.join('、#')}`);
+  }
+  if (pending.length >= limit) {
+    warnings.push(`符合条件的有 ${limit} 条以上，本次只处理最新的 ${limit} 条；要处理更多请分批发或指定姓名/单号`);
   }
 
   if (!matched.length && !warnings.length) throw new HttpError(49402, '没有匹配到"审批中"的请假单');
@@ -570,7 +639,15 @@ export async function previewWriteAction(actor, key, params = {}) {
   if (def.kind !== 'write') throw new HttpError(49402, '该操作为只读，无需确认');
 
   const r = await def.resolve(actor, params);
-  const targets = r.targets || [];
+  // ★ 结构自检：resolve 必须回 `{ targets: [...] }`。
+  //   历史上 approve_leaves 的 resolve 解构了不存在的 `kept`，于是 targets 恒为空，
+  //   用户看到的是「没有匹配到可操作的目标」——一个**看起来像"数据不存在"、
+  //   实际是代码 bug** 的假象，线上很难定位（2026-10-20 修复）。
+  //   缺少字段属于内部实现错误，必须明确报出来，不能再伪装成"没找到"。
+  if (!r || !Array.isArray(r.targets)) {
+    throw new HttpError(49500, `内部错误：操作「${def.label}」的目标解析结果不合法（缺少 targets 列表），请联系管理员`, 500);
+  }
+  const targets = r.targets;
   const skipped = r.skipped || [];
   if (!targets.length) {
     // ★★ 「本来就是目标状态」不是错误，而是"无需重复操作"（2026-10-10 用户反馈）。

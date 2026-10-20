@@ -54,6 +54,10 @@ const PARSE_RULES = [
   '4. 用户说"全部/所有/所有XX"时，把 all 设为 true，并用 role 或 keyword 标明范围。',
   '5. 用户只是在提问、闲聊、问制度流程时，两个都填 null，reply 里给出简短回答或提示。',
   '6. 用户的话有歧义（例如只说"处理一下那些"）时，两个都填 null，reply 里反问澄清。',
+  '7. 用户可能用「它 / 这条 / 刚才那个 / 上面第一行」指代**上一轮的回答**：',
+  '   请先看【对话历史】里出现过的单号、账号、姓名，再决定 params；',
+  '   历史里有单号就填 leaveIds（数字数组），有账号/姓名就填 usernames 或 keyword。',
+  '   历史里确实找不到依据时，不要猜 —— reply 里请用户补一句具体信息。',
 ].join('\n');
 
 
@@ -96,6 +100,17 @@ export async function onRequestPost(context) {
     if (!text) return fail(49401, '请输入你的指令');
     if (text.length > 300) return fail(49401, '指令太长了，请控制在 300 字以内');
 
+    // ★ 多轮上下文（2026-10-20）：只带**最近的**几轮，让「驳回刚才那条」「换个院系再查」
+    //   这类指代能落地。历史上这里只收 text，于是每句话都被当成孤立指令 ——
+    //   用户明明刚查过一张表，紧接着说"审批通过它"，模型只能靠猜。
+    //   裁剪与校验都在 aiJson 里做；这里只做形状过滤（不信任前端角色字段）。
+    const history = Array.isArray(body.history)
+      ? body.history
+          .slice(-4)
+          .map((h) => ({ role: h?.role === 'assistant' ? 'assistant' : 'user', content: String(h?.content ?? '').slice(0, 400) }))
+          .filter((h) => h.content.trim())
+      : [];
+
     const catalog = actionCatalog(actor);
     if (!catalog.length) return fail(49403, '你的角色没有可执行的系统操作权限', 403);
 
@@ -137,7 +152,7 @@ export async function onRequestPost(context) {
 
     const t0 = Date.now();
     // 总预算 9s（含重试）：留足余量给平台，避免顶到函数超时后触发平台重试（见 lib/ai.js 注释）
-    const parsed = await aiJson({ system, user: text, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
+    const parsed = await aiJson({ system, user: text, history, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
     if (!parsed) {
       await logAiUsage({ userId: actor.userId, kind: 'action', model: aiModel(), ok: 0, costMs: Date.now() - t0 });
       return fail(49430, '指令解析服务暂时不可用，请稍后再试（你也可以直接在页面上操作）', 503);
