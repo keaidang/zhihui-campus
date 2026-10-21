@@ -665,10 +665,23 @@ async function resolveLeaveTargets(actor, p = {}) {
       }
     }
     if (!pending.length) {
+      // ★ 先把"为什么没找到"说清楚（2026-10-20 追加，用户反馈"别的名字不行？"）：
+      //   同名下有请假单但不在"审批中"是最常见的情况，只回"找不到"会让人以为是姓名不支持。
+      const anyLeave = (await listLeaves(actor, { keyword: nameCands[0], limit: 5 })).data.list;
+      if (anyLeave.length) {
+        const statusList = anyLeave
+          .slice(0, 3)
+          .map((x) => `#${x.id} ${x.status_text}`)
+          .join('、');
+        throw new HttpError(
+          49402,
+          `「${nameCands[0]}」名下有 ${anyLeave.length} 条请假单，但都不在"审批中"：${statusList}。只有审批中的单据才能批准/驳回。`,
+        );
+      }
       const near = await suggestUsers(actor, nameCands[0]);
       throw new HttpError(
         49402,
-        `没有找到「${nameCands[0]}」名下"审批中"的请假单${near ? `。你要找的是不是：${near}` : '（可能已审批完，或不在你的数据范围）'}`,
+        `没有找到「${nameCands[0]}」名下"审批中"的请假单${near ? `。你要找的是不是：${near}` : '（该生可能没有提交过请假，或不在你的数据范围）'}`,
       );
     }
     if (usedName && usedName !== nameCands[0]) warnings.push(`按「${usedName}」匹配到请假单`);

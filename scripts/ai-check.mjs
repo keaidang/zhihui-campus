@@ -146,6 +146,21 @@ if (!pendingLeave) {
   check('按姓名查请假单覆盖最早的单子（过滤已下推到 SQL）', older.rows.length >= 1, `rows=${older.rows.length} keyword=${pendingLeave.real_name}`);
 }
 
+// 姓名存在、但名下没有"审批中"单据 → 必须说清原因（否则用户会以为"只认方欣雪这个名字"）
+const [noPending] = await query(
+  `SELECT u.real_name FROM af_leave l JOIN sys_user u ON u.id = l.student_id
+    GROUP BY u.id, u.real_name HAVING SUM(l.status = 1) = 0 AND COUNT(*) > 0
+    ORDER BY COUNT(*) DESC LIMIT 1`,
+);
+if (noPending) {
+  const e = await previewWriteAction(admin, 'approve_leaves', { keyword: noPending.real_name }).catch((x) => x);
+  check(
+    '姓名存在但无"审批中"单据 → 明确说明当前状态，而不是一句"找不到"',
+    e?.code === 49402 && /不在"审批中"/.test(String(e.message)),
+    String(e?.message || '').slice(0, 90),
+  );
+}
+
 const [anyUser] = await query(
   `SELECT u.username FROM sys_user u
     WHERE u.status = 1 AND u.id <> 2000001
