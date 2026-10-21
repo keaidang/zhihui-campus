@@ -43,6 +43,15 @@ const lf = await one('SELECT COUNT(*) n FROM sys_login_log');
 line('登录日志（可清理）', `${lf.n} 条`);
 const ms = await one('SELECT COUNT(*) total, SUM(read_at IS NULL) unread FROM sys_message');
 line('站内信', `${ms.total} 条，未读 ${ms.unread}`);
+// 请假状态越界：合法值只有 1~4（见 lib/services/leave.js#LEAVE_STATUS）。
+// status=0 的单子在任何状态列表里都查不到（listLeaves 只认 1~4），属"界面看不见、统计也不计"的幽灵数据。
+const lo = await one('SELECT COUNT(*) bad, MIN(created_at) mn, MAX(created_at) mx FROM af_leave WHERE status NOT IN (1,2,3,4)');
+line(
+  '请假状态越界（幽灵单）',
+  lo.bad
+    ? `${lo.bad} 条，创建于 ${lo.mn.toISOString().slice(0, 10)} ~ ${lo.mx.toISOString().slice(0, 10)}，任何列表都查不到，需确认归入哪个状态`
+    : '0 条',
+);
 
 console.log('\n=== 演示账号残留排查 ===');
 const junk = await q("SELECT id, username, created_at FROM sys_user WHERE username LIKE 'zhreg%' OR username LIKE 'tmp%' OR username LIKE 'test%'");

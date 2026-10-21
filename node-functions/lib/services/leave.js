@@ -11,6 +11,39 @@ import { auditDetail, hasRole, isAdmin } from './_actor.js';
 
 export const LEAVE_STATUS = { 1: '审批中', 2: '已批准', 3: '已驳回', 4: '已销假' };
 
+/**
+ * 请假状态的语义码 —— **唯一口径**。
+ *
+ * ★ 为什么要有它（2026-10-21 查实的事故）：
+ *   `api/ai/briefing.js` 曾经自己写死一套 0-based 口径
+ *   （0=待批 / 1=已批 / 2=驳回 / 3=销假），与本文件的 1-based 完全错位。
+ *   真实数据分布 status=1:113 / 2:65 / 3:31 / 4:58 下，简报会把
+ *   "审批中 113 条"报成"已批 113 条"、"已驳回 31 条"报成"已销假"，
+ *   而 58 条已销假因为 status=4 根本没被计入任何一个 SUM —— 四个数字全错位。
+ *   这类"数字看起来正常、含义整体平移"的缺陷最难被发现，故：
+ *   **任何按请假状态统计的地方都必须 import 这里，禁止再写数字字面量。**
+ */
+export const LEAVE_CODE = { PENDING: 1, APPROVED: 2, REJECTED: 3, BACKED: 4 };
+
+/**
+ * 近 N 天请假状态统计（简报 / 看板等聚合场景复用）
+ * @param {number} days 统计窗口（天），夹在 1~365
+ * @returns {{sql: string, params: number[]}} 参数顺序与别名一一对应，调用方直接 query(sql, params)
+ */
+export function leaveStatsQuery(days = 7) {
+  const d = Math.min(365, Math.max(1, Math.trunc(Number(days)) || 7));
+  return {
+    sql: `SELECT COUNT(*) AS total,
+                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending,
+                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS approved,
+                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS rejected,
+                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS done
+            FROM af_leave
+           WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${d} DAY)`,
+    params: [LEAVE_CODE.PENDING, LEAVE_CODE.APPROVED, LEAVE_CODE.REJECTED, LEAVE_CODE.BACKED],
+  };
+}
+
 const STAFF = ['admin', 'counselor', 'teacher', 'leader'];
 const APPROVERS = ['counselor', 'admin'];
 const TYPES = ['事假', '病假', '其他'];

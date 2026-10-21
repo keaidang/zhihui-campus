@@ -10,6 +10,7 @@ import { aiConfigured, aiJson, aiModel, logAiUsage } from '../../lib/ai.js';
 import { getBool } from '../../lib/ai-config.js';
 import { consumeAiQuota, releaseAiQuota } from '../../lib/ai-guard.js';
 import { query } from '../../lib/db.js';
+import { leaveStatsQuery } from '../../lib/services/leave.js';
 
 export { preflight as onRequestOptions };
 
@@ -34,15 +35,10 @@ export async function onRequestGet(context) {
         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
     );
 
-    const [leaveStats] = await query(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pending,
-              SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS approved,
-              SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS rejected,
-              SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS done
-         FROM af_leave
-        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
-    );
+    // ★ 请假状态口径必须来自 lib/services/leave.js（1 审批中 / 2 已批准 / 3 已驳回 / 4 已销假）。
+    //   此前这里写死 0-based 的 0/1/2/3，四个数字整体错位（详见 leaveStatsQuery 注释）。
+    const ls = leaveStatsQuery(7);
+    const [leaveStats] = await query(ls.sql, ls.params);
 
     const [repairStats] = await query(
       `SELECT COUNT(*) AS total,
