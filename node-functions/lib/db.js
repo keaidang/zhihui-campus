@@ -1,8 +1,12 @@
 // node-functions/lib/db.js — TiDB 连接池（全项目唯一出口）
 // 线上走系统信任库（Node 内置信任库含 ISRG Root X1，无需显式 CA）；
 // 本地开发可通过 DB_CA_PATH 显式加载证书。
+// ★ 另始终附带 lib/le-chain.js 里的 Let's Encrypt 中间链：边缘节点偶发只下发叶子证书，
+//   缺中间链时 verify 补不全到受信任根，mysql2 会把它报成 ECONNRESET（2026-10-21 实测）。
 import mysql from 'mysql2/promise';
 import fs from 'node:fs';
+import tls from 'node:tls';
+import { LE_EXTRA_CA } from './le-chain.js';
 
 let pool = null;
 
@@ -29,9 +33,14 @@ export function getPool() {
     // 兼容：若环境变量中配置了 base64 证书，则还原 PEM
     const b64 = process.env.DB_CA_CERT.replace(/\s+/g, '');
     const pem = `-----BEGIN CERTIFICATE-----\n${(b64.match(/.{1,64}/g) || []).join('\n')}\n-----END CERTIFICATE-----`;
-    cfg.ssl = { ca: pem, rejectUnauthorized: true };
+    // 显式根 + 中间链：链条能在服务端漏发中间证书时自行补全
+    cfg.ssl = { ca: [pem, LE_EXTRA_CA], rejectUnauthorized: true };
   } else if (process.env.DB_CA_PATH) {
-    cfg.ssl = { ca: fs.readFileSync(process.env.DB_CA_PATH), rejectUnauthorized: true };
+    cfg.ssl = { ca: [fs.readFileSync(process.env.DB_CA_PATH, 'utf8'), LE_EXTRA_CA], rejectUnauthorized: true };
+  } else {
+    // 未指定根 = 用 Node 内置根（与默认行为等价）+ 中间链。
+    // 注意不能只传中间链：中间证书不是信任根，单独传会因"找不到签发者"而失败。
+    cfg.ssl = { ca: [...tls.rootCertificates, LE_EXTRA_CA], rejectUnauthorized: true };
   }
   pool = mysql.createPool(cfg);
   return pool;
