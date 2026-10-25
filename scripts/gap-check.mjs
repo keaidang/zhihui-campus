@@ -52,6 +52,12 @@ line(
     ? `${lo.bad} 条，创建于 ${lo.mn.toISOString().slice(0, 10)} ~ ${lo.mx.toISOString().slice(0, 10)}，任何列表都查不到，需确认归入哪个状态`
     : '0 条',
 );
+// 缺流程实例：审批时 flow_node 更新会命中 0 行，意见/处理人静默丢失（lib/services/leave.js 已加兜底补建）
+const nf = await one("SELECT COUNT(*) total, SUM(status = 1) pending FROM af_leave WHERE instance_id IS NULL");
+line(
+  '请假缺流程实例',
+  nf.total ? `${nf.total} 条（其中待审批 ${nf.pending} 条），审批将无留痕` : '0 条',
+);
 
 console.log('\n=== 演示账号残留排查 ===');
 const junk = await q("SELECT id, username, created_at FROM sys_user WHERE username LIKE 'zhreg%' OR username LIKE 'tmp%' OR username LIKE 'test%'");

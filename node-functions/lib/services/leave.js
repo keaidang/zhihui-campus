@@ -50,6 +50,54 @@ const TYPES = ['事假', '病假', '其他'];
 const MAX_DAYS = 30;
 
 /**
+ * 单条请假单对应的「流程种子」——纯函数，便于单测。
+ *
+ * ★ 为什么需要（2026-10-26 体检发现）：线上 283 条请假单里有 265 条 `instance_id` 为空
+ *   （历史 seed 脚本直插 af_leave、不建流程），其中 113 条还停在"审批中"。
+ *   这些单子点审批时，`UPDATE flow_node ... WHERE instance_id = NULL` 命中 0 行、
+ *   `UPDATE flow_instance WHERE id = NULL` 也命中 0 行 —— 只有 af_leave.status 变了，
+ *   **审批意见与处理人静默丢失，而且不报错**。故审批/销假前必须能就地补齐流程。
+ *
+ * 补录原则：不伪造审批痕迹 —— 已结束的单子只补"节点状态"，opinion 标注补录，
+ * handler_id / handled_at 保持为空（宁可显示缺失，也不能编造是谁批的）。
+ * @param {number} status af_leave.status：1 审批中 / 2 已批准 / 3 已驳回 / 4 已销假
+ * @returns {{instStatus:number,nodeStatus:number,opinion:string}|null} 非法状态返回 null
+ */
+export function leaveFlowSeed(status) {
+  const s = Number(status);
+  const BACKFILL = '历史数据补录（无审批记录）';
+  if (s === 1) return { instStatus: 1, nodeStatus: 0, opinion: '' };
+  if (s === 2) return { instStatus: 2, nodeStatus: 1, opinion: BACKFILL };
+  if (s === 3) return { instStatus: 3, nodeStatus: 2, opinion: BACKFILL };
+  if (s === 4) return { instStatus: 4, nodeStatus: 1, opinion: BACKFILL };
+  return null;
+}
+
+/**
+ * 保证请假单有流程实例：缺则在同一事务内就地补建（幂等），返回 instanceId。
+ * @param {object} conn 事务连接
+ * @param {{id:number,status:number,instance_id:?number,student_id:number,dept_id:?number,type?:string}} leave
+ * @returns {Promise<?number>} 补建或已有的 instanceId；状态非法时返回 null
+ */
+export async function ensureLeaveFlow(conn, leave) {
+  if (leave.instance_id) return leave.instance_id;
+  const seed = leaveFlowSeed(leave.status);
+  if (!seed) return null;
+  const [fi] = await conn.query(
+    `INSERT INTO flow_instance (biz_type, biz_id, title, applicant_id, dept_id, status, current_node)
+     VALUES ('leave', ?, ?, ?, ?, ?, 1)`,
+    [leave.id, `${leave.type || '事假'}申请`, leave.student_id, leave.dept_id, seed.instStatus],
+  );
+  await conn.query(
+    `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status, opinion)
+     VALUES (?, 1, '辅导员审批', 'counselor', ?, ?)`,
+    [fi.insertId, seed.nodeStatus, seed.opinion],
+  );
+  await conn.query('UPDATE af_leave SET instance_id = ? WHERE id = ?', [fi.insertId, leave.id]);
+  return fi.insertId;
+}
+
+/**
  * 请假单列表
  * 数据范围：学生本人 / 辅导员本院 / 校领导与超管全校（与 lib/guard.js 的 dataScope 一致）
  *
@@ -179,7 +227,7 @@ export async function decideLeave(actor, { leaveId, approve, opinion = '' }) {
   const id = Number(leaveId);
   const op = String(opinion || '').trim().slice(0, 256);
 
-  const leaves = await query('SELECT id, dept_id, student_id, status, instance_id FROM af_leave WHERE id = ?', [id]);
+  const leaves = await query('SELECT id, dept_id, student_id, status, instance_id, type FROM af_leave WHERE id = ?', [id]);
   if (leaves.length === 0) throw new HttpError(43004, '请假单不存在');
   const lv = leaves[0];
   if (lv.status !== 1) throw new HttpError(43002, '该申请不在审批中');
@@ -188,12 +236,17 @@ export async function decideLeave(actor, { leaveId, approve, opinion = '' }) {
   }
 
   const yes = Boolean(approve);
+  let instanceId = lv.instance_id;
   await withTransaction(async (conn) => {
-    await conn.query(
+    // ★ 历史数据可能没有流程实例（见 leaveFlowSeed 注释）：就地补建，否则审批意见会静默丢失
+    instanceId = await ensureLeaveFlow(conn, lv);
+    if (!instanceId) throw new HttpError(43005, '该请假单缺少流程实例，请联系管理员');
+    const [nodeUpd] = await conn.query(
       'UPDATE flow_node SET status = ?, handler_id = ?, opinion = ?, handled_at = NOW() WHERE instance_id = ? AND node_order = 1 AND status = 0',
-      [yes ? 1 : 2, actor.userId, op || (yes ? '同意' : '驳回'), lv.instance_id],
+      [yes ? 1 : 2, actor.userId, op || (yes ? '同意' : '驳回'), instanceId],
     );
-    await conn.query('UPDATE flow_instance SET status = ?, updated_at = NOW() WHERE id = ?', [yes ? 2 : 3, lv.instance_id]);
+    if (nodeUpd.affectedRows === 0) throw new HttpError(43005, '该请假单的审批节点异常（已被处理或不存在）');
+    await conn.query('UPDATE flow_instance SET status = ?, updated_at = NOW() WHERE id = ?', [yes ? 2 : 3, instanceId]);
     await conn.query('UPDATE af_leave SET status = ? WHERE id = ?', [yes ? 2 : 3, id]);
   });
   await opLog(actor.userId, `leave.${yes ? 'approve' : 'reject'}`, `leave:${id}`, auditDetail(actor, op), actor.ip);
@@ -213,13 +266,16 @@ export async function decideLeave(actor, { leaveId, approve, opinion = '' }) {
 /** 销假：学生本人，已批准 → 已销假 */
 export async function backLeave(actor, leaveId) {
   const id = Number(leaveId);
-  const leaves = await query('SELECT id, student_id, status, instance_id FROM af_leave WHERE id = ?', [id]);
+  const leaves = await query('SELECT id, student_id, status, instance_id, dept_id, type FROM af_leave WHERE id = ?', [id]);
   if (leaves.length === 0) throw new HttpError(43004, '请假单不存在');
   if (leaves[0].student_id !== actor.userId) throw new HttpError(40301, '只能销自己的假', 403);
   if (leaves[0].status !== 2) throw new HttpError(43003, '仅已批准的请假单可销假');
   await withTransaction(async (conn) => {
+    // 同上：老数据可能缺实例，销假前补齐，避免 flow_instance 静默漏更新
+    const instanceId = await ensureLeaveFlow(conn, leaves[0]);
+    if (!instanceId) throw new HttpError(43005, '该请假单缺少流程实例，请联系管理员');
     await conn.query('UPDATE af_leave SET status = 4, back_at = NOW() WHERE id = ?', [id]);
-    await conn.query('UPDATE flow_instance SET status = 4, updated_at = NOW() WHERE id = ?', [leaves[0].instance_id]);
+    await conn.query('UPDATE flow_instance SET status = 4, updated_at = NOW() WHERE id = ?', [instanceId]);
   });
   return { data: { leaveId: id }, message: '销假成功，欢迎返校' };
 }

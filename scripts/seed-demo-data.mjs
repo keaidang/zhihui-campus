@@ -288,9 +288,15 @@ async function seedHistoryGrades() {
     rows,
   );
   // enrolled 与实际选课数对齐：避免出现"名额 0/60 却有 50 条选课记录"这种自相矛盾
+  //
+  // ★ 口径必须是 status IN (1,2)（2026-10-26 修正）：edu_elect.status 的语义是
+  //   0=已退课 / 1=修读中 / 2=已出分（见 api/edu/course.js 的 ON DUPLICATE 分支与 mine 判定）。
+  //   原实现只数 `status = 2`，对历史学期（全部记录都已出分）恰好等于总人数，
+  //   于是把 27 个历史班写成"177~221 人 / 容量 60"这种自相矛盾的名额；
+  //   而当前学期一条 status=2 都没有，重算会把名额清零。两种口径都错，故取并集。
   await conn.query(
     `UPDATE edu_class c
-        SET c.enrolled = (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status = 2)
+        SET c.enrolled = (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status IN (1, 2))
       WHERE c.term = ?`,
     [TERM_HISTORY],
   );

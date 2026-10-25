@@ -55,11 +55,20 @@ const [badCap] = await q(
       AND c.enrolled <> (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status = 1)`,
 );
 console.log(`${Number(badCap.n) > 0 ? '⚠ ' : '  '}教学班 enrolled 与在选记录数不一致（应为 0）${Number(badCap.n)}`);
+// ★ 历史学期同样要查（2026-10-26 补）：原来只查当前学期，于是 seed 用错口径
+//   （只数 status=2 已出分）把 27 个历史班写成"221 人 / 容量 60"长期无人发现。
+//   历史学期没有"修读中"，正确口径是 status IN (1,2)。
+const [badCapHis] = await q(
+  `SELECT COUNT(*) n FROM edu_class c
+    WHERE c.term <> '2026-2027-1'
+      AND c.enrolled <> (SELECT COUNT(*) FROM edu_elect e WHERE e.class_id = c.id AND e.status IN (1, 2))`,
+);
+console.log(`${Number(badCapHis.n) > 0 ? '⚠ ' : '  '}历史学期 enrolled 与选课记录数不一致（应为 0）${Number(badCapHis.n)}`);
 const [graded] = await q(
   "SELECT COUNT(DISTINCT term) n FROM edu_elect WHERE status = 2 AND score IS NOT NULL",
 );
 console.log(`  已出成绩的记录分布在 ${graded.n} 个学期（成绩必须挂历史学期，不能挂当前学期）`);
-const electProblems = Number(badTerm.n) + Number(badCap.n);
+const electProblems = Number(badTerm.n) + Number(badCap.n) + Number(badCapHis.n);
 
 console.log('\n=== 明细追查 ===');
 console.log('· 无角色用户：');
