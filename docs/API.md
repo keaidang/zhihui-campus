@@ -82,10 +82,12 @@
 
 ### 5.2.1 校园邮箱（需登录 + 已开通对外收发）
 
+> 底层邮件服务的完整接口（含外部系统接入、字段全表、状态机、7 个实测坑）见 **[MAIL-API.md](./MAIL-API.md)**。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /api/mail | 收件箱列表（cursor 分页）；`?action=sent` 已发送列表（读 sys_mail_sent，60s 节流回查 keaidang mail 状态回写） |
-| POST | /api/mail | `{to, subject, text?, html?}` 发信（发件人 system@，每日 50 封按 sys_op_log 计数，成功写 sys_mail_sent） |
+| GET | /api/mail | 收件箱列表（cursor 分页）；`?action=sent` 已发送列表（读 sys_mail_sent，60s 节流回查 LanQin 发信状态并回写） |
+| POST | /api/mail | `{to, subject, text?, html?}` 发信（**发件人 = 该用户自己的校园邮箱**，不是 system@；每日 50 封按 sys_op_log 计数，成功写 sys_mail_sent） |
 | GET | /api/mail/detail?id= | 邮件详情（mailboxId 归属校验） |
 | POST | /api/me/mail-password | 用户自助修改邮箱密码 |
 
