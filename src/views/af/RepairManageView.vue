@@ -58,7 +58,8 @@
     </section>
 
     <!-- 工单详情：当前状态 + 状态机进度 + 历次变更原因（数据源 sys_op_log） -->
-    <el-dialog v-model="detailVisible" title="报修工单详情" width="520px">
+    <!-- 宽度 520 → 880：详情要放工单信息 + 四态链 + 处理时间线，520 太挤 -->
+    <el-dialog v-model="detailVisible" title="报修工单详情" width="880px">
       <template v-if="detail">
         <div class="dt-head">
           <b>{{ detail.location }}</b>

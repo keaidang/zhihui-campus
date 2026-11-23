@@ -43,7 +43,8 @@
     </section>
 
     <!-- 审批意见 -->
-    <el-dialog v-model="dialogVisible" :title="approving ? '通过申请' : '驳回申请'" width="440px">
+    <!-- 宽度 440 → 860：这个弹窗现在要放「提交→辅导员→院系复核」时间线，440 装不下（挤成两行看不清） -->
+    <el-dialog v-model="dialogVisible" :title="approving ? '通过申请' : '驳回申请'" width="860px">
       <p class="dlg-sub">
         {{ current?.real_name }} · {{ current?.type }} · {{ fmt(current?.start_at) }} ~ {{ fmt(current?.end_at) }}
       </p>
