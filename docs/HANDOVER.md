@@ -604,7 +604,14 @@
    - **✅ APK 打包已完成（2026-10-15）**：采用 **Capacitor 7.6.9 远程壳**——`server.url=https://c.9o.pw` 让 WebView 直接加载线上站点，**同源使前端相对路径 `/api` 天然成立 → 前端零改动**（若改「本地打包 dist」则必须把 API 基址改成绝对地址，会触碰 `src/api/request.js` 核心链路，故不采用）。工具链本机自装（`apt install openjdk-21-jdk-headless unzip zip` + Android cmdline-tools → `platform-tools / platforms;android-35 / build-tools;35.0.0`，`ANDROID_HOME=/opt/android-sdk`，`android/local.properties` 写 `sdk.dir`）。出包命令：`npm run app:build`（= `vite build` → `cap sync android` → `cap build android --androidreleasetype APK`，产出**签名 release**）或 `cd android && ./gradlew assembleDebug|assembleRelease`。产物落 `release/`（已 gitignore）。release 签名凭据在 `android/keystore.properties` + `android/keystore/*.jks`（**均 gitignore，密钥严禁入库**）。⚠ 远程壳属"薄壳"，无原生能力，iOS 上架 App Store 会撞 Guideline 4.2，本地安装/演示无影响
    - **★ v1.1 两处体验修复（2026-10-15，纯原生改动，前端零改动）**：① **返回键一按就退出应用**——Capacitor 7 未装 `@capacitor/app` 时返回键走 Android 默认实现直接 `finish()` Activity；已在 `MainActivity` 注册 `OnBackPressedCallback`，优先 `getBridge().getWebView().goBack()` 回退上一路由（Vue Router history → popstate），无历史时才交回系统默认。② **顶部被系统状态栏遮挡**——`targetSdk 35` 在 Android 15+ 被强制 edge-to-edge；已启用内置 `android.adjustMarginsForEdgeToEdge: "auto"`，并把 `AppTheme.NoActionBar` 的窗口背景由 `@null` 改为 `#f0f7ff` + `windowLightStatusBar=true`（否则让出的状态栏条会露黑条）。改完须**重新出包**（`npm run app:build`），APK 版本已升到 `versionCode 2 / versionName 1.1`
    - **移动端验收方法**（可复用）：`node .shots/capture.mjs`（Playwright + 系统 Edge；本地 preview 把 `/api/*` 用 `route.fetch` 转发到线上；断言 `document.documentElement.scrollWidth === innerWidth` 且 PC 视口下 `.shell-burger` 数量为 0）
-2. **【低成本·见效快】图书封面补齐**：420 本全无封面。可用 picsum 随机图或按分类生成占位图，仅改 seed 脚本 + `lib_book.cover_url`。
+2. ~~**【低成本·见效快】图书封面补齐**~~ ✅ 已处理（2026-11-23，结论：**不引入外部图**）：
+   - 原先的方案（picsum 随机图 / 按分类占位图）实测都不可行：
+     `covers.openlibrary.org` 本机 **8 秒超时**；421 个 ISBN 全是 `978-7-000000-xx` 生成值，真图源也查不到；
+     按分类生成则同分类 289 本（计算机）长得一模一样。**外链的额外代价是"断网一片破图"**，而图书检索是基础功能。
+   - 改为 `src/views/m3/LibraryView.vue#coverStyle()`：**书名+作者 djb2 哈希 → 色相 + 一档明度** 生成渐变，
+     同一本书颜色永远一致（与分页顺序无关），421 本实测落在 **311 种不同配色**；零请求、零外部依赖。
+   - 配套：`<img @error>` 兜底 —— 管理员录入的真实封面 URL 失效时自动退回首字占位，不再显示破图。
+   - 真实封面仍可通过「编辑图书」的 `coverUrl` 录入覆盖（前端 `v-if="b.coverUrl"` 优先渲染图片）。
 3. **【低成本】邮箱增强**：附件上传发信（keaidang mail 支持 attachment）、管理员邮箱用量统计页。
 4. **【中期】图片图床接入**：sys_blob（LONGBLOB，现 32 条/1.15MB）→ 对象存储，仅改 blob.js 与 ImgUploader 的 URL 生成，schema 不用动。
 5. ~~**【工程优化】Element Plus 按需引入**~~ ✅ **已完成**（2026-09-21，见铁律 #33）：EP 单包 1088KB→最大 chunk 172KB（-84%）、gzip 341KB→~145KB（-58%），首页首屏 JS 最大仅 62KB。
