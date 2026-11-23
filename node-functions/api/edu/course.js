@@ -101,7 +101,11 @@ export async function onRequestPost(context) {
           //   也无法判断是"真的满"还是"自己操作错了"。
           //   对比 42007（时段冲突）本来就带课程名与节次，两条错误的可读性差一个量级。
           //   多一次查询只在失败路径发生，不影响正常选课耗时。
-          const [info] = await query(
+          // ★ 注意：`query()` 返回的是**行数组本身**（lib/db.js 内部已 `const [rows]` 解构过），
+          //   不是 mysql2 的 `[rows, fields]` 元组；而 `conn.query()`（事务连接）才是元组。
+          //   一开始写成了 `const [info] = await query(...)`，于是 info 变成"第一行对象"、
+          //   `info[0]` 恒为 undefined，文案退化成「该课程」却不报错 —— 这类静默错位只能靠实测发现。
+          const info = await query(
             `SELECT c.name, x.week_day, x.section, x.capacity, x.enrolled
                FROM edu_class x JOIN edu_course c ON c.id = x.course_id
               WHERE x.id = ?`,
