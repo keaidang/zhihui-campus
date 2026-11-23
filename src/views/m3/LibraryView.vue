@@ -42,8 +42,8 @@
           <p v-if="books.length === 0" class="lib-empty">没有找到相关藏书</p>
           <div class="lib-grid">
             <div v-for="b in books" :key="b.id" class="lib-card" @click="openBook(b)">
-              <div class="lib-cover">
-                <img v-if="b.coverUrl" :src="b.coverUrl" alt="" loading="lazy" />
+              <div class="lib-cover" :style="coverStyle(b)">
+                <img v-if="b.coverUrl && !b._coverErr" :src="b.coverUrl" alt="" loading="lazy" @error="b._coverErr = true" />
                 <span v-else class="lib-cover-fallback">{{ b.title.slice(0, 2) }}</span>
               </div>
               <h4 :title="b.title">{{ b.title }}</h4>
@@ -133,8 +133,8 @@
       <!-- 书籍详情 -->
       <el-dialog v-model="detailDlg" :title="current?.title" width="440px">
         <div class="lib-detail" v-if="current">
-          <div class="lib-cover big">
-            <img v-if="current.coverUrl" :src="current.coverUrl" alt="" />
+          <div class="lib-cover big" :style="coverStyle(current)">
+            <img v-if="current.coverUrl && !current._coverErr" :src="current.coverUrl" alt="" @error="current._coverErr = true" />
             <span v-else class="lib-cover-fallback">{{ current.title.slice(0, 2) }}</span>
           </div>
           <ul>
@@ -296,6 +296,34 @@ watch(tab, (newTab) => {
     loadLoans();
   }
 });
+
+/**
+ * 无封面时的稳定配色封面。
+ *
+ * 为什么不拉外部封面图（2026-11-23 实测后决定）：
+ *   1. `covers.openlibrary.org` 在本机 8 秒超时（TimeoutError），演示/答辩时不可靠；
+ *   2. 库内 421 个 ISBN 全是 `978-7-000000-xx` 这类生成值，真实图源也查不到；
+ *   3. 引入外链等于"断网就一片破图"，而图书检索是基础功能。
+ * 所以改为「书名+作者哈希 → 色相」生成稳定渐变：
+ *   · 同一本书颜色永远一致（与分页顺序无关，不会翻页变色）
+ *   · 不同书颜色不同，卡片墙不再是一片同色
+ *   · 零请求、零外部依赖
+ * 管理员仍可通过编辑图书录入真实封面 URL 覆盖它（见 ImgUploader）。
+ */
+function coverStyle(b) {
+  const key = String(b?.title || '') + String(b?.author || '');
+  // djb2 变体：只要稳定即可，不需要密码学强度
+  let h = 5381;
+  for (let i = 0; i < key.length; i += 1) h = ((h << 5) + h + key.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  const hue2 = (hue + 24) % 360;
+  // 只用色相会让 421 本撞出 187 组同色（实测），再叠一档明暗把组合数翻到 360×3
+  const light = 34 + ((h >>> 9) % 3) * 4; // 34 / 38 / 42
+  // 饱和度/亮度收窄在"书脊"区间：太艳像警告色，太暗白字看不清
+  return {
+    background: `linear-gradient(135deg, hsl(${hue} 46% ${light}%), hsl(${hue2} 52% ${light - 12}%))`,
+  };
+}
 
 function openBook(b) {
   current.value = b;
