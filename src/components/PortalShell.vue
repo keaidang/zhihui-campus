@@ -193,7 +193,7 @@ const MENUS = [
   { key: 'af-leave', label: '我的请假', icon: 'Clock', path: '/af/leave', roles: ['student'], group: 'edu' },
   { key: 'edu-teach', label: '我的课程', icon: 'Notebook', path: '/edu/teach', roles: ['teacher'], group: 'edu' },
   { key: 'edu-entry', label: '成绩录入', icon: 'EditPen', path: '/edu/score-entry', roles: ['teacher'], group: 'edu' },
-  { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'admin'], group: 'edu' },
+  { key: 'af-approve', label: '请假审批', icon: 'Checked', path: '/af/approve', roles: ['counselor', 'leader', 'admin'], group: 'edu' },
   { key: 'af-repair-m', label: '报修处理', icon: 'SetUp', path: '/af/repair-manage', roles: ['counselor', 'admin'], group: 'edu' },
   { key: 'af-notice', label: '公告中心', icon: 'Bell', path: '/af/notice', roles: null, group: 'edu' },
 

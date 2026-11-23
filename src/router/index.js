@@ -93,7 +93,11 @@ const router = createRouter({
       path: '/af/approve',
       name: 'af-approve',
       component: () => import('../views/af/ApproveView.vue'),
-      meta: { requiresAuth: true, roles: ['counselor', 'admin'] },
+      // ★ leader 必须在这里（2026-11-23）：请假流程改成两级后，第二级「院系复核」
+      //   的处理角色是 leader（见 lib/services/leave.js 的 LEAVE_NODES）。
+      //   后端 APPROVERS 已放开、节点也流转到了 leader，但前端路由没同步 ——
+      //   结果是"功能做了没有入口"：leader 登录后访问 /af/approve 被守卫打回工作台。
+      meta: { requiresAuth: true, roles: ['counselor', 'leader', 'admin'] },
     },
     {
       path: '/af/repair',
