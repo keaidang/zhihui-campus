@@ -84,6 +84,31 @@ async function open(account, label) {
   throw new Error(`${label} 登录失败（3 次）`);
 }
 
+/**
+ * 给页面的顶部提示（Element Plus 的 el-message）套一圈红框，便于论文插图里定位。
+ *
+ * 为什么用注入 CSS 而不是改前端：这只是**截图标注**，线上不应该出现红框；
+ * addStyleTag 只作用于本次浏览器上下文，页面关掉就没了。
+ * 用 outline 而非 border：border 会改变元素盒模型、把 toast 撑大 4px；
+ * outline 画在盒子外面且不参与布局，配合 outline-offset 让框与文字留出空隙。
+ * 注入时机：必须在**截图之前、任意时刻**（CSS 匹配是即时的，toast 先出现也没关系），
+ * 但必须在 goto 之后 —— 换文档会丢掉注入的 style 标签。
+ */
+async function markToast(page) {
+  await page.addStyleTag({
+    content: `
+      /* 默认 top 是 20px，加上 6px 外扩后框顶只剩 14px，缩到论文里像被裁过；
+         下移到 30px，让红框上方留出 ~24px 呼吸空间 */
+      .el-message{
+        top:30px !important;
+        outline:4px solid #e60012 !important;
+        outline-offset:6px !important;
+        border-radius:10px !important;
+      }
+    `,
+  });
+}
+
 /** 取当前可见的错误/成功提示文本 */
 async function readMessage(page) {
   const el = page.locator('.el-message').last();
@@ -110,6 +135,7 @@ try {
     await page.goto(`${BASE}/edu/elect`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.el-table__row', { timeout: 20000 });
     await page.waitForTimeout(1200);
+    await markToast(page); // 4-4 / 4-5 的满员与冲突提示都要红框
 
     if (want('elect-full')) {
       // 满员：数据结构与算法 周四 5-6 节 91/91
@@ -140,6 +166,38 @@ try {
       await row.getByRole('button', { name: '选课' }).click();
       const msg = await readMessage(page);
       console.log(`    冲突提示：${msg}`);
+      // 点按钮会 scrollIntoView，滚动位置落在某行中间 —— 画面顶部就是半行，像被裁过。
+      // 实测：整页由 window 滚动（所有容器的 scrollHeight === clientHeight），
+      //   固定顶栏 .shell-top 高 61px、表格行高 57px、目标行在表格第 13 行。
+      //   所以**不能**滚回顶部（目标行会掉出视口，实测 y=1179 > 810），
+      //   正确做法是把 scrollY 微调到"可见区顶边（61px）正好压在整行边界上"。
+      //   提示是 fixed 定位，不受滚动影响。
+      const adj = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.el-table__row')];
+        if (!rows.length) return null;
+        const head = document.querySelector('.shell-top');
+        const headerH = head ? Math.round(head.getBoundingClientRect().bottom) : 0;
+        const rh = rows[0].getBoundingClientRect().height;
+        const firstDocTop = rows[0].getBoundingClientRect().top + window.scrollY;
+        const visibleTop = window.scrollY + headerH;
+        const rem = (((visibleTop - firstDocTop) % rh) + rh) % rh;
+        const before = window.scrollY;
+        window.scrollTo(0, Math.max(0, before - rem));
+        return { headerH, rh: Math.round(rh), rem: Math.round(rem), before: Math.round(before), after: Math.round(window.scrollY) };
+      });
+      await page.waitForTimeout(500);
+      const box = await row.boundingBox();
+      const vh = page.viewportSize().height;
+      const visible = box && box.y > (adj?.headerH ?? 60) + 20 && box.y + box.height < vh;
+      console.log(
+        `    对齐整行：顶栏 ${adj?.headerH}px / 行高 ${adj?.rh}px / 余 ${adj?.rem}px，` +
+          `scrollY ${adj?.before} → ${adj?.after}；目标行 y=${box ? Math.round(box.y) : '?'}（视口 ${vh}）` +
+          `${visible ? '' : ' ⚠ 不可见'}`,
+      );
+      if (!visible) {
+        await row.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(400);
+      }
       await shot(page, '4-5-elect-conflict', msg.slice(0, 40));
     }
     await page.context().close();
@@ -235,6 +293,7 @@ try {
     // 左：学生访问管理员页面
     const stu = await open({ username: 'student004', password: PWD }, 'student004');
     await stu.goto(`${BASE}/admin/users`, { waitUntil: 'domcontentloaded' });
+    await markToast(stu); // 越权提示要红框（管理员那张是对照，正常页面，不套框）
     // 提示 4 秒后消失：等页面渲染完就截，别等太久
     await stu.waitForTimeout(1500);
     const stuUrl = stu.url();
