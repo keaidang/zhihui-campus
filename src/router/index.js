@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import HomeView from '../views/HomeView.vue';
 import { useAuthStore } from '../stores/auth';
 
@@ -193,6 +194,15 @@ router.beforeEach(async (to) => {
     await auth.fetchMe().catch(() => {});
   }
   if (to.meta.roles && !auth.hasRole(to.meta.roles)) {
+    // ★ 不要静默重定向（2026-11-23 改）：
+    //   原来直接 return { name:'workbench' }，用户看到的是"点了没反应/自己回到了工作台"，
+    //   既不知道为什么，也无法区分"链接过期"与"我没权限"。
+    //   这里明确提示一次 —— 注意这**只是体验层**：真正的拦截在服务端
+    //   （每个接口都按角色 + 数据范围拼 SQL），前端提示不构成任何安全边界。
+    ElMessage.warning({
+      message: `无权访问该页面 —— 当前角色（${(auth.user?.roles || []).join('/') || '未识别'}）不具备此权限`,
+      duration: 4000,
+    });
     return { name: 'workbench' };
   }
   return true;
