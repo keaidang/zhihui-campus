@@ -514,6 +514,30 @@
     - **★ 坑 2：refresh token 一次性轮换，会让"根本没比到"伪装成"比过了"。** 首版脚本让多个已登录页面复用同一上下文（同一 refresh token）→ 第二次加载被判重放 → 掉回登录页 → 元素数与登录页一模一样（84 个），却报"布局一致"。**修法**：每个已登录页面捕获前**各自重新登录**，并加**有效性断言**（已登录页必须存在 `.shell-body`），否则该行判为无效、不计入通过。
     - **★ 坑 3：有些页面本身渲染就不确定，必须先测噪声基线。** 手机首页跨版本截图差 23 字节，但**同一版本连拍 3 次自己就给出了 2 种结果**（446907B / 446896B）→ 属固有亚像素/动画噪声。**判据：跨版本差异必须先与"同版本自比"的差异量级比较，小于自身噪声就不能算差异。**
 
+66. **★ `npm outdated` 里 Current > Wanted，是「node_modules 与 lock 不一致」的漂移信号，不是"版本落后"（2026-11-23 体检发现）**：
+    - 现象：`npm outdated` 列出 `@capacitor/core` Current **8.5.3**、Wanted **7.6.9**、Latest 8.6.2。
+      **Current 比 Wanted 还高** —— 正常理解的"落后"应是 Current < Latest，这里却是
+      **装的东西比 lock 声明的更新**，属于漂移。
+    - 三方对账（唯一可信的判断方式，别只看其中一个）：
+      ```
+      package.json    ^7.6.9     ← 声明
+      package-lock    7.6.9      ← 基准（npm ci 的依据）
+      node_modules    8.5.3      ← 实际（漂移）
+      ```
+    - 根因：`npx cap add android` / `npm i @capacitor/xxx`（不带版本号）会装 latest 主版本。
+      而项目基准是 **Capacitor 7**（见提交 d4fe2c7「新增 Capacitor 7 远程壳 Android 打包」），
+      `android/` 工程也是按 7 生成的 —— 用 8 的 CLI 去 sync 7 的工程，行为不确定。
+    - 真正的危害不是"现在跑不起来"，而是**不可复现**：`npm ci` 会装回 7.6.9，
+      于是形成"本地能打包、别人/CI 不能"的差异，且这种差异只在 `npm run app:build` 时才暴露。
+    - 修法（只让 node_modules 回到基准，**不动** package.json / lock）：
+      ```bash
+      npm install --no-save @capacitor/core@7.6.9 @capacitor/android@7.6.9 @capacitor/cli@7.6.9
+      ```
+      验收：`npx cap --version` = 7.6.9；三个包 `require('.../package.json').version` 均为 7.6.9；
+      `md5sum -c` 确认 package.json 与 lock 未被改动；`git status` 干净。
+    - 预防：装依赖**永远带版本号**（`npm i pkg@x.y.z`），不要裸装；
+      体检时固定做一次三方对账，`npm outdated` 出现 **Current > Wanted** 是最快的入口。
+
 ## 6. 交付与验证流程
 
 0. **开工前/交付前盘点**：`node scripts/gap-check.mjs`（只读）——规模、角色分布、封面/blob/令牌剩余项实测、演示账号残留、线上错误最后发生时间，对照 docs/PROGRESS.md 阶段 5 确认差距
