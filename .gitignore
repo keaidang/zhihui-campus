@@ -8,6 +8,7 @@ scripts/*
 !scripts/db-test.py
 !scripts/run-schema.py
 !scripts/smoke-auth.mjs
+!scripts/shots-thesis.mjs
 !scripts/eo.cmd
 !scripts/migrate.mjs
 !scripts/grant-role.mjs
