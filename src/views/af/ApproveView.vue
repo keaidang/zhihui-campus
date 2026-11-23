@@ -47,6 +47,47 @@
       <p class="dlg-sub">
         {{ current?.real_name }} · {{ current?.type }} · {{ fmt(current?.start_at) }} ~ {{ fmt(current?.end_at) }}
       </p>
+
+      <!-- 审批流程时间线：申请人 → 辅导员审批 → 院系复核
+           数据来自 GET /api/af/leave?id=（flow_node 逐节点），
+           当前停留节点高亮；已处理节点显示处理人 / 时间 / 意见 -->
+      <div v-if="nodes.length" class="flow-tl">
+        <div class="flow-item start done">
+          <span class="flow-dot"></span>
+          <div class="flow-body">
+            <div class="flow-head">
+              <b>提交申请</b>
+              <span class="flow-st">已提交</span>
+            </div>
+            <div class="flow-meta">
+              <span v-if="current?.real_name">{{ current.real_name }}</span>
+              <span v-if="current?.created_at">{{ fmt(current.created_at) }}</span>
+              <em v-if="current?.type">{{ current.type }}</em>
+            </div>
+          </div>
+        </div>
+        <div
+          v-for="n in nodes"
+          :key="n.order"
+          class="flow-item"
+          :class="{ cur: n.current, done: n.status === 1, rej: n.status === 2 }"
+        >
+          <span class="flow-dot"></span>
+          <div class="flow-body">
+            <div class="flow-head">
+              <b>{{ n.name }}</b>
+              <span class="flow-st">{{
+                n.status === 1 ? '已通过' : n.status === 2 ? '已驳回' : n.current ? '当前环节' : '待流转'
+              }}</span>
+            </div>
+            <div class="flow-meta">
+              <span v-if="n.handlerName">{{ n.handlerName }}</span>
+              <span v-if="n.handledAt">{{ fmt(n.handledAt) }}</span>
+              <em v-if="n.opinion">{{ n.opinion }}</em>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- C4 AI 审批助手：只给建议，绝不代替人工决定（开关未开时不显示） -->
       <div v-if="adviceOn" class="ai-advice">
         <div v-if="adviceLoading" class="ai-advice-loading">AI 正在分析该申请…</div>
@@ -100,6 +141,7 @@ const approving = ref(true);
 const saving = ref(false);
 const current = ref(null);
 const opinion = ref('');
+const nodes = ref([]);
 
 // ---- C4 AI 审批助手（只建议，不自动审批）----
 const adviceOn = computed(() => Boolean(ai.features.approvalAdvice));
@@ -150,9 +192,21 @@ function open(row, yes) {
   current.value = row;
   approving.value = yes;
   opinion.value = '';
+  nodes.value = [];
   dialogVisible.value = true;
   // 打开对话框时才去请求建议（不给列表页增加 N 次调用）
   loadAdvice(row.id);
+  loadNodes(row.id);
+}
+
+/** 拉取该单据的流程节点（用于时间线）。失败不影响审批本身。 */
+async function loadNodes(leaveId) {
+  try {
+    const res = await api(`/api/af/leave?id=${leaveId}`);
+    if (res.code === 0) nodes.value = res.data?.nodes || [];
+  } catch {
+    /* 拿不到时间线不阻塞审批 */
+  }
 }
 
 async function confirm() {
@@ -203,6 +257,83 @@ onMounted(async () => {
 .small { font-size: 12.5px; }
 .muted { color: var(--zc-text-sub); }
 .dlg-sub { margin: 0 0 12px; font-size: 13px; color: var(--zc-text-sub); }
+
+/* 审批流程时间线（申请人 → 辅导员审批 → 院系复核） */
+.flow-tl {
+  position: relative;
+  margin: 0 0 14px;
+  padding: 10px 12px 4px;
+  background: #f7f9fc;
+  border: 1px solid var(--zc-border);
+  border-radius: 10px;
+}
+.flow-item {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.flow-item:last-child { padding-bottom: 4px; }
+/* 竖线：从圆点往下连，最后一项不画 */
+.flow-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 0;
+  width: 1px;
+  background: #d6dfea;
+}
+.flow-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  box-shadow: 0 0 0 3px #f7f9fc;
+}
+.flow-item.done .flow-dot { background: #16a34a; }
+.flow-item.rej .flow-dot { background: #dc2626; }
+.flow-item.cur .flow-dot {
+  background: #2563eb;
+  box-shadow: 0 0 0 3px #dbeafe;
+}
+.flow-body { flex: 1; min-width: 0; }
+.flow-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: #1e293b;
+}
+.flow-head b { font-weight: 600; }
+.flow-st {
+  font-size: 11px;
+  color: #64748b;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+}
+.flow-item.cur .flow-st { color: #1d4ed8; background: #dbeafe; }
+.flow-item.done .flow-st { color: #15803d; background: #dcfce7; }
+.flow-item.rej .flow-st { color: #b91c1c; background: #fee2e2; }
+.flow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+.flow-meta em {
+  font-style: normal;
+  color: #475569;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* C4 AI 建议卡片 */
 .ai-advice {

@@ -44,8 +44,28 @@ export function leaveStatsQuery(days = 7) {
   };
 }
 
+/**
+ * 请假审批的**节点定义** —— 唯一口径。
+ *
+ * 抽出常量的原因（2026-11-23）：此前建单 SQL 里硬编码了一行"辅导员审批"，
+ * 于是 flow_node 表结构虽支持多节点，实际永远只有 1 行 —— 论文 4.4 讲的
+ * "申请人 → 辅导员 → 系主任 / 加签转办均为新增节点"根本无从落地，
+ * 前端也画不出节点时间线。抽成常量后：① SQL 由它生成，不可能只插一个；
+ * ② 单测可以直接断言节点数量与角色，改回单节点会立刻测试失败。
+ *
+ * 第二节点用 leader（院系/校级复核）：角色表里没有"系主任"这个 code，
+ * 硬造角色要动整套权限体系；而论文强调的正是"处理人按角色 + 数据范围实时匹配"，
+ * 用现有角色表达复核环节更贴合实现。
+ */
+export const LEAVE_NODES = [
+  { order: 1, name: '辅导员审批', role: 'counselor' },
+  { order: 2, name: '院系复核', role: 'leader' },
+];
+
 const STAFF = ['admin', 'counselor', 'teacher', 'leader'];
-const APPROVERS = ['counselor', 'admin'];
+// 能进入审批入口的角色（具体能否批**当前节点**，由 flow_node.handler_role 决定，
+// 见 decideLeave —— 这里只是粗筛，避免任意角色打到 43005 才发现不行）
+const APPROVERS = ['counselor', 'leader', 'admin'];
 const TYPES = ['事假', '病假', '其他'];
 const MAX_DAYS = 30;
 
@@ -88,10 +108,11 @@ export async function ensureLeaveFlow(conn, leave) {
      VALUES ('leave', ?, ?, ?, ?, ?, 1)`,
     [leave.id, `${leave.type || '事假'}申请`, leave.student_id, leave.dept_id, seed.instStatus],
   );
+  const nodeSql = LEAVE_NODES.map(() => '(?, ?, ?, ?, ?, ?)').join(',');
+  const nodeParams = LEAVE_NODES.flatMap((n) => [fi.insertId, n.order, n.name, n.role, seed.nodeStatus, seed.opinion]);
   await conn.query(
-    `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status, opinion)
-     VALUES (?, 1, '辅导员审批', 'counselor', ?, ?)`,
-    [fi.insertId, seed.nodeStatus, seed.opinion],
+    `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status, opinion) VALUES ${nodeSql}`,
+    nodeParams,
   );
   await conn.query('UPDATE af_leave SET instance_id = ? WHERE id = ?', [fi.insertId, leave.id]);
   return fi.insertId;
@@ -207,10 +228,21 @@ export async function applyLeave(actor, body = {}) {
        VALUES ('leave', ?, ?, ?, ?, 1, 1)`,
       [leaveId, `${type}申请`, actor.userId, actor.deptId],
     );
+    // ★ 两节点：辅导员初审 → 院系复核（2026-11-23 补实现）
+    //
+    // 为什么之前只有 1 个节点而论文写的是"多节点"：建单时硬编码只插 node_order=1，
+    // 审批也只 UPDATE node_order=1 —— 于是 flow_node 表虽然"支持多节点"，
+    // 实际永远只有一行，图 4-6 要的"节点时间线"根本画不出来，
+    // 论文 4.4「加签、转办均为新增节点」也就无从验证。
+    //
+    // 第二节点用 leader（院系/校级复核）：角色表里没有"系主任"，
+    // 硬造角色要改权限体系；而论文 4.4 强调的正是「处理人不固定为账号，
+    // 按角色 + 数据范围实时匹配」——用现有角色表达复核环节，更贴合实现。
+    const nodeSql = LEAVE_NODES.map(() => '(?, ?, ?, ?, 0)').join(',');
+    const nodeParams = LEAVE_NODES.flatMap((n) => [fi.insertId, n.order, n.name, n.role]);
     await conn.query(
-      `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status)
-       VALUES (?, 1, '辅导员审批', 'counselor', 0)`,
-      [fi.insertId],
+      `INSERT INTO flow_node (instance_id, node_order, node_name, handler_role, status) VALUES ${nodeSql}`,
+      nodeParams,
     );
     await conn.query('UPDATE af_leave SET instance_id = ? WHERE id = ?', [fi.insertId, leaveId]);
   });
@@ -237,30 +269,172 @@ export async function decideLeave(actor, { leaveId, approve, opinion = '' }) {
 
   const yes = Boolean(approve);
   let instanceId = lv.instance_id;
+  let nextNodeName = ''; // 通过后是否还有下一节点，用于决定提示语
+
   await withTransaction(async (conn) => {
     // ★ 历史数据可能没有流程实例（见 leaveFlowSeed 注释）：就地补建，否则审批意见会静默丢失
     instanceId = await ensureLeaveFlow(conn, lv);
     if (!instanceId) throw new HttpError(43005, '该请假单缺少流程实例，请联系管理员');
-    const [nodeUpd] = await conn.query(
-      'UPDATE flow_node SET status = ?, handler_id = ?, opinion = ?, handled_at = NOW() WHERE instance_id = ? AND node_order = 1 AND status = 0',
-      [yes ? 1 : 2, actor.userId, op || (yes ? '同意' : '驳回'), instanceId],
-    );
-    if (nodeUpd.affectedRows === 0) throw new HttpError(43005, '该请假单的审批节点异常（已被处理或不存在）');
-    await conn.query('UPDATE flow_instance SET status = ?, updated_at = NOW() WHERE id = ?', [yes ? 2 : 3, instanceId]);
-    await conn.query('UPDATE af_leave SET status = ? WHERE id = ?', [yes ? 2 : 3, id]);
-  });
-  await opLog(actor.userId, `leave.${yes ? 'approve' : 'reject'}`, `leave:${id}`, auditDetail(actor, op), actor.ip);
 
-  // 站内通知：审批结果推送给申请人（尽力而为，失败不影响审批结果）
-  await notify(
-    lv.student_id,
-    yes ? '你的请假申请已批准' : '你的请假申请被驳回',
-    yes
-      ? `你的请假申请已通过审批${op ? `，意见：${op}` : ''}。请按时返校并在返校后完成销假。`
-      : `你的请假申请未通过${op ? `，原因：${op}` : ''}。如有疑问请联系辅导员。`,
-    { senderId: actor.userId, biz: 'leave' },
+    // ---- 按**当前节点**取处理规则（2026-11-23：从"写死 node_order=1"改为多节点推进）----
+    const [instRows] = await conn.query(
+      'SELECT id, current_node, status FROM flow_instance WHERE id = ? FOR UPDATE',
+      [instanceId],
+    );
+    if (instRows.length === 0) throw new HttpError(43005, '流程实例不存在');
+    const curOrder = Number(instRows[0].current_node) || 1;
+
+    const [curNodes] = await conn.query(
+      'SELECT node_order, node_name, handler_role, status FROM flow_node WHERE instance_id = ? AND node_order = ?',
+      [instanceId, curOrder],
+    );
+    if (curNodes.length === 0) throw new HttpError(43005, `当前节点（第 ${curOrder} 步）不存在`);
+    const curNode = curNodes[0];
+    if (Number(curNode.status) !== 0) throw new HttpError(43002, `「${curNode.node_name}」已处理过，请刷新`);
+
+    // 处理人按「角色 + 数据范围」实时匹配，而不是写死某个账号
+    if (!isAdmin(actor) && !hasRole(actor, [curNode.handler_role])) {
+      throw new HttpError(40301, `当前环节为「${curNode.node_name}」，你的角色无权处理`, 403);
+    }
+    // 辅导员这一环仍限本院（与数据范围口径一致）
+    if (hasRole(actor, ['counselor']) && !isAdmin(actor)) {
+      if (!actor.deptId || lv.dept_id !== actor.deptId) throw new HttpError(40301, '只能审批本院学生的申请', 403);
+    }
+
+    const [nodeUpd] = await conn.query(
+      'UPDATE flow_node SET status = ?, handler_id = ?, opinion = ?, handled_at = NOW() WHERE instance_id = ? AND node_order = ? AND status = 0',
+      [yes ? 1 : 2, actor.userId, op || (yes ? '同意' : '驳回'), instanceId, curOrder],
+    );
+    if (nodeUpd.affectedRows === 0) throw new HttpError(43005, '该审批节点异常（已被处理或不存在）');
+
+    // ---- 驳回：整单结束，后续节点标记为「流程终止」，时间线上不留悬空待办 ----
+    if (!yes) {
+      await conn.query(
+        `UPDATE flow_node SET status = 2, opinion = '（前序节点驳回，流程终止）'
+          WHERE instance_id = ? AND node_order > ? AND status = 0`,
+        [instanceId, curOrder],
+      );
+      await conn.query('UPDATE flow_instance SET status = 3, updated_at = NOW() WHERE id = ?', [instanceId]);
+      await conn.query('UPDATE af_leave SET status = 3 WHERE id = ?', [id]);
+      return;
+    }
+
+    // ---- 通过：看还有没有下一节点 ----
+    const [nextRows] = await conn.query(
+      'SELECT node_order, node_name FROM flow_node WHERE instance_id = ? AND node_order > ? AND status = 0 ORDER BY node_order LIMIT 1',
+      [instanceId, curOrder],
+    );
+    if (nextRows.length > 0) {
+      // 还有下一环：只前进，不结单，单据仍为「审批中」
+      await conn.query('UPDATE flow_instance SET current_node = ?, updated_at = NOW() WHERE id = ?', [
+        nextRows[0].node_order,
+        instanceId,
+      ]);
+      nextNodeName = nextRows[0].node_name;
+      return;
+    }
+    // 最后一环：整单批准
+    await conn.query('UPDATE flow_instance SET status = 2, updated_at = NOW() WHERE id = ?', [instanceId]);
+    await conn.query('UPDATE af_leave SET status = 2 WHERE id = ?', [id]);
+  });
+
+  // 站内通知（尽力而为，失败不影响审批结果）
+  if (nextNodeName) {
+    // 流转到下一节点：先告知学生会继续审核，避免"批了却还没结束"的困惑
+    await notify(
+      lv.student_id,
+      `你的请假申请已通过「辅导员审批」，正在流转至「${nextNodeName}」`,
+      `你的请假申请已通过上一环节${op ? `，意见：${op}` : ''}，当前等待「${nextNodeName}」处理，请留意通知。`,
+      { senderId: actor.userId, biz: 'leave' },
+    );
+  } else {
+    await notify(
+      lv.student_id,
+      yes ? '你的请假申请已批准' : '你的请假申请被驳回',
+      yes
+        ? `你的请假申请已通过全部审批环节${op ? `，意见：${op}` : ''}。请按时返校并在返校后完成销假。`
+        : `你的请假申请未通过${op ? `，原因：${op}` : ''}。如有疑问请联系辅导员。`,
+      { senderId: actor.userId, biz: 'leave' },
+    );
+  }
+
+  const done = !nextNodeName;
+  await opLog(actor.userId, `leave.${yes ? 'approve' : 'reject'}`, `leave:${id}`, auditDetail(actor, op), actor.ip);
+  return {
+    data: { leaveId: id, status: done ? (yes ? 2 : 3) : 1, nextNode: nextNodeName || null },
+    message: !yes ? '已驳回' : nextNodeName ? `已通过，流转至「${nextNodeName}」` : '已批准',
+  };
+}
+
+/**
+ * 请假单详情（含**完整节点时间线**）
+ *
+ * 为什么单独一个接口而不是复用列表：
+ *   列表为了轻量只 JOIN 了 `current_node` 那一行节点（用于显示"当前环节"），
+ *   而详情页要画「申请人 → 辅导员 → 院系复核」的完整时间线，
+ *   需要按 node_order 取全部节点（含已处理节点的意见与时间）。
+ *   把 nodes 塞进列表会让每行 100 条 × N 节点，列表接口明显变重。
+ *
+ * 数据范围与 listLeaves 完全同源（dataScope），不另写一套判断。
+ */
+export async function getLeaveDetail(actor, leaveId) {
+  const id = Number(leaveId);
+  if (!Number.isFinite(id) || id <= 0) throw new HttpError(43004, '请假单不存在');
+
+  const rows = await query(
+    `SELECT l.id, l.student_id, l.dept_id, l.type, l.reason, l.start_at, l.end_at, l.status,
+            l.created_at, l.instance_id,
+            u.real_name, u.username, u.user_no,
+            d.name AS dept_name, c.name AS class_name,
+            fi.status AS inst_status, fi.current_node
+       FROM af_leave l
+       JOIN sys_user u ON u.id = l.student_id
+       LEFT JOIN sys_department d ON d.id = l.dept_id
+       LEFT JOIN sys_class c ON c.id = u.class_id
+       LEFT JOIN flow_instance fi ON fi.id = l.instance_id
+      WHERE l.id = ?`,
+    [id],
   );
-  return { data: { leaveId: id, status: yes ? 2 : 3 }, message: yes ? '已批准' : '已驳回' };
+  if (rows.length === 0) throw new HttpError(43004, '请假单不存在');
+  const lv = rows[0];
+
+  // 数据范围：学生本人 / 辅导员本院 / 校领导与超管全校
+  const scope = dataScope(actor.roles, actor.deptId);
+  if (scope.type === 'dept') {
+    if (Number(lv.dept_id) !== Number(scope.deptId)) throw new HttpError(40301, '只能查看本院学生的申请', 403);
+  } else if (scope.type !== 'all') {
+    if (Number(lv.student_id) !== Number(actor.userId)) throw new HttpError(40301, '只能查看自己的申请', 403);
+  }
+
+  const nodes = lv.instance_id
+    ? await query(
+        `SELECT fn.node_order, fn.node_name, fn.handler_role, fn.status, fn.opinion, fn.handled_at,
+                hu.real_name AS handler_name
+           FROM flow_node fn
+           LEFT JOIN sys_user hu ON hu.id = fn.handler_id
+          WHERE fn.instance_id = ?
+          ORDER BY fn.node_order`,
+        [lv.instance_id],
+      )
+    : [];
+
+  return {
+    data: {
+      ...lv,
+      nodes: nodes.map((n) => ({
+        order: Number(n.node_order),
+        name: n.node_name,
+        role: n.handler_role,
+        // 0 待处理 / 1 通过 / 2 驳回
+        status: Number(n.status),
+        opinion: n.opinion || '',
+        handlerName: n.handler_name || '',
+        handledAt: n.handled_at || null,
+        // 是否"当前停留节点"：前端据此高亮
+        current: Number(n.node_order) === Number(lv.current_node) && Number(n.status) === 0,
+      })),
+    },
+  };
 }
 
 /** 销假：学生本人，已批准 → 已销假 */

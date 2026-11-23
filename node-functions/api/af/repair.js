@@ -36,6 +36,55 @@ export async function onRequestGet(context) {
     const status = url.searchParams.get('status');
     const staff = roles.some((r) => ['admin', 'counselor'].includes(r));
 
+    // ?id= 单条详情：工单信息 + **处理记录时间线**（数据源 sys_op_log，target='repair:<id>'）
+    //
+    // 为什么从 op_log 取而不是新加一张表：
+    //   状态机的每次变更（accept / finish / reject）本来就写了一条 op_log，
+    //   再建一张 repair_log 就是同一事实的第二份副本 —— 迟早会与 op_log 不一致。
+    //   op_log 的 action 已区分动作、detail 已存原因、created_at 已存时间，
+    //   恰好就是"历次变更原因"需要的三要素。
+    const detailId = url.searchParams.get('id');
+    if (detailId) {
+      const id = Number(detailId);
+      if (!Number.isFinite(id) || id <= 0) return fail(44004, '工单不存在');
+      const rows = await query(
+        `SELECT r.id, r.user_id, r.category, r.location, r.description, r.contact,
+                r.status, r.remark, r.created_at, r.updated_at, r.handler_id,
+                u.real_name AS user_name, u.username,
+                h.real_name AS handler_name
+           FROM af_repair r
+           JOIN sys_user u ON u.id = r.user_id
+           LEFT JOIN sys_user h ON h.id = r.handler_id
+          WHERE r.id = ?`,
+        [id],
+      );
+      if (rows.length === 0) return fail(44004, '工单不存在');
+      const r = rows[0];
+      // 数据范围：非管理岗只能看自己的工单
+      if (!staff && Number(r.user_id) !== Number(userId)) return fail(40301, '只能查看自己的报修单', 403);
+
+      const logs = await query(
+        `SELECT o.action, o.detail, o.created_at, o.operator_id,
+                (SELECT real_name FROM sys_user WHERE id = o.operator_id) AS operator_name
+           FROM sys_op_log o
+          WHERE o.target = CONCAT('repair:', ?) AND o.action LIKE 'repair.%'
+          ORDER BY o.id ASC`,
+        [id],
+      );
+      const ACTION_LABEL = { 'repair.accept': '受理派单', 'repair.finish': '处理完成', 'repair.reject': '标记无法处理' };
+      return ok({
+        ...r,
+        statusText: STATUS[r.status] || '未知',
+        logs: logs.map((l) => ({
+          action: l.action,
+          label: ACTION_LABEL[l.action] || l.action,
+          detail: l.detail || '',
+          operatorName: l.operator_name || '',
+          at: l.created_at,
+        })),
+      });
+    }
+
     const where = [];
     const params = [];
     if (!staff) {

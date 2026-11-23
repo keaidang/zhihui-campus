@@ -5,7 +5,7 @@
 // ★ P4 服务层重构（2026-10-09）：业务逻辑在 lib/services/leave.js。
 import { ok, jsonError, readBody, preflight } from '../../lib/http.js';
 import { actorFrom } from '../../lib/services/_actor.js';
-import { handleLeaveAction, listLeaves } from '../../lib/services/leave.js';
+import { getLeaveDetail, handleLeaveAction, listLeaves } from '../../lib/services/leave.js';
 
 export { preflight as onRequestOptions };
 
@@ -20,6 +20,12 @@ export async function onRequestGet(context) {
     //   所以这里直接拒绝，而不是让它退化成"看不到数据"。
     const actor = await actorFrom(context, ['student', 'counselor', 'admin', 'leader']);
     const url = new URL(context.request.url);
+    // ?id= 取单条详情（含完整节点时间线，供审批详情页画流程图）
+    const detailId = url.searchParams.get('id');
+    if (detailId) {
+      const d = await getLeaveDetail(actor, detailId);
+      return ok(d.data);
+    }
     const r = await listLeaves(actor, { status: url.searchParams.get('status') });
     return ok(r.data);
   } catch (e) {

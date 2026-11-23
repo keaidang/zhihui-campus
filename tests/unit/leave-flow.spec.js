@@ -5,7 +5,7 @@
 // 两者都依赖 leaveFlowSeed 的映射，映射一旦错位（例如把"已销假"补成"审批中"），
 // 数据会被写成自相矛盾且再也对不上 —— 所以四种状态必须逐条钉死。
 import { describe, it, expect } from 'vitest';
-import { leaveFlowSeed, LEAVE_STATUS } from '../../node-functions/lib/services/leave.js';
+import { leaveFlowSeed, LEAVE_NODES, LEAVE_STATUS } from '../../node-functions/lib/services/leave.js';
 
 describe('leaveFlowSeed · 补录映射', () => {
   it('审批中(1) → 实例进行中 + 节点待处理，且不留补录文案', () => {
@@ -55,5 +55,33 @@ describe('leaveFlowSeed · 补录映射', () => {
     const keys = Object.keys(LEAVE_STATUS).map(Number).sort();
     expect(keys).toEqual([1, 2, 3, 4]);
     for (const k of keys) expect(leaveFlowSeed(k)).not.toBeNull();
+  });
+});
+
+describe('LEAVE_NODES · 审批节点定义（2026-11-23 从单节点改为两级）', () => {
+  // 为什么必须钉死：改这块之前，建单 SQL 里硬编码一行"辅导员审批"，
+  // 建单只插 1 个节点、审批只 UPDATE node_order=1 —— flow_node 表虽支持多节点，
+  // 实际永远只有一行，论文 4.4 的"多节点 / 加签转办"没有落地依据。
+  // 现在 SQL 由这个常量生成，任何人改回单节点都会让下面两条立刻失败。
+  it('必须是两级：辅导员审批 → 院系复核', () => {
+    expect(LEAVE_NODES.length).toBe(2);
+    expect(LEAVE_NODES.map((n) => n.name)).toEqual(['辅导员审批', '院系复核']);
+  });
+
+  it('节点序号从 1 连续递增（flow_node 有 uk_instance_node 唯一键）', () => {
+    expect(LEAVE_NODES.map((n) => n.order)).toEqual([1, 2]);
+  });
+
+  it('每个节点都有处理角色，且角色落在系统已有角色编码内', () => {
+    const KNOWN_ROLES = ['admin', 'student', 'teacher', 'counselor', 'leader'];
+    for (const n of LEAVE_NODES) {
+      expect(n.role).toBeTruthy();
+      expect(KNOWN_ROLES).toContain(n.role);
+    }
+  });
+
+  it('第一级是辅导员（与"只能审批本院学生"的校验对应），第二级是复核', () => {
+    expect(LEAVE_NODES[0].role).toBe('counselor');
+    expect(LEAVE_NODES[1].role).toBe('leader');
   });
 });
