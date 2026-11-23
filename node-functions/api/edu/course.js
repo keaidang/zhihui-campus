@@ -95,7 +95,26 @@ export async function onRequestPost(context) {
           return fail(42007, `时段冲突：与已选的「${courseName}」（${sec}）时间重叠，不能同时选`);
         }
         if (e.message === 'DUPLICATE') return fail(42003, '本学期已选过该教学班，请刷新查看');
-        if (e.message === 'FULL') return fail(42005, '手慢了，名额已满');
+        if (e.message === 'FULL') {
+          // ★ 文案必须带上"哪门课、什么时间、满到什么程度"（2026-11-23 改）
+          //   原实现只有一句「手慢了，名额已满」—— 学生看到后不知道是哪门课，
+          //   也无法判断是"真的满"还是"自己操作错了"。
+          //   对比 42007（时段冲突）本来就带课程名与节次，两条错误的可读性差一个量级。
+          //   多一次查询只在失败路径发生，不影响正常选课耗时。
+          const [info] = await query(
+            `SELECT c.name, x.week_day, x.section, x.capacity, x.enrolled
+               FROM edu_class x JOIN edu_course c ON c.id = x.course_id
+              WHERE x.id = ?`,
+            [classId],
+          );
+          const i = info[0] || {};
+          const WD = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+          const when = [WD[Number(i.week_day)] || '', i.section || ''].filter(Boolean).join(' ');
+          return fail(
+            42005,
+            `「${i.name || '该课程'}」${when ? `（${when}）` : ''}名额已满（${i.enrolled ?? cls.enrolled}/${i.capacity ?? cls.capacity}），可关注退课释放的名额`,
+          );
+        }
         throw e;
       }
       const [after] = await query('SELECT enrolled, capacity FROM edu_class WHERE id = ?', [classId]);
