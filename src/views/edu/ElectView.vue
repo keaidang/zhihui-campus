@@ -46,12 +46,14 @@
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
             <!-- 满员置灰（论文 4.2）：余量 0 时按钮禁用、文案改「已满」，学生不必提交后才知没名额。
+                 用 type="info" 而不是保留 primary —— primary 的禁用态是淡蓝色，
+                 视觉上仍像"可点的蓝色按钮"，与论文"置灰"不符。
                  但**并发抢占**不在前端拦 —— 点下去时页面仍显示有余量、实际已被别人抢走，
                  这一种只有服务端条件更新判定得出（42005），由顶部提示展示（图 4-3）。
                  两层各管一段：前端拦「已知满员」，服务端拦「瞬时抢占」。 -->
             <el-button
               v-if="!row.mine"
-              type="primary"
+              :type="row.remaining <= 0 ? 'info' : 'primary'"
               size="small"
               round
               :disabled="row.remaining <= 0"
