@@ -45,8 +45,20 @@
         </el-table-column>
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
-            <el-button v-if="!row.mine" type="primary" size="small" round :loading="busyId === row.class_id" @click="enroll(row)">
-              选课
+            <!-- 满员置灰（论文 4.2）：余量 0 时按钮禁用、文案改「已满」，学生不必提交后才知没名额。
+                 但**并发抢占**不在前端拦 —— 点下去时页面仍显示有余量、实际已被别人抢走，
+                 这一种只有服务端条件更新判定得出（42005），由顶部提示展示（图 4-3）。
+                 两层各管一段：前端拦「已知满员」，服务端拦「瞬时抢占」。 -->
+            <el-button
+              v-if="!row.mine"
+              type="primary"
+              size="small"
+              round
+              :disabled="row.remaining <= 0"
+              :loading="busyId === row.class_id"
+              @click="enroll(row)"
+            >
+              {{ row.remaining <= 0 ? '已满' : '选课' }}
             </el-button>
             <el-button v-else type="danger" plain size="small" round :loading="busyId === row.class_id" @click="drop(row)">
               退课
