@@ -219,9 +219,18 @@ export const TEMPLATES = {
           WHERE status = 2${periodSql(days, 'created_at')}`,
       );
       const total = rows.reduce((n, r) => n + Number(r.数量 || 0), 0);
+      // 摘要必须能直接回答"还有多少没处理"—— 原来只说"共 N 条、已完成 M 条"，
+      // 问"多少没处理"时用户还得自己拿总数减，等于没答。这里把四态逐一列出并给出待处理合计。
+      const get = (s) => Number(rows.find((r) => r.状态 === s)?.数量 || 0);
+      const waiting = get('待受理');
+      const doing = get('处理中');
+      const detail = rows.map((r) => `${r.状态} ${r.数量} 条`).join('、');
       return {
         rows,
-        summary: `共 ${total} 条报修单，其中已完成 ${done?.数量 || 0} 条；已完成的平均处理时长约 ${avg[0]?.h ?? 0} 小时。`,
+        summary:
+          `共 ${total} 条报修单：${detail}。` +
+          `其中待处理 ${waiting + doing} 条（待受理 ${waiting} + 处理中 ${doing}），` +
+          `已完成 ${done?.数量 || 0} 条，平均处理时长约 ${avg[0]?.h ?? 0} 小时。`,
       };
     },
   },
