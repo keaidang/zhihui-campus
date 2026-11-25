@@ -196,10 +196,16 @@ body { background: transparent; }
 
 
 @media (max-width: 640px) {
-  .zc-navbar .inner { height: 54px; }
-  .zc-logo { gap: 10px; }
-  .zc-logo .brand-logo { width: 36px; height: 36px; }
-  .zc-logo .brand-name { width: 136px; height: 37px; object-fit: cover; object-position: center; }
+  .zc-navbar .inner { height: 54px; gap: 8px; }
+  /* 移动端隐藏顶栏的「架构与工程全景」：Hero 区已有同名大按钮，功能重复。
+     留着会让顶栏内容总宽 474px，在 390px 视口下横向溢出 84px，
+     表现为右侧「登录/注册」被挤出屏幕、logo 被裁 —— 2026-11-25 手机端实测。
+     想保留入口就把下面这条改回 flex，并同步缩小按钮文字。 */
+  .zc-navbar .nav-overview-btn { display: none; }
+  .zc-logo { gap: 8px; min-width: 0; }
+  .zc-logo .brand-logo { width: 34px; height: 34px; flex: none; }
+  .zc-logo .brand-name { width: 130px; height: 35px; object-fit: contain; }
+  .nav-user-area { flex: none; gap: 6px; }
 }
 
 /* ---------- Hero：左文案 + 右 macOS 旗舰视窗悬浮预览 ---------- */
