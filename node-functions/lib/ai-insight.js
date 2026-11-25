@@ -154,6 +154,10 @@ export const TEMPLATES = {
     desc: '已出成绩的教学班按等级（优秀/良好/中等/及格/不及格）统计',
     params: { limit: { type: 'enum', values: ['10', '20', '50'], desc: '统计前多少个教学班，默认 20' } },
     run: async (_ctx, p) => {
+      // ORDER BY 必须带 tiebreaker：只按人数排时，人数相同的教学班顺序不稳定，
+      // 导致 LIMIT 20 每次取到的集合略有差异 → 摘要里"优秀 177 / 182"来回跳，
+      // 同一个问题问两遍答案不一样，答辩时会被当成数据不准。
+      // （注释写在 JS 层而不是 SQL 里的 `--`，避免 SQL 被压缩成一行时把后续语句注释掉）
       const limit = ['10', '20', '50'].includes(String(p.limit)) ? Number(p.limit) : 20;
       const rows = await query(
         `SELECT c.name AS 课程, COUNT(*) AS 已出成绩人数,
@@ -168,7 +172,7 @@ export const TEMPLATES = {
            JOIN edu_course c ON c.id = ec.course_id
           WHERE e.score IS NOT NULL
           GROUP BY c.id, c.name
-          ORDER BY 已出成绩人数 DESC
+          ORDER BY 已出成绩人数 DESC, c.id ASC
           LIMIT ${limit}`,
       );
       // 摘要要能直接回答"成绩分布怎么样""多少人不及格"——
