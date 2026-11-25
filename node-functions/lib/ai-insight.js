@@ -171,7 +171,19 @@ export const TEMPLATES = {
           ORDER BY 已出成绩人数 DESC
           LIMIT ${limit}`,
       );
-      return { rows, summary: rows.length ? `已出成绩的教学班 ${rows.length} 个，平均分最高的是《${rows[0].课程}》（${rows[0].平均分}）。` : '暂无已出成绩的记录。' };
+      // 摘要要能直接回答"成绩分布怎么样""多少人不及格"——
+      // 原来只说"平均分最高的是《X》"，等于答非所问（问分布答极值）。
+      // 这里把五档人数汇总出来，并保留平均分最高那条信息。
+      const sum = (k) => rows.reduce((n, r) => n + Number(r[k] || 0), 0);
+      const total = sum('已出成绩人数');
+      const bad = sum('不及格');
+      const rate = total ? ((bad / total) * 100).toFixed(1) : '0.0';
+      const summary = rows.length
+        ? `统计范围内已出成绩 ${total} 人次：优秀 ${sum('优秀')}、良好 ${sum('良好')}、中等 ${sum('中等')}、` +
+          `及格 ${sum('及格')}、不及格 ${bad}（不及格率 ${rate}%）。` +
+          `平均分最高的是《${rows[0].课程}》（${rows[0].平均分}）。`
+        : '暂无已出成绩的记录。';
+      return { rows, summary };
     },
   },
 
