@@ -152,8 +152,10 @@ export async function onRequestPost(context) {
     });
 
     const t0 = Date.now();
-    // 总预算 9s（含重试）：留足余量给平台，避免顶到函数超时后触发平台重试（见 lib/ai.js 注释）
-    const parsed = await aiJson({ system, user: text, history, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 9000 });
+    // 预算从 8s/9s 放宽到 10s/22s：原预算下首次超时（8s）后只剩 1s，
+    // 重试门槛（1.2s）根本进不去，等于「上游抖一下就必然失败」。
+    // 放宽后首次 10s 失败仍有 12s 预算可退避重试一次；总时长仍远低于函数 120s 墙钟。
+    const parsed = await aiJson({ system, user: text, history, maxTokens: 400, temperature: 0, timeoutMs: 10000, totalBudgetMs: 22000 });
     if (!parsed) {
       await logAiUsage({ userId: actor.userId, kind: 'action', model: aiModel(), ok: 0, costMs: Date.now() - t0 });
       return fail(49430, '指令解析服务暂时不可用，请稍后再试（你也可以直接在页面上操作）', 503);

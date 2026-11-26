@@ -283,7 +283,18 @@ export async function aiJson({ system, user, history, maxTokens = 512, temperatu
       perAttempt = Math.min(timeoutMs ?? TIMEOUT_MS, left);
     }
     const r = await aiChat({ messages, json: true, maxTokens, temperature, timeoutMs: perAttempt, thinking });
-    if (!r) return null;
+    if (!r) {
+      // 上游失败（429 限流 / 超时 / 网络）属于瞬时故障，最该重试；
+      // 原实现这里直接 return null，反而只在「JSON 解析失败」时才重试 —— 优先级正好反了。
+      // 实测近 7 天 action 失败 3/15（20%），全部是 429 与 timeout，本可在预算内挽回。
+      const leftBudget = totalBudgetMs ? totalBudgetMs - (Date.now() - t0) : Number.POSITIVE_INFINITY;
+      if (attempt === 0 && leftBudget > 2500) {
+        console.warn('[ai-json] 上游失败，预算内退避重试一次，剩余', leftBudget, 'ms');
+        await new Promise((res) => setTimeout(res, 600));
+        continue;
+      }
+      return null;
+    }
     try {
       const obj = JSON.parse(stripFence(r.content));
       if (obj && typeof obj === 'object') return { ...obj, _usage: r.usage, _costMs: r.costMs };
