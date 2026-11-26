@@ -152,10 +152,11 @@ export async function onRequestPost(context) {
     });
 
     const t0 = Date.now();
-    // 预算从 8s/9s 放宽到 10s/22s：原预算下首次超时（8s）后只剩 1s，
-    // 重试门槛（1.2s）根本进不去，等于「上游抖一下就必然失败」。
-    // 放宽后首次 10s 失败仍有 12s 预算可退避重试一次；总时长仍远低于函数 120s 墙钟。
-    const parsed = await aiJson({ system, user: text, history, maxTokens: 400, temperature: 0, timeoutMs: 10000, totalBudgetMs: 22000 });
+    // 超时预算的两次取舍（2026-11-26 实测）：
+    //   8s/9s  → 首次超时后只剩 1s，重试门槛 1.2s 进不去，等于"抖一下就必然失败"（失败率 20%）
+    //   10s/22s → 重试能进去了，但上游连续两次 429 时要让用户干等 21.8s，体验更差
+    //   8s/15s → 首次失败后仍有 7s 可退避重试一次，最坏 15s 出结果，兼顾成功率与等待时长
+    const parsed = await aiJson({ system, user: text, history, maxTokens: 400, temperature: 0, timeoutMs: 8000, totalBudgetMs: 15000 });
     if (!parsed) {
       await logAiUsage({ userId: actor.userId, kind: 'action', model: aiModel(), ok: 0, costMs: Date.now() - t0 });
       return fail(49430, '指令解析服务暂时不可用，请稍后再试（你也可以直接在页面上操作）', 503);
